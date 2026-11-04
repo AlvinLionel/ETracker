@@ -39,7 +39,7 @@ Core financial features, database integration and transaction processing are sti
 Clone the repository:
 
 ```bash
-git clone <https://github.com/AlvinLionel/ETracker.git>
+git clone https://github.com/AlvinLionel/ETracker.git
 cd ETracker
 ```
 
