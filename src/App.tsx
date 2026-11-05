@@ -1,50 +1,110 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+const navigationItems = [
+  { label: "Dashboard", section: "Overview" },
+  { label: "Accounts", section: "Finance" },
+  { label: "Transactions", section: "Finance" },
+  { label: "Imports", section: "Finance" },
+  { label: "Budgeting", section: "Planning" },
+  { label: "Savings", section: "Planning" },
+  { label: "Subscriptions", section: "Planning" },
+  { label: "Analytics", section: "Insights" },
+  { label: "Forecasting", section: "Insights" },
+  { label: "Settings", section: "System" },
+];
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const activePage = "Accounts";
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div className="flex min-h-screen bg-[#f7f8f7] text-slate-900">
+      {/* Sidebar */}
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+        <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-6">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-700 text-lg font-bold text-white">
+            E
+          </div>
+          <div>
+            <h1 className="text-base font-bold tracking-tight">ETracker</h1>
+            <p className="text-xs text-slate-500">Personal finance</p>
+          </div>
+        </div>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+        <nav className="flex-1 space-y-7 overflow-y-auto px-4 py-6">
+          {["Overview", "Finance", "Planning", "Insights", "System"].map(
+            (section) => {
+              const items = navigationItems.filter(
+                (item) => item.section === section,
+              );
+
+              return (
+                <div key={section}>
+                  <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    {section}
+                  </p>
+
+                  <div className="space-y-1">
+                    {items.map((item) => {
+                      const isActive = item.label === activePage;
+
+                      return (
+                        <div
+                          key={item.label}
+                          aria-current={isActive ? "page" : undefined}
+                          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"}`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"
+                              }`}
+                          />
+                          {item.label}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            },
+          )}
+        </nav>
+
+        <div className="border-t border-slate-200 px-5 py-4">
+          <p className="text-xs font-medium text-slate-700">Local workspace</p>
+          <p className="mt-1 text-xs text-slate-500">Your financial data stays on this device.</p>
+        </div>
+      </aside>
+
+      {/* Main workspace */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
+          <div>
+            <p className="text-xs text-slate-500">Finance / Accounts</p>
+            <h2 className="text-sm font-semibold text-slate-900">Account management</h2>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-xs font-medium text-slate-600">Local mode</span>
+          </div>
+        </header>
+
+        <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
+          <div className="mx-auto max-w-6xl">
+            <div className="mb-8">
+              <p className="text-sm font-medium text-emerald-700">FINANCIAL ACCOUNTS</p>
+              <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Your accounts</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Manage the accounts you use to hold and move your money. View and organize your financial accounts in one place.</p>
+            </div>
+
+            <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-500">
+                +
+              </div>
+              <h4 className="text-base font-semibold text-slate-800">Your accounts will appear here</h4>
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Add your M-Pesa, bank, cash, or other accounts to start organizing your financial activity.</p>
+            </div>
+          </div>
+        </main>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    </div>
   );
 }
 
