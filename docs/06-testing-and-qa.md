@@ -702,6 +702,8 @@ Verify that date and account filters return correct results.
 
 Verify that refunds follow the approved reporting conventions.
 
+The first implemented analytics slice verifies posted income/expense totals and monthly trends against the ledger, excludes internal transfers and voided or reversed activity, respects date/currency/account/category filters, reports allocated values for split transactions and exports the filtered result as CSV. Repeated expense descriptions are surfaced as patterns. Unusual-spending detection, dedicated budget/savings analytics and what-if simulations are still outstanding.
+
 ### 9.2 Forecasting
 
 **QA-FOR-001 — Local forecast availability**

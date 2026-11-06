@@ -672,7 +672,7 @@ A projected subscription payment must not be counted as an actual expense.
 
 ### 11.1 Purpose
 
-The analytics screen presents historical financial patterns and comparisons.
+The analytics screen presents historical financial patterns and comparisons. The implemented first slice shows income and expense totals and monthly trends, category breakdowns, account comparisons, repeated expense descriptions and CSV export. Date, currency, account and category filters apply to the displayed report. Internal transfers and voided or reversed activity are excluded.
 
 ### 11.2 Analytical Views
 

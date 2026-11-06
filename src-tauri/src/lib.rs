@@ -12,6 +12,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            commands::analytics::get_analytics_summary,
             commands::accounts::create_account,
             commands::accounts::get_account,
             commands::accounts::list_active_accounts,
