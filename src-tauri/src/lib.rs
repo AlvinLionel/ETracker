@@ -36,6 +36,7 @@ pub fn run() {
             commands::imports::list_import_logs,
             commands::imports::get_import_reconciliation,
             commands::imports::reconcile_import_batch,
+            commands::imports::set_import_record_allocations,
             commands::transactions::list_transactions,
             commands::transactions::list_active_categories,
             commands::transactions::get_transaction_audit_history,

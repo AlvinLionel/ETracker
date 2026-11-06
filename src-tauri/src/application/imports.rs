@@ -22,6 +22,11 @@ pub struct ImportReconciliation {
     pub outcome: String,
     pub explanation: String,
 }
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct StagedCategoryAllocation {
+    pub category_id: String,
+    pub amount_minor: i64,
+}
 #[derive(Debug)]
 pub enum ImportError {
     Database(String),
@@ -54,6 +59,11 @@ pub trait ImportRepository {
         opening: Option<i64>,
         closing: Option<i64>,
     ) -> Result<ImportReconciliation, ImportError>;
+    fn set_record_allocations(
+        &self,
+        record_id: &str,
+        allocations: &[StagedCategoryAllocation],
+    ) -> Result<(), ImportError>;
 }
 pub struct ImportService<R: ImportRepository> {
     repository: R,
@@ -118,5 +128,21 @@ impl<R: ImportRepository> ImportService<R> {
             return Err(ImportError::InvalidBatch);
         }
         self.repository.reconcile(batch_id, opening, closing)
+    }
+    pub fn set_record_allocations(
+        &self,
+        record_id: &str,
+        allocations: &[StagedCategoryAllocation],
+    ) -> Result<(), ImportError> {
+        let mut categories = std::collections::HashSet::new();
+        if allocations.iter().any(|a| {
+            a.category_id.trim().is_empty()
+                || a.amount_minor <= 0
+                || !categories.insert(a.category_id.as_str())
+        }) {
+            return Err(ImportError::InvalidBatch);
+        }
+        self.repository
+            .set_record_allocations(record_id, allocations)
     }
 }

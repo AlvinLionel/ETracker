@@ -1,5 +1,7 @@
 use crate::{
-    application::imports::{CsvImportMapping, ImportService, NewImportBatch},
+    application::imports::{
+        CsvImportMapping, ImportService, NewImportBatch, StagedCategoryAllocation,
+    },
     infrastructure::database::Database,
     persistence::imports::{
         ImportBatchRecord, ImportLogRecord, SqliteImportRepository, StagedImportRecord,
@@ -37,6 +39,11 @@ pub struct ReconcileImportRequest {
     pub batch_id: String,
     pub opening_balance_minor: Option<i64>,
     pub closing_balance_minor: Option<i64>,
+}
+#[derive(Deserialize)]
+pub struct SetImportAllocationsRequest {
+    pub record_id: String,
+    pub allocations: Vec<StagedCategoryAllocation>,
 }
 #[tauri::command]
 pub fn correct_import_record(
@@ -151,6 +158,13 @@ pub fn reconcile_import_batch(
 ) -> Result<crate::application::imports::ImportReconciliation, String> {
     let service = ImportService::new(SqliteImportRepository::new(state.inner()));
     service.reconcile(&request.batch_id, request.opening_balance_minor, request.closing_balance_minor).map_err(|_| "Reconciliation could not be completed. Ensure all staged rows have valid dates, amounts and types.".into())
+}
+#[tauri::command]
+pub fn set_import_record_allocations(
+    state: State<'_, Database>,
+    request: SetImportAllocationsRequest,
+) -> Result<(), String> {
+    ImportService::new(SqliteImportRepository::new(state.inner())).set_record_allocations(&request.record_id, &request.allocations).map_err(|_| "Category allocations must use active matching categories and add up to the full transaction amount.".into())
 }
 #[tauri::command]
 pub fn stage_csv_import(

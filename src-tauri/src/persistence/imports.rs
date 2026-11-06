@@ -1,6 +1,7 @@
 use crate::{
     application::imports::{
         CsvImportMapping, ImportError, ImportReconciliation, ImportRepository, NewImportBatch,
+        StagedCategoryAllocation,
     },
     infrastructure::database::Database,
 };
@@ -213,6 +214,28 @@ impl ImportRepository for SqliteImportRepository<'_> {
             let signed = if kind == "income" { *amount } else { -*amount };
             tx.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES (?1,?2,?3,?4)",params![Uuid::new_v4().to_string(),id,account_id,signed]).map_err(|e|ImportError::Database(e.to_string()))?;
             tx.execute("INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'created',?3)",params![Uuid::new_v4().to_string(),id,serde_json::json!({"source":"import","batch_id":batch_id,"record_id":record_id,"amount_minor":amount,"transaction_type":kind,"occurred_at":date}).to_string()]).map_err(|e|ImportError::Database(e.to_string()))?;
+            let allocations: Vec<(String, i64)> = {
+                let mut statement = tx.prepare("SELECT a.category_id,a.amount_minor FROM imported_record_allocations a WHERE a.imported_record_id=?1 ORDER BY a.category_id").map_err(|e|ImportError::Database(e.to_string()))?;
+                statement
+                    .query_map([record_id], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(|e| ImportError::Database(e.to_string()))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| ImportError::Database(e.to_string()))?
+            };
+            let allocation_total = allocations
+                .iter()
+                .try_fold(0i64, |total, (_, value)| total.checked_add(*value))
+                .ok_or(ImportError::InvalidBatch)?;
+            if !allocations.is_empty() && allocation_total != *amount {
+                return Err(ImportError::InvalidBatch);
+            }
+            for (category_id, allocation_amount) in allocations {
+                let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)", params![category_id,kind], |r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
+                if !valid {
+                    return Err(ImportError::InvalidBatch);
+                }
+                tx.execute("INSERT INTO category_allocations(id,transaction_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)", params![Uuid::new_v4().to_string(),id,category_id,allocation_amount]).map_err(|e|ImportError::Database(e.to_string()))?;
+            }
             tx.execute(
                 "UPDATE imported_records SET linked_transaction_id=?1 WHERE id=?2",
                 params![id, record_id],
@@ -292,6 +315,52 @@ impl ImportRepository for SqliteImportRepository<'_> {
             .map_err(|e| ImportError::Database(e.to_string()))?;
         Ok(result)
     }
+
+    fn set_record_allocations(
+        &self,
+        record_id: &str,
+        allocations: &[StagedCategoryAllocation],
+    ) -> Result<(), ImportError> {
+        let mut c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = c
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let record: Option<(String, i64, String)> = tx.query_row("SELECT r.batch_id,r.normalized_amount_minor,r.transaction_type FROM imported_records r JOIN import_batches b ON b.id=r.batch_id WHERE r.id=?1 AND r.validation_status='valid' AND b.status='review'", [record_id], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(|e|ImportError::Database(e.to_string()))?;
+        let Some((batch_id, amount, kind)) = record else {
+            return Err(ImportError::InvalidBatch);
+        };
+        let sum = allocations
+            .iter()
+            .try_fold(0i64, |sum, allocation| {
+                sum.checked_add(allocation.amount_minor)
+            })
+            .ok_or(ImportError::InvalidBatch)?;
+        if !allocations.is_empty() && sum != amount {
+            return Err(ImportError::InvalidBatch);
+        }
+        for allocation in allocations {
+            let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)", params![allocation.category_id,kind], |r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
+            if !active {
+                return Err(ImportError::InvalidBatch);
+            }
+        }
+        tx.execute(
+            "DELETE FROM imported_record_allocations WHERE imported_record_id=?1",
+            [record_id],
+        )
+        .map_err(|e| ImportError::Database(e.to_string()))?;
+        for allocation in allocations {
+            tx.execute("INSERT INTO imported_record_allocations(id,imported_record_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)", params![Uuid::new_v4().to_string(),record_id,allocation.category_id,allocation.amount_minor]).map_err(|e|ImportError::Database(e.to_string()))?;
+        }
+        tx.execute("INSERT INTO import_logs(id,batch_id,record_id,stage,severity,message) VALUES (?1,?2,?3,'review','INFO','Import category allocations updated')", params![Uuid::new_v4().to_string(),batch_id,record_id]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        Ok(())
+    }
 }
 #[derive(serde::Serialize)]
 pub struct ImportBatchRecord {
@@ -316,6 +385,13 @@ pub struct StagedImportRecord {
     pub validation_status: String,
     pub duplicate_status: String,
     pub review_status: String,
+    pub allocations: Vec<StagedCategoryAllocation>,
+}
+#[derive(serde::Serialize)]
+pub struct StagedCategoryAllocationRecord {
+    pub category_id: String,
+    pub category_name: String,
+    pub amount_minor: i64,
 }
 #[derive(serde::Serialize)]
 pub struct ImportLogRecord {
@@ -367,19 +443,56 @@ impl SqliteImportRepository<'_> {
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
         let mut s=c.prepare("SELECT id,source_row_reference,original_date,normalized_date,original_description,original_amount,normalized_amount_minor,transaction_type,validation_status,duplicate_status,review_status FROM imported_records WHERE batch_id=?1 ORDER BY CAST(source_row_reference AS INTEGER)").map_err(|e|ImportError::Database(e.to_string()))?;
-        s.query_map([batch_id], |r| {
-            Ok(StagedImportRecord {
-                id: r.get(0)?,
-                source_row_reference: r.get(1)?,
-                original_date: r.get(2)?,
-                normalized_date: r.get(3)?,
-                original_description: r.get(4)?,
-                original_amount: r.get(5)?,
-                normalized_amount_minor: r.get(6)?,
-                transaction_type: r.get(7)?,
-                validation_status: r.get(8)?,
-                duplicate_status: r.get(9)?,
-                review_status: r.get(10)?,
+        let mut records = s
+            .query_map([batch_id], |r| {
+                Ok(StagedImportRecord {
+                    id: r.get(0)?,
+                    source_row_reference: r.get(1)?,
+                    original_date: r.get(2)?,
+                    normalized_date: r.get(3)?,
+                    original_description: r.get(4)?,
+                    original_amount: r.get(5)?,
+                    normalized_amount_minor: r.get(6)?,
+                    transaction_type: r.get(7)?,
+                    validation_status: r.get(8)?,
+                    duplicate_status: r.get(9)?,
+                    review_status: r.get(10)?,
+                    allocations: Vec::new(),
+                })
+            })
+            .map_err(|e| ImportError::Database(e.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        drop(s);
+        drop(c);
+        for record in &mut records {
+            record.allocations = self
+                .list_record_allocations(&record.id)?
+                .into_iter()
+                .map(|a| StagedCategoryAllocation {
+                    category_id: a.category_id,
+                    amount_minor: a.amount_minor,
+                })
+                .collect();
+        }
+        Ok(records)
+    }
+
+    pub fn list_record_allocations(
+        &self,
+        record_id: &str,
+    ) -> Result<Vec<StagedCategoryAllocationRecord>, ImportError> {
+        let c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let mut s = c.prepare("SELECT a.category_id,c.name,a.amount_minor FROM imported_record_allocations a JOIN categories c ON c.id=a.category_id WHERE a.imported_record_id=?1 ORDER BY c.name").map_err(|e|ImportError::Database(e.to_string()))?;
+        s.query_map([record_id], |r| {
+            Ok(StagedCategoryAllocationRecord {
+                category_id: r.get(0)?,
+                category_name: r.get(1)?,
+                amount_minor: r.get(2)?,
             })
         })
         .map_err(|e| ImportError::Database(e.to_string()))?
@@ -1049,5 +1162,63 @@ mod tests {
         let unavailable = repo.reconcile(&batch, None, None).unwrap();
         assert_eq!(unavailable.outcome, "unavailable");
         assert!(unavailable.difference_minor.is_none());
+    }
+
+    #[test]
+    fn imported_split_allocations_are_validated_and_finalized_atomically() {
+        let db = db();
+        account(&db);
+        db.connection().lock().unwrap().execute_batch("INSERT INTO categories(id,name,category_type) VALUES ('food','Food','expense'),('home','Home','expense');").unwrap();
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "x.csv".into(),
+                source_format: "csv".into(),
+                source_file_hash: None,
+            })
+            .unwrap();
+        let row = staged_expense(&repo, &batch);
+        assert!(matches!(
+            repo.set_record_allocations(
+                &row,
+                &[
+                    StagedCategoryAllocation {
+                        category_id: "food".into(),
+                        amount_minor: 600
+                    },
+                    StagedCategoryAllocation {
+                        category_id: "home".into(),
+                        amount_minor: 600
+                    }
+                ]
+            ),
+            Err(ImportError::InvalidBatch)
+        ));
+        repo.set_record_allocations(
+            &row,
+            &[
+                StagedCategoryAllocation {
+                    category_id: "food".into(),
+                    amount_minor: 700,
+                },
+                StagedCategoryAllocation {
+                    category_id: "home".into(),
+                    amount_minor: 550,
+                },
+            ],
+        )
+        .unwrap();
+        repo.review_record(&row, true).unwrap();
+        repo.finalize(&batch).unwrap();
+        let c = db.connection().lock().unwrap();
+        let (count, total): (i64, i64) = c
+            .query_row(
+                "SELECT COUNT(*),SUM(amount_minor) FROM category_allocations",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((count, total), (2, 1250));
     }
 }

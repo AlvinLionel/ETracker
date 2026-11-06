@@ -18,6 +18,7 @@ describe("ImportsPage", () => {
       if (command === "list_staged_import_records") return Promise.resolve([]);
       if (command === "list_import_logs") return Promise.resolve([]);
       if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      if (command === "list_active_categories") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
   });
@@ -64,5 +65,31 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("Closing balance"), { target: { value: "87.50" } });
     fireEvent.click(screen.getByRole("button", { name: "Check balances" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("reconcile_import_batch", { request: { batch_id: "batch-1", opening_balance_minor: 10000, closing_balance_minor: 8750 } }));
+  });
+
+  it("saves confirmed split category allocations for a staged expense", async () => {
+    const batch = { id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" };
+    const record = { id: "row-1", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Shop", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "pending", allocations: [] };
+    mocks.invoke.mockImplementation((command: string, args?: { categoryType?: string }) => {
+      if (command === "list_import_batches") return Promise.resolve([batch]);
+      if (command === "list_staged_import_records") return Promise.resolve([record]);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      if (command === "list_active_categories") return Promise.resolve(args?.categoryType === "expense" ? [{ id: "food", name: "Food", category_type: "expense" }, { id: "home", name: "Home", category_type: "expense" }] : []);
+      return Promise.resolve(undefined);
+    });
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Records" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Categories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add split" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add split" }));
+    const selectors = screen.getAllByLabelText("Category");
+    fireEvent.change(selectors[0], { target: { value: "food" } });
+    fireEvent.change(selectors[1], { target: { value: "home" } });
+    const amounts = screen.getAllByLabelText("Amount");
+    fireEvent.change(amounts[amounts.length - 2], { target: { value: "7.00" } });
+    fireEvent.change(amounts[amounts.length - 1], { target: { value: "5.50" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save categories" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("set_import_record_allocations", { request: { record_id: "row-1", allocations: [{ category_id: "food", amount_minor: 700 }, { category_id: "home", amount_minor: 550 }] } }));
   });
 });
