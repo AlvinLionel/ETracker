@@ -634,6 +634,47 @@ Store the original uploaded bytes locally with the import batch and calculate a 
 
 ---
 
+## DB-027 — Controlled revised statement resolutions
+
+**Status:** Approved
+**Date:** 6 November 2026
+**Related documents:** DOC-002, DOC-004, DOC-005, DOC-006
+
+### Context
+Revised imports can conflict with posted imported transactions and with later manual edits to those transactions. A user must be able to apply a corrected statement while preserving audit history and ledger traceability.
+
+### Decision
+Compare a newly staged statement with the finalized same-account batch selected by the user. Require row-level resolution for changed and ambiguous candidates. Permit keep-original, use-revised and compatible merge. A use-revised decision may reverse a posted imported transaction, including one the user manually edited, and apply the revised staged transaction in the same atomic finalization. The reversal links to the original and records the revision batch in its audit reason. Do not create a second reversal for an already voided or reversed original. Compatible merges may fill missing descriptions only when date, amount, type and confirmed allocations already agree. Unchanged matches remain linked to the earlier imported record and do not post twice.
+
+### Rationale and implications
+- Revised imports remain staged and must pass existing validation and reconciliation gates.
+- A user explicitly choosing revised values authorizes the reversal and replacement operation.
+- Ambiguous matching candidates remain individually visible and unresolved until the user acts.
+- Old statement rows, financial transactions, reversals and audit history remain queryable.
+- Generic matching is conservative and provider-specific identifiers will improve confidence once verified formats are available.
+
+---
+
+## DB-028 — Local text extraction for selectable PDF statements
+
+**Status:** Approved
+**Date:** 6 November 2026
+**Related documents:** DOC-002, DOC-003, DOC-004, DOC-005, DOC-006
+
+### Context
+The requirements support text-based PDF statements while keeping import processing local. Generic PDFs do not provide a consistent row layout, so inferred dates and amounts cannot safely be posted without format-specific parsing.
+
+### Decision
+Use the Rust `pdf-extract` crate for page-level selectable text extraction. Stage each non-empty text line as an uncertain record with its page and line reference. Do not infer or post date, amount, direction, category or transaction reference from generic PDF text. Users must correct each transaction line or skip non-transaction content. If a PDF contains no extractable text, return a recoverable failure and retain the workspace/source file. Scanned-PDF OCR and institution-specific PDF parsers remain separate work.
+
+### Rationale and implications
+- PDF statements remain usable for manual correction without claiming a provider parser.
+- Headings, balances and summaries cannot silently become ledger entries.
+- Selectable line text is retained in the staged description for traceability.
+- OCR library selection is pending until the supported Windows deployment and privacy requirements can be validated.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances
@@ -948,10 +989,9 @@ The following matters require additional research, technical validation or expli
 | PEND-002 | Institution-specific statement normalization | High | DOC-004 |
 | PEND-003 | Duplicate confidence thresholds and matching rules | High | DOC-004 |
 | PEND-004 | Treatment of pending transactions in reconciliation | High | DOC-004 |
-| PEND-005 | Revised statement conflicts with manually corrected records | High | DOC-004 |
 | PEND-006 | Import batch cancellation and discard behavior (source-file retention resolved in DB-026) | Medium | DOC-004 |
 | PEND-007 | Exact savings-goal, contribution and ledger relationship | Medium | DOC-004 |
-| PEND-008 | Exact import extraction and OCR libraries | High | DOC-003, DOC-004 |
+| PEND-008 | Local OCR library for scanned statement files (text-based PDF extraction resolved in DB-028) | High | DOC-003, DOC-004 |
 
 ## 8.2 User interface and experience
 

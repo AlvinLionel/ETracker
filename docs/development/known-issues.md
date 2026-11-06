@@ -12,9 +12,8 @@ The following items represent functionality and engineering work that has not ye
 
 | ID | Area | Outstanding work | Status |
 |---|---|---|---|
-| OW-004 | Imports | Add PDF text extraction and mapped statement staging | Pending |
+| OW-004 | Imports | Add local OCR for scanned PDF statements | Pending |
 | OW-006 | Imports | Verify provider statement formats and add sanitized fixtures before claiming provider parser support | Pending |
-| OW-011 | Imports | Compare revised statements and provide controlled keep, replace, merge and individual-review choices | Pending |
 | OW-007 | Planning | Implement budgets, savings goals and subscriptions | Pending |
 | OW-008 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
 | OW-009 | Security | Review Content Security Policy and local data protection before release | Pending |

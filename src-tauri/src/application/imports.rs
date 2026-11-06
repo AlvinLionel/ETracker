@@ -3,6 +3,7 @@ pub struct NewImportBatch {
     pub account_id: String,
     pub source_file_name: String,
     pub source_format: String,
+    pub revision_of_batch_id: Option<String>,
     pub source_file_contents: Vec<u8>,
 }
 #[derive(Clone, Debug)]

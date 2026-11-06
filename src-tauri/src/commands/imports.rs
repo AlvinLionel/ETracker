@@ -4,7 +4,8 @@ use crate::{
     },
     infrastructure::database::Database,
     persistence::imports::{
-        ImportBatchRecord, ImportLogRecord, SqliteImportRepository, StagedImportRecord,
+        ImportBatchRecord, ImportLogRecord, ImportRevisionChangeRecord, SqliteImportRepository,
+        StagedImportRecord,
     },
 };
 use serde::Deserialize;
@@ -14,6 +15,7 @@ pub struct CreateImportBatchRequest {
     pub account_id: String,
     pub source_file_name: String,
     pub source_format: String,
+    pub revision_of_batch_id: Option<String>,
     pub source_file_contents: Vec<u8>,
 }
 #[derive(Deserialize)]
@@ -56,6 +58,11 @@ pub struct ReconcileImportRequest {
 pub struct SetImportAllocationsRequest {
     pub record_id: String,
     pub allocations: Vec<StagedCategoryAllocation>,
+}
+#[derive(Deserialize)]
+pub struct SetImportRevisionResolutionRequest {
+    pub change_id: String,
+    pub resolution: String,
 }
 #[tauri::command]
 pub fn correct_import_record(
@@ -144,6 +151,7 @@ pub fn create_import_batch(
             account_id: request.account_id,
             source_file_name: request.source_file_name,
             source_format: request.source_format,
+            revision_of_batch_id: request.revision_of_batch_id,
             source_file_contents: request.source_file_contents,
         })
         .map_err(|_| {
@@ -164,6 +172,33 @@ pub fn list_import_batches(state: State<'_, Database>) -> Result<Vec<ImportBatch
     SqliteImportRepository::new(state.inner())
         .list_batches()
         .map_err(|_| "Import batches could not be loaded.".into())
+}
+#[tauri::command]
+pub fn compare_import_revision(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<Vec<ImportRevisionChangeRecord>, String> {
+    SqliteImportRepository::new(state.inner())
+        .compare_revision(&batch_id)
+        .map_err(|_| "The selected statements could not be compared.".into())
+}
+#[tauri::command]
+pub fn list_import_revision_changes(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<Vec<ImportRevisionChangeRecord>, String> {
+    SqliteImportRepository::new(state.inner())
+        .list_revision_changes(&batch_id)
+        .map_err(|_| "Statement comparison could not be loaded.".into())
+}
+#[tauri::command]
+pub fn set_import_revision_resolution(
+    state: State<'_, Database>,
+    request: SetImportRevisionResolutionRequest,
+) -> Result<(), String> {
+    SqliteImportRepository::new(state.inner())
+        .set_revision_resolution(&request.change_id, &request.resolution)
+        .map_err(|_| "That revised-statement action is not compatible with this change.".into())
 }
 #[tauri::command]
 pub fn list_staged_import_records(
@@ -267,6 +302,27 @@ pub fn stage_xlsx_import(
                 "Workbook rows could not be staged. Check the selected worksheet and columns."
                     .into(),
             )
+        }
+    }
+}
+#[tauri::command]
+pub fn stage_pdf_import(
+    state: State<'_, Database>,
+    batch_id: String,
+    contents: Vec<u8>,
+) -> Result<usize, String> {
+    let repository = SqliteImportRepository::new(state.inner());
+    match repository.stage_pdf_text(&batch_id, contents) {
+        Ok(count) => Ok(count),
+        Err(_) => {
+            let _ = ImportService::new(repository).record_failure(
+                &batch_id,
+                None,
+                "parse",
+                "PDF text could not be extracted or contained no selectable text",
+                "Use a text-based PDF or CSV/XLSX export. Scanned PDF OCR is not available.",
+            );
+            Err("The PDF did not contain readable selectable text. Scanned PDF OCR is not available.".into())
         }
     }
 }

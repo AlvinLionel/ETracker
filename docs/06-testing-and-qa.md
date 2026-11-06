@@ -425,9 +425,13 @@ Scenario:
 
 Verify extraction of dates, descriptions, references, amounts and transaction types from supported statement formats.
 
+The generic text-based PDF path currently extracts selectable page text into uncertain page/line records for manual correction. It does not claim automatic bank or M-Pesa field extraction.
+
 **QA-IMP-002 — Scanned PDF extraction**
 
 Verify OCR processing and identification of uncertain extracted values.
+
+Scanned-PDF OCR remains unsupported; the application must report a recoverable extraction failure and preserve the saved workspace/source file.
 
 **QA-IMP-003 — Extraction errors**
 
@@ -573,6 +577,8 @@ Verify that revised statement information does not silently overwrite a manually
 **QA-IMP-032 — Merge and replacement**
 
 Verify that the selected action is applied through staging and controlled financial changes while preserving historical import information.
+
+The current regression suite compares generic mapped imports, classifies unique unchanged/modified/add/remove cases, marks competing candidates for review, requires explicit resolution before finalization, preserves unchanged ledger entries, and creates a linked reversal when the user explicitly chooses revised values for a modified posted imported transaction.
 
 ---
 

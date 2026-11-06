@@ -28,8 +28,10 @@ chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 csv = "1.4.0"
 calamine = { version = "0.38.0", features = ["chrono"] }
 sha2 = "0.10.9"
+pdf-extract = "0.12.1"
 
 [dev-dependencies]
+lopdf = { version = "0.42.0", default-features = false }
 zip = { version = "9.4.1", default-features = false }
 
 

@@ -61,6 +61,56 @@ describe("ImportsPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("1 staged rows");
   });
 
+  it("stages extracted PDF text lines for manual correction", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "create_import_batch") return Promise.resolve("pdf-batch");
+      if (command === "stage_pdf_import") return Promise.resolve(4);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    const file = new File(["%PDF-1.5 fixture"], "statement.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    expect(await screen.findByText(/Selectable PDF text is staged line by line as uncertain/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_import", expect.objectContaining({ batchId: "pdf-batch", contents: expect.any(Array) })));
+    expect(await screen.findByRole("status")).toHaveTextContent("4 PDF text lines for manual review");
+  });
+
+  it("compares a revised import with a selected finalized batch", async () => {
+    const previous = { id: "old-batch", account_id: "a", source_file_name: "original.csv", source_format: "csv", status: "finalized", reconciliation_status: "reconciled", created_at: "2026-10-01", revision_of_batch_id: null };
+    const revised = { id: "new-batch", account_id: "a", source_file_name: "revised.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "2026-11-06", revision_of_batch_id: "old-batch" };
+    const change = { id: "change-1", change_type: "modified", resolution: null, original_record_id: "old-row", original_date: "2026-11-01", original_source_row_reference: "2", original_amount_minor: 1250, original_type: "expense", original_description: "Groceries", revised_record_id: "new-row", revised_date: "2026-11-01", revised_source_row_reference: "2", revised_amount_minor: 1500, revised_type: "expense", revised_description: "Groceries", manual_conflict: false };
+    let batchReads = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve(++batchReads === 1 ? [previous] : [revised, previous]);
+      if (command === "csv_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
+      if (command === "create_import_batch") return Promise.resolve("new-batch");
+      if (command === "stage_csv_import") return Promise.resolve(1);
+      if (command === "compare_import_revision" || command === "list_import_revision_changes") return Promise.resolve([change]);
+      if (command === "set_import_revision_resolution") return Promise.resolve(undefined);
+      if (command === "list_staged_import_records") return Promise.resolve([]);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    fireEvent.change(await screen.findByLabelText("Compare with a previous statement", { exact: false }), { target: { value: "old-batch" } });
+    const file = new File(["Date,Amount,Memo\n2026-11-01,15.00,Groceries"], "revised.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    await screen.findByLabelText("Date column");
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("compare_import_revision", { batchId: "new-batch" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("create_import_batch", { request: expect.objectContaining({ revision_of_batch_id: "old-batch" }) }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Records" }))[0]);
+    expect(await screen.findByRole("heading", { name: "Revised statement comparison" })).toBeInTheDocument();
+    expect(screen.getByText("modified")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Review change change-1"), { target: { value: "use_revised" } });
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("set_import_revision_resolution", { request: { change_id: "change-1", resolution: "use_revised" } }));
+  });
+
   it("shows the saved processing logs for a workspace", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);

@@ -403,6 +403,10 @@ The generic file-mapping flow supports CSV and XLSX workbooks. For XLSX, users c
 
 Each saved workspace provides access to its original uploaded file for 90 days after the latest workspace activity. The application removes expired source bytes at startup while retaining the financial records and import history.
 
+When creating an import, the user may select a finalized statement from the same account as the prior version. The workspace displays row-by-row comparison and requires an explicit action for every changed or uncertain match: keep the original, use the revised row, or merge compatible descriptive details. Choosing revised values for a manually edited imported transaction is an explicit instruction to reverse the old posted entry and apply the revised record; the comparison flags this case before finalization. Identical rows are retained from the prior version and excluded from new postings.
+
+Selectable PDF text appears as uncertain page-and-line records for correction and review. Scanned PDFs receive an extraction error because local OCR is not implemented.
+
 It is a critical financial workflow and must provide transparency throughout processing.
 
 ### 7.2 Import Workflow
