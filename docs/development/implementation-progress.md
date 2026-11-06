@@ -6,7 +6,7 @@
 
 **Current phase:** Transaction Management
 
-The Tauri, React, Rust, SQLite and account-management foundation is implemented. Manual income and expense entry and transaction history are now implemented as the first transaction-management slice. Transfers, corrections, imports and planning features remain outstanding.
+The Tauri, React, Rust, SQLite and account-management foundation is implemented. Transaction workflows now include manual income/expense, category allocations, controlled edits with audit history, voids, reversals, and account transfers with separate fees. Transaction Management is awaiting a final verification pass and fuller frontend regression coverage before it can be marked complete.
 
 ## 2. Completed Milestones
 
@@ -74,6 +74,13 @@ The Tauri, React, Rust, SQLite and account-management foundation is implemented.
 - [x] Persist transaction, entry, allocations and creation audit row atomically.
 - [x] Expose Tauri commands and a frontend entry/history view with account and date filters.
 - [x] Add Rust domain and SQLite repository tests.
+- [x] Retrieve active categories filtered by income/expense type; exclude archived categories.
+- [x] Enter and edit optional split allocations in the UI; uncategorized remains supported.
+- [x] Edit posted manual transactions atomically, preserving before/after values in audit history.
+- [x] Display transaction audit history in the UI.
+- [x] Void manual transactions with a required reason; posted-balance queries exclude them.
+- [x] Create linked reversal entries atomically and prevent duplicate reversal through the schema constraint.
+- [x] Transfer funds atomically between active same-currency accounts, with an optional separate expense transaction for the fee.
 
 ## 3. Current Implementation State
 
@@ -89,13 +96,14 @@ The testing tools already configured are Rust's built-in test framework, Vitest 
 - `npm run build` — passed after removing the unused `formatKES` helper in `AccountsPage.tsx` that caused TS6133.
 - `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` initially reported formatting differences. `cargo fmt` was run; existing account and infrastructure formatting-only changes were restored manually. Run the check again before future commits.
 
+The continued Phase A implementation adds repository tests for category filtering, audited edits, edit eligibility, void balance exclusion, reversal offsetting, and transfer/fee accounting. The latest Rust run passed 26 library tests before the latest small changes; rerun all checks before commit. Frontend tests now cover uncategorized entry and split-allocation reconciliation. Transaction Management is not yet marked complete: finish verification, add remaining failure-path coverage, and resolve how edits preserve historical allocations assigned to archived categories.
+
 ## 5. Immediate Next Steps
 
-1. Add transaction category selection and split allocation editing to the UI.
-2. Implement transaction editing with audit history, then voiding and reversal workflows.
-3. Implement transfers atomically as equal and opposite account entries.
-4. Extend tests for filtering, rollback, transfer, void and reversal invariants.
-5. Continue with persistent statement import staging after transaction workflows.
+1. Add dedicated frontend transaction workflow tests and test reversal/transfer failure rollback.
+2. Resolve how edits preserve existing allocations when their categories have since been archived.
+3. Complete Phase A verification and update acceptance documentation.
+4. Proceed into Phase B persistent statement import staging and parsing.
 
 ## 6. Development Tracking
 

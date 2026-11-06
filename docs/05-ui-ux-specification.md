@@ -349,12 +349,7 @@ Users should be able to filter and search by:
 
 ### 6.4 Manual Transaction Entry
 
-The transaction form should support:
-- Income.
-- Expense.
-- Transfer.
-- Refund.
-- Other supported controlled financial events.
+The transaction form currently supports manual income, expense and account transfer entry. Refunds and other controlled financial events remain unimplemented.
 
 Fields should be presented according to the selected transaction type.
 
@@ -372,6 +367,8 @@ The user should be able to:
 - Identify any difference between allocations and the amount being classified.
 
 The application must prevent saving an invalid allocation.
+
+Manual income and expense entry now allows confirmed optional category allocations. Uncategorized entry remains valid. Transfers are recorded separately and optional transfer fees are separate expense transactions.
 
 ### 6.6 Transaction Corrections
 

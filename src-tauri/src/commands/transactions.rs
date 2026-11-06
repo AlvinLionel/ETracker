@@ -5,12 +5,14 @@ use crate::{
     },
     domain::transactions::{NewTransaction, TransactionValidationError},
     infrastructure::database::Database,
-    persistence::transactions::{SqliteTransactionRepository, TransactionRecord},
+    persistence::transactions::{
+        CategoryRecord, SqliteTransactionRepository, TransactionAuditRecord, TransactionRecord,
+    },
 };
 use serde::Deserialize;
 use tauri::State;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 pub struct AllocationRequest {
     pub category_id: String,
     pub amount_minor: i64,
@@ -57,6 +59,81 @@ pub fn create_transaction(
         .map_err(map_error)
 }
 #[tauri::command]
+pub fn update_transaction(
+    state: State<'_, Database>,
+    id: String,
+    request: CreateTransactionRequest,
+) -> Result<(), String> {
+    let transaction_type =
+        TransactionType::parse(&request.transaction_type).ok_or("Select income or expense.")?;
+    let item = NewTransaction {
+        account_id: request.account_id,
+        transaction_type,
+        amount_minor: request.amount_minor,
+        currency_code: request.currency_code,
+        occurred_at: request.occurred_at,
+        description: request.description,
+        notes: request.notes,
+        allocations: request
+            .allocations
+            .into_iter()
+            .map(|a| Allocation {
+                category_id: a.category_id,
+                amount_minor: a.amount_minor,
+            })
+            .collect(),
+    };
+    let repository = SqliteTransactionRepository::new(state.inner());
+    TransactionService::new(repository)
+        .update(&id, &item)
+        .map_err(map_error)
+}
+#[tauri::command]
+pub fn void_transaction(
+    state: State<'_, Database>,
+    id: String,
+    reason: String,
+) -> Result<(), String> {
+    let repository = SqliteTransactionRepository::new(state.inner());
+    TransactionService::new(repository)
+        .void(&id, &reason)
+        .map_err(map_error)
+}
+#[tauri::command]
+pub fn reverse_transaction(state: State<'_, Database>, id: String) -> Result<String, String> {
+    let repository = SqliteTransactionRepository::new(state.inner());
+    TransactionService::new(repository)
+        .reverse(&id)
+        .map_err(map_error)
+}
+#[derive(Deserialize)]
+pub struct TransferRequest {
+    pub from_account_id: String,
+    pub to_account_id: String,
+    pub amount_minor: i64,
+    #[serde(default)]
+    pub fee_minor: i64,
+    pub occurred_at: String,
+    pub description: Option<String>,
+}
+#[tauri::command]
+pub fn create_transfer(
+    state: State<'_, Database>,
+    request: TransferRequest,
+) -> Result<String, String> {
+    let repository = SqliteTransactionRepository::new(state.inner());
+    TransactionService::new(repository)
+        .transfer(
+            &request.from_account_id,
+            &request.to_account_id,
+            request.amount_minor,
+            request.fee_minor,
+            &request.occurred_at,
+            request.description.as_deref(),
+        )
+        .map_err(map_error)
+}
+#[tauri::command]
 pub fn list_transactions(
     state: State<'_, Database>,
     account_id: Option<String>,
@@ -75,6 +152,47 @@ pub fn list_transactions(
     SqliteTransactionRepository::new(state.inner())
         .list(account_id.as_deref(), from.as_deref(), to.as_deref())
         .map_err(|_| "Transactions could not be loaded.".into())
+}
+#[tauri::command]
+pub fn list_active_categories(
+    state: State<'_, Database>,
+    category_type: Option<String>,
+) -> Result<Vec<CategoryRecord>, String> {
+    if category_type
+        .as_deref()
+        .is_some_and(|kind| !matches!(kind, "income" | "expense"))
+    {
+        return Err("Choose income or expense categories.".into());
+    }
+    SqliteTransactionRepository::new(state.inner())
+        .list_active_categories(category_type.as_deref())
+        .map_err(|_| "Categories could not be loaded.".into())
+}
+#[tauri::command]
+pub fn get_transaction_audit_history(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<Vec<TransactionAuditRecord>, String> {
+    SqliteTransactionRepository::new(state.inner())
+        .audit_history(&id)
+        .map_err(|_| "Transaction history could not be loaded.".into())
+}
+#[tauri::command]
+pub fn get_transaction_allocations(
+    state: State<'_, Database>,
+    id: String,
+) -> Result<Vec<AllocationRequest>, String> {
+    SqliteTransactionRepository::new(state.inner())
+        .allocations(&id)
+        .map(|rows| {
+            rows.into_iter()
+                .map(|a| AllocationRequest {
+                    category_id: a.category_id,
+                    amount_minor: a.amount_minor,
+                })
+                .collect()
+        })
+        .map_err(|_| "Transaction allocations could not be loaded.".into())
 }
 fn map_error(error: TransactionServiceError) -> String {
     match error {
@@ -97,6 +215,10 @@ fn map_error(error: TransactionServiceError) -> String {
             }
             TransactionRepositoryError::InvalidCategory => {
                 "Choose an active category that matches the transaction type."
+            }
+            TransactionRepositoryError::NotEditable => "This transaction cannot be edited.",
+            TransactionRepositoryError::NotReversible => {
+                "This transaction cannot be reversed or has already been reversed."
             }
             _ => "The transaction could not be saved.",
         }

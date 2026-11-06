@@ -21,7 +21,14 @@ pub fn run() {
             commands::accounts::list_archived_accounts,
             commands::accounts::get_account_balance,
             commands::transactions::create_transaction,
+            commands::transactions::update_transaction,
+            commands::transactions::void_transaction,
+            commands::transactions::reverse_transaction,
+            commands::transactions::create_transfer,
             commands::transactions::list_transactions,
+            commands::transactions::list_active_categories,
+            commands::transactions::get_transaction_audit_history,
+            commands::transactions::get_transaction_allocations,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;

@@ -12,16 +12,14 @@ The following items represent functionality and engineering work that has not ye
 
 | ID | Area | Outstanding work | Status |
 |---|---|---|---|
-| OW-001 | Transactions | Add category selection and split allocation management to the transaction interface | Pending |
-| OW-002 | Transactions | Implement transaction history editing, voiding and reversals with audit details | Pending |
-| OW-003 | Transactions | Implement atomic account transfers and separate transfer fees | Pending |
-| OW-004 | Transactions | Expand filter and rollback integration coverage | Pending |
-| OW-005 | Imports | Build persistent statement staging, parsing, duplicate review and reconciliation | Pending |
-| OW-006 | Planning | Implement budgets, savings goals and subscriptions | Pending |
-| OW-007 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
-| OW-008 | Security | Review Content Security Policy and local data protection before release | Pending |
-| OW-009 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
-| OW-010 | Release | Decide licensing and installer/distribution policies | Pending |
+| OW-001 | Transactions | Add frontend regression coverage and additional rollback tests for reversals/transfers | Pending |
+| OW-002 | Transactions | Define safe edit behavior for historical allocations assigned to archived categories | Pending |
+| OW-003 | Imports | Build persistent statement staging, parsing, duplicate review and reconciliation | Pending |
+| OW-004 | Planning | Implement budgets, savings goals and subscriptions | Pending |
+| OW-005 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
+| OW-006 | Security | Review Content Security Policy and local data protection before release | Pending |
+| OW-007 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
+| OW-008 | Release | Decide licensing and installer/distribution policies | Pending |
 
 ## 3. Configuration Review Items
 
