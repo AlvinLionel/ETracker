@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import TransactionsPage from "./TransactionsPage";
 
-const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),create:vi.fn(),list:vi.fn()}));
+const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),create:vi.fn(),list:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn()}));
 vi.mock("../accounts/api/accounts",()=>({listActiveAccounts:mocks.accounts}));
-vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,listActiveCategories:mocks.categories,updateTransaction:vi.fn(),getTransactionAllocations:vi.fn(),getTransactionAuditHistory:vi.fn(),voidTransaction:vi.fn(),reverseTransaction:vi.fn(),createTransfer:vi.fn()}));
+vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,listActiveCategories:mocks.categories,updateTransaction:mocks.update,getTransactionAllocations:mocks.allocations,getTransactionAuditHistory:mocks.audit,voidTransaction:mocks.void,reverseTransaction:mocks.reverse,createTransfer:mocks.transfer}));
 
 describe("TransactionsPage",()=>{
- beforeEach(()=>{vi.clearAllMocks();mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");});
+ beforeEach(()=>{vi.clearAllMocks();vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);});
  it("allows an uncategorized expense",async()=>{
   render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
@@ -25,5 +25,35 @@ describe("TransactionsPage",()=>{
   fireEvent.click(screen.getByRole("button",{name:"Save transaction"}));
   expect(await screen.findByRole("alert")).toHaveTextContent("add up to the full amount");
   expect(mocks.create).not.toHaveBeenCalled();
+ });
+ it("loads and saves an eligible transaction edit",async()=>{
+  mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);
+  render(<TransactionsPage/>); fireEvent.click(await screen.findByRole("button",{name:"Edit"}));
+  expect(await screen.findByRole("button",{name:"Update transaction"})).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Amount",{selector:"input"}),{target:{value:"15.00"}});
+  fireEvent.click(screen.getByRole("button",{name:"Update transaction"}));
+  await waitFor(()=>expect(mocks.update).toHaveBeenCalledWith("tx",expect.objectContaining({amount_minor:1500})));
+ });
+ it("requires a reason and confirmation before voiding",async()=>{
+  mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);
+  vi.spyOn(window,"prompt").mockReturnValue("Duplicate entry"); vi.spyOn(window,"confirm").mockReturnValue(true);
+  render(<TransactionsPage/>); fireEvent.click(await screen.findByRole("button",{name:"Void"}));
+  await waitFor(()=>expect(mocks.void).toHaveBeenCalledWith("tx","Duplicate entry"));
+ });
+ it("asks for confirmation before creating a reversal",async()=>{
+  mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);
+  vi.spyOn(window,"confirm").mockReturnValue(true);
+  render(<TransactionsPage/>); fireEvent.click(await screen.findByRole("button",{name:"Reverse"}));
+  await waitFor(()=>expect(mocks.reverse).toHaveBeenCalledWith("tx"));
+ });
+ it("records an inter-account transfer and its optional fee",async()=>{
+  render(<TransactionsPage/>);
+  await screen.findAllByRole("option",{name:"Savings"});
+  fireEvent.change(screen.getByLabelText("From account"),{target:{value:"a"}});
+  fireEvent.change(screen.getByLabelText("To account"),{target:{value:"b"}});
+  fireEvent.change(screen.getByLabelText("Transfer amount"),{target:{value:"20.00"}});
+  fireEvent.change(screen.getByLabelText("Transfer fee"),{target:{value:"1.50"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save transfer"}));
+  await waitFor(()=>expect(mocks.transfer).toHaveBeenCalledWith(expect.objectContaining({from_account_id:"a",to_account_id:"b",amount_minor:2000,fee_minor:150})));
  });
 });
