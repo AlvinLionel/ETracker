@@ -1,6 +1,7 @@
 import AccountsPage from "./features/accounts/AccountsPage";
 import TransactionsPage from "./features/transactions/TransactionsPage";
 import { useState } from "react";
+import ImportsPage from "./features/imports/ImportsPage";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
@@ -50,8 +51,8 @@ function App() {
                       const isActive = item.label === activePage;
 
                       return (
-                        <button key={item.label} type="button" onClick={() => { if (item.label === "Accounts" || item.label === "Transactions") setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
-                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${item.label !== "Accounts" && item.label !== "Transactions" ? "cursor-default opacity-50" : ""}`}
+                        <button key={item.label} type="button" onClick={() => { if (["Accounts","Transactions","Imports"].includes(item.label)) setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${!["Accounts","Transactions","Imports"].includes(item.label) ? "cursor-default opacity-50" : ""}`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"}`}/>
                           {item.label}
@@ -86,7 +87,7 @@ function App() {
         </header>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          {activePage === "Accounts" ? <AccountsPage /> : <TransactionsPage />}
+          {activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : <ImportsPage />}
         </main>
       </div>
     </div>

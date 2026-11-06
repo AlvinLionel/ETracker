@@ -25,6 +25,8 @@ pub fn run() {
             commands::transactions::void_transaction,
             commands::transactions::reverse_transaction,
             commands::transactions::create_transfer,
+            commands::imports::create_import_batch,
+            commands::imports::list_import_batches,
             commands::transactions::list_transactions,
             commands::transactions::list_active_categories,
             commands::transactions::get_transaction_audit_history,

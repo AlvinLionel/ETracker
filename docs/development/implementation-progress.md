@@ -8,6 +8,8 @@
 
 The Tauri, React, Rust, SQLite and account-management foundation is implemented. Transaction workflows now include manual income/expense, category allocations, controlled edits with audit history, voids, reversals, and account transfers with separate fees. Transaction Management is awaiting a final verification pass and fuller frontend regression coverage before it can be marked complete.
 
+Phase B work has begun with migration 0002 and a persistent import workspace shell. Batches persist and can be listed after restart; staged records, provider parsing and finalization are not yet implemented.
+
 ## 2. Completed Milestones
 
 ### 2.1 Project Documentation

@@ -498,7 +498,11 @@ Proposed fields:
 
 Logs must not expose unnecessary sensitive financial information.
 
-### 7.5 Reconciliation Records
+### 7.5 Physical schema status
+
+Migration `0002_import_staging.sql` implements persistent `import_batches`, `imported_records` and `import_logs` tables. The initial batch workspace stores account, source name/format/hash metadata, status and reconciliation outcome. Staged rows remain separate from ledger entries. Provider parsing, file-byte persistence, duplicate resolution, reconciliation calculations and atomic finalization remain unimplemented. Source-format metadata is descriptive and does not imply parser support.
+
+### 7.6 Reconciliation Records
 
 **Proposed table:** `reconciliations`
 
