@@ -702,7 +702,7 @@ Verify that date and account filters return correct results.
 
 Verify that refunds follow the approved reporting conventions.
 
-The first implemented analytics slice verifies posted income/expense totals and monthly trends against the ledger, excludes internal transfers and voided or reversed activity, respects date/currency/account/category filters, reports allocated values for split transactions and exports the filtered result as CSV. Repeated expense descriptions are surfaced as patterns. Unusual-spending detection, dedicated budget/savings analytics and what-if simulations are still outstanding.
+Analytics tests verify posted income/expense totals and monthly trends against the ledger, exclude internal transfers and voided or reversed activity, respect date/currency/account/category filters, report allocated values for split transactions, surface repeated descriptions and transactions at least twice the category's six-month average after three prior examples, compare stored budget plans to actuals, show savings-goal progress and export report data as CSV. The what-if scenario is temporary client state and does not write to the ledger or budget records. Refunds are not yet a distinct transaction type, so the QA-ANA-005 refund convention still needs its underlying transaction capability.
 
 ### 9.2 Forecasting
 

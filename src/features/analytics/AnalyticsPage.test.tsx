@@ -15,6 +15,9 @@ const sample = {
   category_breakdown: [{ category_id: "food", name: "Food", transaction_type: "expense", amount_minor: 87500 }],
   account_comparison: [{ account_id: "cash", name: "Cash", income_minor: 250000, expense_minor: 87500 }],
   recurring_expenses: [{ category_id: null, name: "Internet", transaction_type: "expense", amount_minor: 60000 }],
+  unusual_expenses: [{ transaction_id: "unusual", occurred_at: "2026-11-01T10:00:00Z", description: "Utility bill", category_name: "Utilities", amount_minor: 10000, recent_average_minor: 1000, comparison_count: 3 }],
+  budget_performance: [{ budget_id: "budget", name: "October Plan", starts_on: "2026-10-01", ends_on: "2026-10-31", planned_income_minor: 250000, planned_expense_minor: 100000, planned_savings_minor: 50000, actual_income_minor: 250000, actual_expense_minor: 87500, actual_savings_minor: 25000 }],
+  savings_progress: [{ goal_id: "goal", name: "Reserve", target_amount_minor: 100000, contributed_minor: 25000, status: "active" }],
 };
 
 describe("AnalyticsPage", () => {
@@ -24,6 +27,11 @@ describe("AnalyticsPage", () => {
     expect(await screen.findByText("Income and expense trends")).toBeInTheDocument();
     expect(screen.getAllByText("Food").length).toBeGreaterThan(1);
     expect(screen.getByText("Internet")).toBeInTheDocument();
+    expect(screen.getByText("Utility bill")).toBeInTheDocument();
+    expect(screen.getByText("October Plan")).toBeInTheDocument();
+    expect(screen.getByText("Reserve")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Additional simulated income"), { target: { value: "100" } });
+    expect(screen.getByText(/Simulated net:/).textContent).toContain("1,725");
     fireEvent.change(screen.getByLabelText("Account"), { target: { value: "cash" } });
     await waitFor(() => expect(invoke).toHaveBeenLastCalledWith("get_analytics_summary", expect.objectContaining({ accountId: "cash" })));
     const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
