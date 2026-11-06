@@ -172,12 +172,13 @@ pub fn update_account(
 pub fn archive_account(
     state: State<'_, Database>,
     id: String,
+    expected_balance_minor: i64,
 ) -> Result<Option<AccountResponse>, String> {
     let repository = SqliteAccountRepository::new(state.inner());
     let service = AccountService::new(repository);
 
     service
-        .archive_account(&id)
+        .archive_account(&id, expected_balance_minor)
         .map(|account| account.map(AccountResponse::from))
         .map_err(map_service_error)
 }
@@ -194,4 +195,24 @@ pub fn reactivate_account(
         .reactivate_account(&id)
         .map(|account| account.map(AccountResponse::from))
         .map_err(map_service_error)
+}
+
+#[tauri::command]
+pub fn list_archived_accounts(
+    database: State<'_, Database>,
+) -> Result<Vec<AccountResponse>, String> {
+    let repository = SqliteAccountRepository::new(&database);
+    let service = AccountService::new(repository);
+
+    service
+        .list_archived_accounts()
+        .map(|accounts| accounts.into_iter().map(AccountResponse::from).collect())
+        .map_err(map_service_error)
+}
+#[tauri::command]
+pub fn get_account_balance(id: String, database: State<'_, Database>) -> Result<i64, String> {
+    let repository = SqliteAccountRepository::new(&database);
+    let service = AccountService::new(repository);
+
+    service.get_account_balance(&id).map_err(map_service_error)
 }

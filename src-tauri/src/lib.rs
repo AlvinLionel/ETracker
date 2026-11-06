@@ -1,11 +1,11 @@
-use tauri::Manager;
 use infrastructure::database::Database;
+use tauri::Manager;
 
-mod infrastructure;
-mod domain;
 mod application;
-mod persistence;
 mod commands;
+mod domain;
+mod infrastructure;
+mod persistence;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,6 +18,8 @@ pub fn run() {
             commands::accounts::update_account,
             commands::accounts::archive_account,
             commands::accounts::reactivate_account,
+            commands::accounts::list_archived_accounts,
+            commands::accounts::get_account_balance,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;

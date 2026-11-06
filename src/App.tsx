@@ -1,3 +1,5 @@
+import AccountsPage from "./features/accounts/AccountsPage";
+
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
   { label: "Accounts", section: "Finance" },
@@ -46,15 +48,10 @@ function App() {
                       const isActive = item.label === activePage;
 
                       return (
-                        <div
-                          key={item.label}
-                          aria-current={isActive ? "page" : undefined}
+                        <div key={item.label} aria-current={isActive ? "page" : undefined}
                           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"}`}
                         >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"
-                              }`}
-                          />
+                          <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"}`}/>
                           {item.label}
                         </div>
                       );
@@ -87,21 +84,7 @@ function App() {
         </header>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          <div className="mx-auto max-w-6xl">
-            <div className="mb-8">
-              <p className="text-sm font-medium text-emerald-700">FINANCIAL ACCOUNTS</p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Your accounts</h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Manage the accounts you use to hold and move your money. View and organize your financial accounts in one place.</p>
-            </div>
-
-            <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-500">
-                +
-              </div>
-              <h4 className="text-base font-semibold text-slate-800">Your accounts will appear here</h4>
-              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Add your M-Pesa, bank, cash, or other accounts to start organizing your financial activity.</p>
-            </div>
-          </div>
+          <AccountsPage />
         </main>
       </div>
     </div>

@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import { archiveAccount, createAccount, listActiveAccounts, reactivateAccount, updateAccount } from "../api/accounts";
-
-import type { Account, CreateAccountInput, UpdateAccountInput } from "../types";
+import { archiveAccount, createAccount, getAccountBalance, listActiveAccounts, listArchivedAccounts, reactivateAccount, updateAccount } from "../api/accounts"; import type { Account, CreateAccountInput, UpdateAccountInput } from "../types";
 
 function getErrorMessage(error: unknown): string {
     if (typeof error === "string") return error;
@@ -17,21 +14,49 @@ export function useAccounts() {
     const [isLoading, setIsLoading] = useState(true);
     const [isMutating, setIsMutating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [archivedAccounts, setArchivedAccounts] = useState<Account[]>([]);
+    const [isArchivedLoading, setIsArchivedLoading] = useState(false);
+    const [archivedLoadError, setArchivedLoadError] = useState<string | null>(null);
 
     const mutationLock = useRef(false);
 
     const refresh = useCallback(async () => {
         setIsLoading(true);
-        setError(null);
+        setLoadError(null);
 
         try {
             const result = await listActiveAccounts();
             setAccounts(result);
         } catch (error) {
-            setError(getErrorMessage(error));
+            setLoadError(getErrorMessage(error));
             throw error;
         } finally {
             setIsLoading(false);
+        }
+    }, []);
+
+    const refreshArchived = useCallback(async () => {
+        setIsArchivedLoading(true);
+        setArchivedLoadError(null);
+
+        try {
+            const result = await listArchivedAccounts();
+            setArchivedAccounts(result);
+        } catch (error) {
+            setArchivedLoadError(getErrorMessage(error));
+            throw error;
+        } finally {
+            setIsArchivedLoading(false);
+        }
+    }, []);
+
+    const getBalance = useCallback(async (id: string): Promise<number> => {
+        try {
+            return await getAccountBalance(id);
+        } catch (error) {
+            setError(getErrorMessage(error));
+            throw error;
         }
     }, []);
 
@@ -87,17 +112,21 @@ export function useAccounts() {
     );
 
     const archive = useCallback(
-        (id: string): Promise<Account> =>
+        (id: string, expectedBalanceMinor: number): Promise<Account> =>
             runMutation(async () => {
-                const account = await archiveAccount(id);
+                const archivedAccount = await archiveAccount(id, expectedBalanceMinor);
 
-                if (!account) throw new Error("Account could not be found or archived.");
+                if (!archivedAccount) throw new Error("Account could not be found or archived.");
 
                 setAccounts((current) =>
                     current.filter((item) => item.id !== id),
                 );
+                setArchivedAccounts((current) => [
+                    archivedAccount,
+                    ...current.filter((item) => item.id !== id),
+                ]);
 
-                return account;
+                return archivedAccount;
             }),
         [runMutation],
     );
@@ -109,7 +138,14 @@ export function useAccounts() {
 
                 if (!account) throw new Error("Account could not be found or reactivated.");
 
-                setAccounts((current) => [account, ...current]);
+                setArchivedAccounts((current) =>
+                    current.filter((item) => item.id !== id),
+                );
+                setAccounts((current) => [
+                    account,
+                    ...current.filter((item) => item.id !== id),
+                ]);
+
                 return account;
             }),
         [runMutation],
@@ -122,14 +158,7 @@ export function useAccounts() {
     }, [refresh]);
 
     return {
-        accounts,
-        isLoading,
-        isMutating,
-        error,
-        refresh,
-        create,
-        update,
-        archive,
-        reactivate,
+        accounts, isLoading, isMutating, error, loadError, archivedAccounts, isArchivedLoading, archivedLoadError,
+        refresh, create, update, archive, reactivate, refreshArchived, getBalance,
     };
 }

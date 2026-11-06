@@ -4,7 +4,7 @@ use crate::{
     infrastructure::database::Database,
 };
 
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::{OptionalExtension, Row, TransactionBehavior, params};
 use uuid::Uuid;
 
 pub struct SqliteAccountRepository<'a> {
@@ -220,44 +220,86 @@ impl AccountRepository for SqliteAccountRepository<'_> {
             .map(Some)
             .map_err(Self::map_database_error)
     }
-    fn archive(&self, id: &str) -> Result<Option<Account>, AccountRepositoryError> {
-        let connection = self
+    fn archive(
+        &self,
+        id: &str,
+        expected_balance_minor: i64,
+    ) -> Result<Option<Account>, AccountRepositoryError> {
+        let mut connection = self
             .database
             .connection()
             .lock()
             .map_err(|_| AccountRepositoryError::ConnectionPoisoned)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(Self::map_database_error)?;
+        let is_active: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                SELECT 1 FROM accounts
+                WHERE id = ?1 AND archived_at IS NULL
+            )",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(Self::map_database_error)?;
 
-        let affected = connection
+        if !is_active {
+            return Ok(None);
+        }
+
+        let actual_balance_minor: i64 = transaction
+            .query_row(
+                "
+            SELECT COALESCE(SUM(ae.amount_minor), 0)
+            FROM account_entries ae
+            INNER JOIN financial_transactions ft
+                ON ft.id = ae.transaction_id
+            WHERE ae.account_id = ?1
+              AND ft.status = 'posted'
+            ",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(Self::map_database_error)?;
+
+        if actual_balance_minor != expected_balance_minor {
+            return Err(AccountRepositoryError::BalanceChanged {
+                expected_balance_minor,
+                actual_balance_minor,
+            });
+        }
+
+        transaction
             .execute(
                 "
-        UPDATE accounts
-        SET
-            archived_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?1
-          AND archived_at IS NULL
-        ",
+            UPDATE accounts
+            SET
+                archived_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?1
+              AND archived_at IS NULL
+            ",
                 [id],
             )
             .map_err(Self::map_database_error)?;
 
-        if affected == 0 {
-            return Ok(None);
-        }
+        let account = transaction
+            .query_row(
+                "
+            SELECT
+                id, name, account_type, institution_name, currency_code, notes, created_at, updated_at, archived_at
+            FROM accounts
+            WHERE id = ?1
+            ",
+                [id],
+                Self::map_row,
+            )
+            .map_err(Self::map_database_error)?;
 
-        let mut statement = connection.prepare(
-        "
-        SELECT
-            id, name, account_type, institution_name, currency_code, notes, created_at, updated_at, archived_at
-        FROM accounts
-        WHERE id = ?1
-        ",)
-    .map_err(Self::map_database_error)?;
+        transaction.commit().map_err(Self::map_database_error)?;
 
-        statement
-            .query_row([id], Self::map_row)
-            .map(Some)
-            .map_err(Self::map_database_error)
+        Ok(Some(account))
     }
     fn reactivate(&self, id: &str) -> Result<Option<Account>, AccountRepositoryError> {
         let connection = self
@@ -297,6 +339,56 @@ impl AccountRepository for SqliteAccountRepository<'_> {
             .query_row([id], Self::map_row)
             .map(Some)
             .map_err(Self::map_database_error)
+    }
+    fn list_archived(&self) -> Result<Vec<Account>, AccountRepositoryError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| AccountRepositoryError::ConnectionPoisoned)?;
+
+        let mut statement = connection
+            .prepare(
+                "
+            SELECT
+                id, name, account_type, institution_name, currency_code,  notes, created_at, updated_at, archived_at
+            FROM accounts
+            WHERE archived_at IS NOT NULL
+            ORDER BY name COLLATE NOCASE ASC
+            ",
+            )
+            .map_err(Self::map_database_error)?;
+
+        let rows = statement
+            .query_map([], Self::map_row)
+            .map_err(Self::map_database_error)?;
+
+        rows.collect::<rusqlite::Result<Vec<Account>>>()
+            .map_err(Self::map_database_error)
+    }
+    fn get_balance_minor(&self, account_id: &str) -> Result<i64, AccountRepositoryError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| AccountRepositoryError::ConnectionPoisoned)?;
+
+        let balance = connection
+            .query_row(
+                "
+                     SELECT COALESCE(SUM(ae.amount_minor), 0)
+                    FROM account_entries ae
+                    INNER JOIN financial_transactions ft
+                        ON ft.id = ae.transaction_id
+                    WHERE ae.account_id = ?1
+                    AND ft.status = 'posted'
+                    ",
+                [account_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(Self::map_database_error)?;
+
+        Ok(balance)
     }
 }
 
@@ -418,59 +510,185 @@ mod tests {
         assert_eq!(transaction_count, 0);
     }
     #[test]
-fn updates_archives_and_reactivates_account() {
-    let database = setup();
-    let repository = SqliteAccountRepository::new(&database);
-    let account = new_account();
-    let created = repository
-        .create(&account)
-        .expect("Account creation failed");
-    let update = UpdateAccount::new(
-        "Personal M-Pesa".to_string(),
-        Some("Safaricom".to_string()),
-        Some("Primary mobile money account".to_string()),
-    )
-    .unwrap();
-    let updated = repository
-        .update(&created.id, &update)
-        .expect("Account update failed")
-        .expect("Account should exist");
+    fn updates_archives_and_reactivates_account() {
+        let database = setup();
+        let repository = SqliteAccountRepository::new(&database);
+        let account = new_account();
+        let created = repository
+            .create(&account)
+            .expect("Account creation failed");
+        let update = UpdateAccount::new(
+            "Personal M-Pesa".to_string(),
+            Some("Safaricom".to_string()),
+            Some("Primary mobile money account".to_string()),
+        )
+        .unwrap();
+        let updated = repository
+            .update(&created.id, &update)
+            .expect("Account update failed")
+            .expect("Account should exist");
 
-    assert_eq!(updated.name, "Personal M-Pesa");
-    assert_eq!(
-        updated.notes.as_deref(),
-        Some("Primary mobile money account")
-    );
-    assert!(!updated.is_archived());
+        assert_eq!(updated.name, "Personal M-Pesa");
+        assert_eq!(
+            updated.notes.as_deref(),
+            Some("Primary mobile money account")
+        );
+        assert!(!updated.is_archived());
 
-    let archived = repository
-        .archive(&created.id)
-        .expect("Archiving failed")
-        .expect("Account should exist");
+        let archived = repository
+            .archive(&created.id,0)
+            .expect("Archiving failed")
+            .expect("Account should exist");
 
-    assert!(archived.is_archived());
+        assert!(archived.is_archived());
 
-    let active_accounts = repository
-        .list_active()
-        .expect("Listing active accounts failed");
+        let active_accounts = repository
+            .list_active()
+            .expect("Listing active accounts failed");
 
-    assert!(active_accounts.is_empty());
-    assert!(
-        repository.update(&created.id, &update).unwrap().is_none()
-    );
+        assert!(active_accounts.is_empty());
+        assert!(repository.update(&created.id, &update).unwrap().is_none());
 
-    let reactivated = repository
-        .reactivate(&created.id)
-        .expect("Reactivation failed")
-        .expect("Account should exist");
+        let reactivated = repository
+            .reactivate(&created.id)
+            .expect("Reactivation failed")
+            .expect("Account should exist");
 
-    assert!(!reactivated.is_archived());
+        assert!(!reactivated.is_archived());
 
-    let active_accounts = repository
-        .list_active()
-        .expect("Listing active accounts failed");
+        let active_accounts = repository
+            .list_active()
+            .expect("Listing active accounts failed");
 
-    assert_eq!(active_accounts.len(), 1);
-    assert_eq!(active_accounts[0].id, created.id);
-}
+        assert_eq!(active_accounts.len(), 1);
+        assert_eq!(active_accounts[0].id, created.id);
+    }
+    #[test]
+    fn lists_only_archived_accounts() {
+        let database = setup();
+        let repository = SqliteAccountRepository::new(&database);
+        let first = repository
+            .create(&new_account())
+            .expect("First account creation failed");
+        let second = repository
+            .create(
+                &NewAccount::new(
+                    "Equity Personal".to_string(),
+                    AccountType::Bank,
+                    Some("Equity Bank".to_string()),
+                    None,
+                )
+                .unwrap(),
+            )
+            .expect("Second account creation failed");
+
+        repository.archive(&first.id,0).expect("Archiving failed");
+
+        let archived = repository
+            .list_archived()
+            .expect("Listing archived accounts failed");
+
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].id, first.id);
+        assert_ne!(archived[0].id, second.id);
+    }
+    #[test]
+    fn returns_zero_balance_for_account_without_entries() {
+        let database = setup();
+        let repository = SqliteAccountRepository::new(&database);
+        let account = repository
+            .create(&new_account())
+            .expect("Account creation failed");
+        let balance = repository
+            .get_balance_minor(&account.id)
+            .expect("Balance retrieval failed");
+
+        assert_eq!(balance, 0);
+    }
+    #[test]
+    fn calculates_balance_from_posted_entries_only() {
+        let database = setup();
+        let repository = SqliteAccountRepository::new(&database);
+        let account = new_account().with_opening_balance(
+            OpeningBalance::new(250_000, "2026-11-05T10:00:00+03:00".to_string()).unwrap(),
+        );
+        let created = repository
+            .create(&account)
+            .expect("Account creation failed");
+
+        {
+            let connection = database.connection().lock().unwrap();
+
+            connection
+                .execute(
+                    "
+            INSERT INTO financial_transactions (
+                id, transaction_type, amount_minor, currency_code, occurred_at, description, source_type
+            )
+            VALUES (?1, 'income', 50000, 'KES', ?2, 'Test income', 'manual')
+            ",
+                    ["test-income-1", "2026-11-05T11:00:00.000Z"],
+                )
+                .unwrap();
+
+            connection
+                .execute(
+                    "
+            INSERT INTO account_entries (id, transaction_id, account_id, amount_minor, entry_type)
+            VALUES ('test-entry-1', 'test-income-1', ?1, 50000, 'normal')
+            ",
+                    [&created.id],
+                )
+                .unwrap();
+
+            connection
+                .execute(
+                    "
+            INSERT INTO financial_transactions ( id, transaction_type, amount_minor, currency_code, occurred_at, description, source_type)
+            VALUES (?1, 'expense', 25000, 'KES', ?2, 'Test expense', 'manual')
+            ",
+                    ["test-expense-1", "2026-11-05T12:00:00.000Z"],
+                )
+                .unwrap();
+
+            connection
+                .execute(
+                    "
+            INSERT INTO account_entries (id, transaction_id, account_id, amount_minor, entry_type)
+            VALUES ('test-entry-2', 'test-expense-1', ?1, -25000, 'normal')
+            ",
+                    [&created.id],
+                )
+                .unwrap();
+        }
+
+        let balance = repository
+            .get_balance_minor(&created.id)
+            .expect("Balance retrieval failed");
+
+        assert_eq!(balance, 275_000);
+
+        {
+            let connection = database.connection().lock().unwrap();
+
+            connection
+                .execute(
+                    "
+                    UPDATE financial_transactions
+                    SET
+                        status = 'voided',
+                        voided_at = '2026-11-05T13:00:00.000Z'
+                    WHERE id = ?1
+                    ",
+                    ["test-income-1"],
+                )
+                .unwrap();
+        }
+
+        let balance = repository
+            .get_balance_minor(&created.id)
+            .expect("Balance retrieval failed");
+
+        assert_eq!(balance, 225_000);
+    }
 }
