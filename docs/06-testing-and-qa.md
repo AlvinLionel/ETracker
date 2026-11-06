@@ -584,6 +584,8 @@ The current regression suite compares generic mapped imports, classifies unique 
 
 ## 7. Budgeting and Savings Testing
 
+The implemented initial budget slice verifies independent monthly snapshots, active category validation, uniqueness of category plan lines, month bounds, and actual expense totals derived only from posted transactions inside the budget period. Frontend coverage verifies the performance view and monthly budget creation action.
+
 ### 7.1 Budget Template Tests
 
 **QA-BUD-001 — Template creation**

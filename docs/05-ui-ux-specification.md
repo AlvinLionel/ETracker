@@ -534,6 +534,8 @@ The workspace should identify unfinished batches and allow the user to resume or
 
 ## 8. Budgeting Screen
 
+The initial budgeting workspace supports reusable templates, planned income/expense/savings lines and creation of an independent monthly snapshot. The monthly view shows planned amounts and posted actual expenses by category. Template editing, monthly instance editing and savings goal/contribution workflows remain in progress.
+
 ### 8.1 Purpose
 
 The budgeting screen supports financial planning and comparison between planned and actual activity.

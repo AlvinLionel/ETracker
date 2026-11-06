@@ -14,7 +14,7 @@ The following items represent functionality and engineering work that has not ye
 |---|---|---|---|
 | OW-004 | Imports | Add local OCR for scanned PDF statements | Pending |
 | OW-006 | Imports | Verify provider statement formats and add sanitized fixtures before claiming provider parser support | Pending |
-| OW-007 | Planning | Implement budgets, savings goals and subscriptions | Pending |
+| OW-007 | Planning | Complete budget editing/history, savings goal progress/contributions and subscription workflows | In progress |
 | OW-008 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
 | OW-009 | Security | Review Content Security Policy and local data protection before release | Pending |
 | OW-010 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
