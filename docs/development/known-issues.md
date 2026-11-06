@@ -12,16 +12,16 @@ The following items represent functionality and engineering work that has not ye
 
 | ID | Area | Outstanding work | Status |
 |---|---|---|---|
-| OW-001 | Transactions | Add frontend regression coverage and additional rollback tests for reversals/transfers | Pending |
-| OW-002 | Transactions | Define safe edit behavior for historical allocations assigned to archived categories | Pending |
-| OW-003 | Imports | Persist source file bytes or stable content hashes and allow correction of staged rows | Pending |
-| OW-004 | Imports | Implement multi-factor duplicate review, reconciliation and atomic finalization | Pending |
-| OW-005 | Imports | Verify provider statement formats and add sanitized fixtures before claiming provider parser support | Pending |
-| OW-006 | Planning | Implement budgets, savings goals and subscriptions | Pending |
-| OW-007 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
-| OW-008 | Security | Review Content Security Policy and local data protection before release | Pending |
-| OW-009 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
-| OW-010 | Release | Decide licensing and installer/distribution policies | Pending |
+| OW-003 | Imports | Preserve uploaded source files and calculate stable content hashes | Pending |
+| OW-004 | Imports | Implement statement opening/closing balance reconciliation | Pending |
+| OW-005 | Imports | Add confirmed category allocation review and suggestion controls to imports | Pending |
+| OW-006 | Imports | Verify provider statement formats and add sanitized fixtures before claiming provider parser support | Pending |
+| OW-011 | Imports | Compare revised statements and provide controlled keep, replace, merge and individual-review choices | Pending |
+| OW-007 | Planning | Implement budgets, savings goals and subscriptions | Pending |
+| OW-008 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
+| OW-009 | Security | Review Content Security Policy and local data protection before release | Pending |
+| OW-010 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
+| OW-012 | Release | Decide licensing and installer/distribution policies | Pending |
 
 ## 3. Configuration Review Items
 

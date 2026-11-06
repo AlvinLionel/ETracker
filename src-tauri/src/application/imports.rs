@@ -29,6 +29,8 @@ pub trait ImportRepository {
         transaction_type: &str,
         description: Option<&str>,
     ) -> Result<(), ImportError>;
+    fn review_record(&self, record_id: &str, keep: bool) -> Result<(), ImportError>;
+    fn finalize(&self, batch_id: &str) -> Result<usize, ImportError>;
 }
 pub struct ImportService<R: ImportRepository> {
     repository: R,
@@ -65,5 +67,11 @@ impl<R: ImportRepository> ImportService<R> {
         }
         self.repository
             .correct_record(id, date, amount, kind, description)
+    }
+    pub fn review_record(&self, id: &str, keep: bool) -> Result<(), ImportError> {
+        self.repository.review_record(id, keep)
+    }
+    pub fn finalize(&self, id: &str) -> Result<usize, ImportError> {
+        self.repository.finalize(id)
     }
 }

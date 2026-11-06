@@ -233,12 +233,6 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         if currency != item.currency_code {
             return Err(TransactionRepositoryError::CurrencyMismatch);
         }
-        for allocation in &item.allocations {
-            let valid:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)",params![allocation.category_id,item.transaction_type.as_str()],|r|r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
-            if !valid {
-                return Err(TransactionRepositoryError::InvalidCategory);
-            }
-        }
         let old_allocations: Vec<(String, i64)> = {
             let mut stmt=tx.prepare("SELECT category_id,amount_minor FROM category_allocations WHERE transaction_id=?1").map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
             stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -246,6 +240,16 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
         };
+        for allocation in &item.allocations {
+            let valid: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories c WHERE c.id=?1 AND c.category_type=?2 AND (c.archived_at IS NULL OR EXISTS(SELECT 1 FROM category_allocations ca WHERE ca.transaction_id=?3 AND ca.category_id=c.id AND ca.amount_minor=?4)))",
+                params![allocation.category_id, item.transaction_type.as_str(), id, allocation.amount_minor],
+                |r| r.get(0),
+            ).map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+            if !valid {
+                return Err(TransactionRepositoryError::InvalidCategory);
+            }
+        }
         let previous = serde_json::json!({"account_id":old_account,"amount_minor":old_amount,"currency_code":old_currency,"description":old_description,"notes":old_notes,"occurred_at":old_date,"allocations":old_allocations});
         let new_values = serde_json::json!({"account_id":item.account_id,"amount_minor":item.amount_minor,"currency_code":item.currency_code,"description":item.description,"notes":item.notes,"occurred_at":item.occurred_at,"allocations":item.allocations.iter().map(|a|serde_json::json!({"category_id":a.category_id,"amount_minor":a.amount_minor})).collect::<Vec<_>>()});
         tx.execute("UPDATE financial_transactions SET amount_minor=?1,currency_code=?2,occurred_at=?3,description=?4,notes=?5,updated_at=CURRENT_TIMESTAMP WHERE id=?6",params![item.amount_minor,item.currency_code,item.occurred_at,item.description,item.notes,id]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
@@ -630,6 +634,50 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
+        assert_eq!(amount, 1200);
+    }
+
+    #[test]
+    fn edit_preserves_unchanged_archived_category_but_cannot_reassign_it() {
+        let db = db();
+        account(&db, "a");
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO categories(id,name,category_type) VALUES ('food','Food','expense')",
+                [],
+            )
+            .unwrap();
+        let repository = SqliteTransactionRepository::new(&db);
+        let mut original = input("a", TransactionType::Expense);
+        original.allocations = vec![Allocation {
+            category_id: "food".into(),
+            amount_minor: 1200,
+        }];
+        let id = repository.create(&original).unwrap();
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE categories SET archived_at=CURRENT_TIMESTAMP WHERE id='food'",
+                [],
+            )
+            .unwrap();
+        let mut metadata_edit = original.clone();
+        metadata_edit.description = Some("Updated memo".into());
+        repository.update(&id, &metadata_edit).unwrap();
+        let mut changed_allocation = original;
+        changed_allocation.allocations[0].amount_minor = 1000;
+        changed_allocation.allocations.push(Allocation {
+            category_id: "new".into(),
+            amount_minor: 200,
+        });
+        assert!(matches!(
+            repository.update(&id, &changed_allocation),
+            Err(TransactionRepositoryError::InvalidCategory)
+        ));
+        let amount: i64 = db.connection().lock().unwrap().query_row("SELECT amount_minor FROM category_allocations WHERE transaction_id=?1 AND category_id='food'", [&id], |r|r.get(0)).unwrap();
         assert_eq!(amount, 1200);
     }
 

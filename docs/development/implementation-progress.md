@@ -4,11 +4,11 @@
 
 ## 1. Project Status
 
-**Current phase:** Transaction Management
+**Current phase:** Statement Imports
 
-The Tauri, React, Rust, SQLite and account-management foundation is implemented. Transaction workflows now include manual income/expense, category allocations, controlled edits with audit history, voids, reversals, and account transfers with separate fees. Transaction Management is awaiting a final verification pass and fuller frontend regression coverage before it can be marked complete.
+The Tauri, React, Rust, SQLite and account-management foundation is implemented. Phase A — Transaction Management is complete and verified. Work has advanced into Phase B — Statement Imports.
 
-Phase B is underway. Migration 0002 adds persistent batches, staged records and import logs. A generic CSV path supports user-selected date, amount and description columns, an explicit positive-amount direction, and ISO-date or RFC 3339 date formats. Parsed rows persist across restarts and invalid/uncertain values remain staged. Provider-specific parsing, correction controls, duplicate matching, reconciliation and finalization remain outstanding.
+Phase B is underway. Migration 0002 adds persistent batches, staged records and import logs. A generic CSV path supports user-selected date, amount and description columns, an explicit positive-amount direction, and ISO-date or RFC 3339 date formats. Invalid or uncertain rows remain staged; users can correct or review records, inspect processing logs, identify possible duplicates, and atomically finalize reviewed batches into the ledger. Duplicate matches are conservatively flagged for manual review. Provider-specific parsing, source-file preservation, statement reconciliation calculations, revised-statement comparison, and import category suggestions remain outstanding.
 
 ## 2. Completed Milestones
 
@@ -83,29 +83,30 @@ Phase B is underway. Migration 0002 adds persistent batches, staged records and 
 - [x] Void manual transactions with a required reason; posted-balance queries exclude them.
 - [x] Create linked reversal entries atomically and prevent duplicate reversal through the schema constraint.
 - [x] Transfer funds atomically between active same-currency accounts, with an optional separate expense transaction for the fee.
+- [x] Preserve existing allocations to archived categories during edits only when their category and amount remain unchanged; prevent reassignment to archived categories.
+- [x] Verify transaction balance, audit, rollback, reversal, void and transfer paths with Rust repository tests.
+- [x] Add transaction UI regression coverage for uncategorized and split-allocation workflows.
+- [x] Complete Phase A verification: `cargo test` passed 36 tests; `npm run test:run` passed 17 tests; `npm run build` passed.
 
 ## 3. Current Implementation State
 
-The application has an operational Tauri/React/Rust/SQLite foundation and account management. Manual income and expense transactions can be recorded and reviewed locally. Account balances derive from ledger entries.
-
-The testing tools already configured are Rust's built-in test framework, Vitest and React Testing Library. Split allocation persistence exists, but the current transaction UI only creates uncategorized transactions. Transaction editing, voiding, reversals and transfers have not been implemented.
+The application has an operational Tauri/React/Rust/SQLite foundation and account management. Account balances derive from posted ledger entries. Transaction workflows support manual income and expense entry, category splits, history and filters, controlled edits with audit history, voids, reversals, and transfers with separate fee expenses. The import workflow persists workspaces and staged CSV records, supports correction and explicit review decisions, exposes batch logs and atomically posts finalized records.
 
 ## 4. Verification on 2026-11-06
 
-- `cargo test --manifest-path src-tauri/Cargo.toml` — passed, 20 library tests; 0 failures.
-- `cargo check --manifest-path src-tauri/Cargo.toml` — passed with existing dead-code warnings and incremental-cache hard-link warnings.
-- `npm run test:run` — passed, 13 tests across 2 files.
-- `npm run build` — passed after removing the unused `formatKES` helper in `AccountsPage.tsx` that caused TS6133.
-- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` initially reported formatting differences. `cargo fmt` was run; existing account and infrastructure formatting-only changes were restored manually. Run the check again before future commits.
+- Earlier foundation checks: `cargo test` passed 20 library tests, `npm run test:run` passed 13 tests across 2 files, and `npm run build` passed after fixing the unused `formatKES` helper in `AccountsPage.tsx`.
+- Current complete workflow checks: `cargo test` passed 36 library tests; `npm run test:run` passed 17 tests across 4 files; `npm run build` passed. `cargo fmt -- --check` passed. Rust reports existing dead-code warnings and Windows incremental-cache hard-link warnings.
 
-The continued Phase A implementation adds repository tests for category filtering, audited edits, edit eligibility, void balance exclusion, reversal offsetting, and transfer/fee accounting. The latest Rust run passed 26 library tests before the latest small changes; rerun all checks before commit. Frontend tests now cover uncategorized entry and split-allocation reconciliation. Transaction Management is not yet marked complete: finish verification, add remaining failure-path coverage, and resolve how edits preserve historical allocations assigned to archived categories.
+Phase A repository tests cover category filtering, archived-category preservation during edits, audited updates, edit eligibility, void balance exclusion, reversal offsetting, transfer/fee accounting, and atomic rollback. Phase B tests cover persistent staging, quoted CSV parsing, uncertain rows, correction audit, duplicate candidates including corrected-row rechecks, review gating, one-shot finalization and rollback after an injected ledger failure. Frontend tests cover CSV workspace mapping and log review. Verification after these changes: `cargo test` passed 36 tests, `npm run test:run` passed 17 tests, `npm run build` passed and `cargo fmt -- --check` passed.
 
 ## 5. Immediate Next Steps
 
-1. Add dedicated frontend transaction workflow tests and test reversal/transfer failure rollback.
-2. Resolve how edits preserve existing allocations when their categories have since been archived.
-3. Complete Phase A verification and update acceptance documentation.
-4. Proceed into Phase B persistent statement import staging and parsing.
+1. Persist source files and content hashes with a clear local storage lifecycle.
+2. Add statement opening/closing balance inputs and reconciliation calculations, retaining the approved unavailable outcome when statement data is insufficient.
+3. Add statement import categorization review and category suggestions that always require confirmation.
+4. Obtain sanitized provider samples before implementing or claiming M-Pesa or institution-specific bank parsers.
+5. Implement revised-statement comparison and controlled resolution workflows.
+6. Continue automatically into Phase C — Financial Planning when Phase B is genuinely complete.
 
 ## 6. Development Tracking
 

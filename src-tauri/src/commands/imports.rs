@@ -1,7 +1,9 @@
 use crate::{
     application::imports::{CsvImportMapping, ImportService, NewImportBatch},
     infrastructure::database::Database,
-    persistence::imports::{ImportBatchRecord, SqliteImportRepository, StagedImportRecord},
+    persistence::imports::{
+        ImportBatchRecord, ImportLogRecord, SqliteImportRepository, StagedImportRecord,
+    },
 };
 use serde::Deserialize;
 use tauri::State;
@@ -47,6 +49,23 @@ pub fn correct_import_record(
         .map_err(|_| "The staged record could not be corrected.".into())
 }
 #[tauri::command]
+pub fn review_import_record(
+    state: State<'_, Database>,
+    record_id: String,
+    keep: bool,
+) -> Result<(), String> {
+    ImportService::new(SqliteImportRepository::new(state.inner()))
+        .review_record(&record_id, keep)
+        .map_err(|_| "The staged record could not be reviewed.".into())
+}
+#[tauri::command]
+pub fn finalize_import_batch(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<usize, String> {
+    ImportService::new(SqliteImportRepository::new(state.inner())).finalize(&batch_id).map_err(|_|"This import cannot be finalized. Resolve invalid, uncertain, duplicate, or reconciliation issues first.".into())
+}
+#[tauri::command]
 pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
     let mut reader = csv::ReaderBuilder::new()
         .flexible(false)
@@ -87,6 +106,15 @@ pub fn list_staged_import_records(
     SqliteImportRepository::new(state.inner())
         .list_records(&batch_id)
         .map_err(|_| "Staged records could not be loaded.".into())
+}
+#[tauri::command]
+pub fn list_import_logs(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<Vec<ImportLogRecord>, String> {
+    SqliteImportRepository::new(state.inner())
+        .list_logs(&batch_id)
+        .map_err(|_| "Import logs could not be loaded.".into())
 }
 #[tauri::command]
 pub fn stage_csv_import(
