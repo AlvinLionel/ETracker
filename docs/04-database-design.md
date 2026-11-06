@@ -500,7 +500,7 @@ Logs must not expose unnecessary sensitive financial information.
 
 ### 7.5 Physical schema status
 
-Migration `0002_import_staging.sql` implements persistent `import_batches`, `imported_records` and `import_logs` tables. The initial batch workspace stores account, source name/format/hash metadata, status and reconciliation outcome. Staged rows remain separate from ledger entries. Provider parsing, file-byte persistence, duplicate resolution, reconciliation calculations and atomic finalization remain unimplemented. Source-format metadata is descriptive and does not imply parser support.
+Migration `0002_import_staging.sql` implements persistent `import_batches`, `imported_records` and `import_logs` tables. The initial batch workspace stores account, source name/format/hash metadata, status and reconciliation outcome. Staged rows remain separate from ledger entries. A generic mapped CSV parser stages records using user-selected columns, a selected positive-amount direction, and ISO-date or RFC 3339 date formats. Quoted CSV fields use the `csv` crate. Provider-specific parsing, source file-byte persistence, duplicate resolution, reconciliation calculations, staged-row correction and atomic finalization remain unimplemented. Source-format metadata does not imply provider parser support.
 
 ### 7.6 Reconciliation Records
 

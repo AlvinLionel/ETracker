@@ -25,6 +25,7 @@ serde_json = "1"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 uuid = { version = "1.29.0", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+csv = "1.4.0"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
