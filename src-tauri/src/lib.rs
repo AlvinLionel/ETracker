@@ -20,6 +20,8 @@ pub fn run() {
             commands::accounts::reactivate_account,
             commands::accounts::list_archived_accounts,
             commands::accounts::get_account_balance,
+            commands::transactions::create_transaction,
+            commands::transactions::list_transactions,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;

@@ -12,13 +12,6 @@ const accountTypeLabels = {
     other: "Other",
 };
 
-function formatKES(amountMinor: number): string {
-    return new Intl.NumberFormat("en-KE", {
-        style: "currency",
-        currency: "KES",
-    }).format(amountMinor / 100);
-}
-
 export default function AccountsPage() {
     const {
         accounts, archivedAccounts, isLoading, isArchivedLoading, isMutating, error, loadError, archivedLoadError,

@@ -1,12 +1,10 @@
 # ETracker — Known Issues and Outstanding Work
 
-**Last updated:** 2026-11-04
+**Last updated:** 2026-11-06
 
 ## 1. Confirmed Defects
 
-No confirmed application defects have been identified at the current development stage.
-
-The initial application scaffold has successfully built and launched.
+No open confirmed defects are currently recorded. A TypeScript build defect (unused `formatKES` helper in `AccountsPage.tsx`, TS6133) was found during transaction-slice verification and fixed in this milestone.
 
 ## 2. Outstanding Implementation Work
 
@@ -14,17 +12,16 @@ The following items represent functionality and engineering work that has not ye
 
 | ID | Area | Outstanding work | Status |
 |---|---|---|---|
-| OW-001 | Frontend | Replace the default React starter interface with ETracker's application interface | Pending |
-| OW-002 | Backend | Replace or remove the scaffold demonstration greeting command as appropriate | Pending |
-| OW-003 | Database | Integrate SQLite and establish database initialization | Pending |
-| OW-004 | Database | Implement schema migrations and repository infrastructure | Pending |
-| OW-005 | Styling | Integrate Tailwind CSS | Pending |
-| OW-006 | Architecture | Establish the agreed frontend and Rust directory structures as features are implemented | Pending |
-| OW-007 | Testing | Introduce the initial automated testing infrastructure | Pending |
-| OW-008 | Logging | Implement shared structured logging and operational event infrastructure | Pending |
-| OW-009 | Security | Establish an appropriate Content Security Policy before release | Pending |
-| OW-010 | Documentation | Finalize repository setup instructions and replace the README repository URL placeholder | Pending |
-| OW-011 | Release | Assign an appropriate software license if distribution requires one | Pending |
+| OW-001 | Transactions | Add category selection and split allocation management to the transaction interface | Pending |
+| OW-002 | Transactions | Implement transaction history editing, voiding and reversals with audit details | Pending |
+| OW-003 | Transactions | Implement atomic account transfers and separate transfer fees | Pending |
+| OW-004 | Transactions | Expand filter and rollback integration coverage | Pending |
+| OW-005 | Imports | Build persistent statement staging, parsing, duplicate review and reconciliation | Pending |
+| OW-006 | Planning | Implement budgets, savings goals and subscriptions | Pending |
+| OW-007 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
+| OW-008 | Security | Review Content Security Policy and local data protection before release | Pending |
+| OW-009 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
+| OW-010 | Release | Decide licensing and installer/distribution policies | Pending |
 
 ## 3. Configuration Review Items
 

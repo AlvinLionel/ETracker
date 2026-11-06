@@ -1,4 +1,6 @@
 import AccountsPage from "./features/accounts/AccountsPage";
+import TransactionsPage from "./features/transactions/TransactionsPage";
+import { useState } from "react";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
@@ -14,7 +16,7 @@ const navigationItems = [
 ];
 
 function App() {
-  const activePage = "Accounts";
+  const [activePage, setActivePage] = useState("Accounts");
 
   return (
     <div className="flex min-h-screen bg-[#f7f8f7] text-slate-900">
@@ -48,12 +50,12 @@ function App() {
                       const isActive = item.label === activePage;
 
                       return (
-                        <div key={item.label} aria-current={isActive ? "page" : undefined}
-                          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"}`}
+                        <button key={item.label} type="button" onClick={() => { if (item.label === "Accounts" || item.label === "Transactions") setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${item.label !== "Accounts" && item.label !== "Transactions" ? "cursor-default opacity-50" : ""}`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"}`}/>
                           {item.label}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -73,8 +75,8 @@ function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
           <div>
-            <p className="text-xs text-slate-500">Finance / Accounts</p>
-            <h2 className="text-sm font-semibold text-slate-900">Account management</h2>
+            <p className="text-xs text-slate-500">Finance / {activePage}</p>
+            <h2 className="text-sm font-semibold text-slate-900">{activePage === "Accounts" ? "Account management" : "Transaction management"}</h2>
           </div>
 
           <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5">
@@ -84,7 +86,7 @@ function App() {
         </header>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          <AccountsPage />
+          {activePage === "Accounts" ? <AccountsPage /> : <TransactionsPage />}
         </main>
       </div>
     </div>

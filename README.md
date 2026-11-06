@@ -8,11 +8,7 @@ Built with a local-first approach, ETracker is designed to keep core financial f
 
 ## Project Status
 
-Foundation initialized
-
-The initial desktop application scaffold has been created and successfully tested.
-
-Core financial features, database integration and transaction processing are still under development.
+Account management and the first manual transaction workflows are implemented. The application supports local SQLite persistence, income and expense entry, transaction history and account/date filtering. Transfers, transaction correction workflows, statement imports and planning features remain under development.
 
 ## Technology Stack
 
