@@ -8,7 +8,7 @@
 
 The Tauri, React, Rust, SQLite and account-management foundation is implemented. Phase A — Transaction Management is complete and verified. Work has advanced into Phase B — Statement Imports.
 
-Phase B is underway. Migration 0002 adds persistent batches, staged records and import logs. A generic CSV path supports user-selected date, amount and description columns, an explicit positive-amount direction, and ISO-date or RFC 3339 date formats. Invalid or uncertain rows remain staged; users can correct or review records, inspect processing logs, identify possible duplicates, and atomically finalize reviewed batches into the ledger. Duplicate matches are conservatively flagged for manual review. Provider-specific parsing, source-file preservation, statement reconciliation calculations, revised-statement comparison, and import category suggestions remain outstanding.
+Phase B is underway. Migrations 0002–0003 add persistent batches, staged records, logs and statement reconciliation data. A generic CSV path supports user-selected date, amount and description columns, an explicit positive-amount direction, and ISO-date or RFC 3339 date formats. Invalid or uncertain rows remain staged; users can correct or review records, inspect processing logs, reconcile statement opening and closing balances, identify possible duplicates, and atomically finalize reviewed batches into the ledger. Duplicate matches are conservatively flagged for manual review. Provider-specific parsing, source-file preservation, revised-statement comparison and import category suggestions remain outstanding.
 
 ## 2. Completed Milestones
 
@@ -95,18 +95,17 @@ The application has an operational Tauri/React/Rust/SQLite foundation and accoun
 ## 4. Verification on 2026-11-06
 
 - Earlier foundation checks: `cargo test` passed 20 library tests, `npm run test:run` passed 13 tests across 2 files, and `npm run build` passed after fixing the unused `formatKES` helper in `AccountsPage.tsx`.
-- Current complete workflow checks: `cargo test` passed 36 library tests; `npm run test:run` passed 21 tests across 4 files; `npm run build` passed. `cargo fmt -- --check` passed. Rust reports existing dead-code warnings and Windows incremental-cache hard-link warnings.
+- Current complete workflow checks: `cargo test` passed 38 library tests; `npm run test:run` passed 22 tests across 4 files; `npm run build` passed. `cargo fmt -- --check` passed. Rust reports existing dead-code warnings and Windows incremental-cache hard-link warnings.
 
-Phase A repository tests cover category filtering, archived-category preservation during edits, audited updates, edit eligibility, void balance exclusion, reversal offsetting, transfer/fee accounting, and atomic rollback. Frontend tests cover create, split allocation validation, edit, void confirmation, reversal confirmation, and transfer fees. Phase B tests cover persistent staging, quoted CSV parsing, uncertain rows, correction audit, duplicate candidates including corrected-row rechecks, review gating, one-shot finalization and rollback after an injected ledger failure; frontend tests cover CSV workspace mapping and log review. Verification after these changes: `cargo test` passed 36 tests, `npm run test:run` passed 21 tests, `npm run build` passed and `cargo fmt -- --check` passed.
+Phase A repository tests cover category filtering, archived-category preservation during edits, audited updates, edit eligibility, void balance exclusion, reversal offsetting, transfer/fee accounting, and atomic rollback. Frontend tests cover create, split allocation validation, edit, void confirmation, reversal confirmation, and transfer fees. Phase B tests cover persistent staging, quoted CSV parsing, uncertain rows, correction audit, duplicate candidates including corrected-row rechecks, balance reconciliation, review gating, one-shot finalization and rollback after an injected ledger failure; frontend tests cover CSV workspace mapping, reconciliation and log review. Verification after these changes: `cargo test` passed 38 tests, `npm run test:run` passed 22 tests, `npm run build` passed and `cargo fmt -- --check` passed.
 
 ## 5. Immediate Next Steps
 
 1. Persist source files and content hashes with a clear local storage lifecycle.
-2. Add statement opening/closing balance inputs and reconciliation calculations, retaining the approved unavailable outcome when statement data is insufficient.
-3. Add statement import categorization review and category suggestions that always require confirmation.
-4. Obtain sanitized provider samples before implementing or claiming M-Pesa or institution-specific bank parsers.
-5. Implement revised-statement comparison and controlled resolution workflows.
-6. Continue automatically into Phase C — Financial Planning when Phase B is genuinely complete.
+2. Add statement import category allocation review and suggestions that always require confirmation.
+3. Obtain sanitized provider samples before implementing or claiming M-Pesa or institution-specific bank parsers.
+4. Implement revised-statement comparison and controlled resolution workflows.
+5. Continue automatically into Phase C — Financial Planning when Phase B is genuinely complete.
 
 ## 6. Development Tracking
 

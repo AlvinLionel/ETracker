@@ -32,6 +32,12 @@ pub struct CorrectImportRecordRequest {
     pub transaction_type: String,
     pub description: Option<String>,
 }
+#[derive(Deserialize)]
+pub struct ReconcileImportRequest {
+    pub batch_id: String,
+    pub opening_balance_minor: Option<i64>,
+    pub closing_balance_minor: Option<i64>,
+}
 #[tauri::command]
 pub fn correct_import_record(
     state: State<'_, Database>,
@@ -63,7 +69,20 @@ pub fn finalize_import_batch(
     state: State<'_, Database>,
     batch_id: String,
 ) -> Result<usize, String> {
-    ImportService::new(SqliteImportRepository::new(state.inner())).finalize(&batch_id).map_err(|_|"This import cannot be finalized. Resolve invalid, uncertain, duplicate, or reconciliation issues first.".into())
+    let service = ImportService::new(SqliteImportRepository::new(state.inner()));
+    match service.finalize(&batch_id) {
+        Ok(count) => Ok(count),
+        Err(_) => {
+            let _ = service.record_failure(
+                &batch_id,
+                None,
+                "finalize",
+                "Import finalization was blocked or rolled back",
+                "Resolve validation, duplicate review and reconciliation issues, then try again.",
+            );
+            Err("This import cannot be finalized. Resolve invalid, uncertain, duplicate, or reconciliation issues first.".into())
+        }
+    }
 }
 #[tauri::command]
 pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
@@ -117,6 +136,23 @@ pub fn list_import_logs(
         .map_err(|_| "Import logs could not be loaded.".into())
 }
 #[tauri::command]
+pub fn get_import_reconciliation(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<crate::application::imports::ImportReconciliation, String> {
+    SqliteImportRepository::new(state.inner())
+        .get_reconciliation(&batch_id)
+        .map_err(|_| "Reconciliation could not be loaded.".into())
+}
+#[tauri::command]
+pub fn reconcile_import_batch(
+    state: State<'_, Database>,
+    request: ReconcileImportRequest,
+) -> Result<crate::application::imports::ImportReconciliation, String> {
+    let service = ImportService::new(SqliteImportRepository::new(state.inner()));
+    service.reconcile(&request.batch_id, request.opening_balance_minor, request.closing_balance_minor).map_err(|_| "Reconciliation could not be completed. Ensure all staged rows have valid dates, amounts and types.".into())
+}
+#[tauri::command]
 pub fn stage_csv_import(
     state: State<'_, Database>,
     request: StageCsvRequest,
@@ -128,9 +164,18 @@ pub fn stage_csv_import(
         positive_amount_type: request.positive_amount_type,
         date_format: request.date_format,
     };
-    SqliteImportRepository::new(state.inner())
-        .stage_csv(&request.batch_id, &request.contents, &mapping)
-        .map_err(|_| {
-            "CSV rows could not be staged. Check the selected columns and file format.".into()
-        })
+    let repository = SqliteImportRepository::new(state.inner());
+    match repository.stage_csv(&request.batch_id, &request.contents, &mapping) {
+        Ok(count) => Ok(count),
+        Err(_) => {
+            let _ = ImportService::new(repository).record_failure(
+                &request.batch_id,
+                None,
+                "parse",
+                "CSV parsing or validation failed",
+                "Check the mapped columns, date format, and CSV structure.",
+            );
+            Err("CSV rows could not be staged. Check the selected columns and file format.".into())
+        }
+    }
 }

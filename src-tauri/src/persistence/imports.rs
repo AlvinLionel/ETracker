@@ -1,8 +1,10 @@
 use crate::{
-    application::imports::{CsvImportMapping, ImportError, ImportRepository, NewImportBatch},
+    application::imports::{
+        CsvImportMapping, ImportError, ImportReconciliation, ImportRepository, NewImportBatch,
+    },
     infrastructure::database::Database,
 };
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use uuid::Uuid;
 pub struct SqliteImportRepository<'a> {
     database: &'a Database,
@@ -69,6 +71,35 @@ impl ImportRepository for SqliteImportRepository<'_> {
         } else {
             "Staged record corrected"
         };
+        let previous_reconciliation: Option<(Option<i64>, Option<i64>)> = tx
+            .query_row(
+                "SELECT opening_balance_minor,closing_balance_minor FROM import_reconciliations WHERE batch_id=?1",
+                [&batch],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if let Some((Some(opening), Some(closing))) = previous_reconciliation {
+            match calculate_reconciliation(&tx, &batch, Some(opening), Some(closing)) {
+                Ok(result) => {
+                    tx.execute("UPDATE import_reconciliations SET expected_closing_balance_minor=?1,difference_minor=?2,outcome=?3,explanation=?4,updated_at=CURRENT_TIMESTAMP WHERE batch_id=?5", params![result.expected_closing_balance_minor,result.difference_minor,result.outcome,result.explanation,batch]).map_err(|e|ImportError::Database(e.to_string()))?;
+                    tx.execute(
+                        "UPDATE import_batches SET reconciliation_status=?1 WHERE id=?2",
+                        params![result.outcome, batch],
+                    )
+                    .map_err(|e| ImportError::Database(e.to_string()))?;
+                }
+                Err(ImportError::InvalidBatch) => {
+                    tx.execute("UPDATE import_reconciliations SET expected_closing_balance_minor=NULL,difference_minor=NULL,outcome='unavailable',explanation='Reconciliation awaits valid values for every staged row.',updated_at=CURRENT_TIMESTAMP WHERE batch_id=?1", [&batch]).map_err(|e|ImportError::Database(e.to_string()))?;
+                    tx.execute(
+                        "UPDATE import_batches SET reconciliation_status='unavailable' WHERE id=?1",
+                        [&batch],
+                    )
+                    .map_err(|e| ImportError::Database(e.to_string()))?;
+                }
+                Err(error) => return Err(error),
+            }
+        }
         tx.execute("INSERT INTO import_logs(id,batch_id,record_id,stage,severity,message) VALUES (?1,?2,?3,'review',?4,?5)",params![Uuid::new_v4().to_string(),batch,record_id,if duplicate {"WARNING"} else {"INFO"},message]).map_err(|e|ImportError::Database(e.to_string()))?;
         tx.commit()
             .map_err(|e| ImportError::Database(e.to_string()))?;
@@ -144,6 +175,16 @@ impl ImportRepository for SqliteImportRepository<'_> {
         if unresolved > 0 {
             return Err(ImportError::InvalidBatch);
         }
+        let staged_count: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM imported_records WHERE batch_id=?1",
+                [batch_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if staged_count == 0 {
+            return Err(ImportError::InvalidBatch);
+        }
         let rows: Vec<(String, i64, String, String, Option<String>)> = {
             let mut s=tx.prepare("SELECT id,normalized_amount_minor,transaction_type,normalized_date,normalized_description FROM imported_records WHERE batch_id=?1 AND review_status<>'skipped' ORDER BY CAST(source_row_reference AS INTEGER)").map_err(|e|ImportError::Database(e.to_string()))?;
             s.query_map([batch_id], |r| {
@@ -184,6 +225,73 @@ impl ImportRepository for SqliteImportRepository<'_> {
             .map_err(|e| ImportError::Database(e.to_string()))?;
         Ok(rows.len())
     }
+
+    fn record_failure(
+        &self,
+        batch_id: &str,
+        record_id: Option<&str>,
+        stage: &str,
+        message: &str,
+        corrective_action: &str,
+    ) -> Result<(), ImportError> {
+        if !matches!(stage, "parse" | "review" | "finalize") {
+            return Err(ImportError::InvalidBatch);
+        }
+        let c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let valid: bool = c
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1 AND status='review')",
+                [batch_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if !valid {
+            return Err(ImportError::InvalidBatch);
+        }
+        c.execute("INSERT INTO import_logs(id,batch_id,record_id,stage,severity,message,corrective_action) VALUES (?1,?2,?3,?4,'ERROR',?5,?6)", params![Uuid::new_v4().to_string(), batch_id, record_id, stage, message, corrective_action]).map_err(|e|ImportError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    fn reconcile(
+        &self,
+        batch_id: &str,
+        opening: Option<i64>,
+        closing: Option<i64>,
+    ) -> Result<ImportReconciliation, ImportError> {
+        let mut c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = c
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1 AND status='review')",
+                [batch_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if !exists {
+            return Err(ImportError::InvalidBatch);
+        }
+        let result = calculate_reconciliation(&tx, batch_id, opening, closing)?;
+        tx.execute("INSERT INTO import_reconciliations(id,batch_id,opening_balance_minor,closing_balance_minor,expected_closing_balance_minor,difference_minor,outcome,explanation) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(batch_id) DO UPDATE SET opening_balance_minor=excluded.opening_balance_minor,closing_balance_minor=excluded.closing_balance_minor,expected_closing_balance_minor=excluded.expected_closing_balance_minor,difference_minor=excluded.difference_minor,outcome=excluded.outcome,explanation=excluded.explanation,updated_at=CURRENT_TIMESTAMP", params![Uuid::new_v4().to_string(),batch_id,result.opening_balance_minor,result.closing_balance_minor,result.expected_closing_balance_minor,result.difference_minor,result.outcome,result.explanation]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.execute(
+            "UPDATE import_batches SET reconciliation_status=?1 WHERE id=?2",
+            params![result.outcome, batch_id],
+        )
+        .map_err(|e| ImportError::Database(e.to_string()))?;
+        tx.execute("INSERT INTO import_logs(id,batch_id,stage,severity,message) VALUES (?1,?2,'reconciliation',?3,?4)", params![Uuid::new_v4().to_string(),batch_id,if result.outcome=="discrepancy" {"WARNING"} else {"INFO"},format!("Reconciliation outcome: {}",result.outcome)]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        Ok(result)
+    }
 }
 #[derive(serde::Serialize)]
 pub struct ImportBatchRecord {
@@ -220,6 +328,15 @@ pub struct ImportLogRecord {
     pub corrective_action: Option<String>,
 }
 impl SqliteImportRepository<'_> {
+    pub fn get_reconciliation(&self, batch_id: &str) -> Result<ImportReconciliation, ImportError> {
+        let c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        c.query_row("SELECT opening_balance_minor,closing_balance_minor,expected_closing_balance_minor,difference_minor,outcome,explanation FROM import_reconciliations WHERE batch_id=?1", [batch_id], |r|Ok(ImportReconciliation { opening_balance_minor:r.get(0)?, closing_balance_minor:r.get(1)?, expected_closing_balance_minor:r.get(2)?, difference_minor:r.get(3)?, outcome:r.get(4)?, explanation:r.get(5)? })).optional().map(|r|r.unwrap_or(ImportReconciliation{opening_balance_minor:None,closing_balance_minor:None,expected_closing_balance_minor:None,difference_minor:None,outcome:"unavailable".into(),explanation:"No statement balances provided.".into()})).map_err(|e|ImportError::Database(e.to_string()))
+    }
+
     pub fn list_logs(&self, batch_id: &str) -> Result<Vec<ImportLogRecord>, ImportError> {
         let c = self
             .database
@@ -413,6 +530,80 @@ impl SqliteImportRepository<'_> {
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| ImportError::Database(e.to_string()))
     }
+}
+fn calculate_reconciliation(
+    tx: &Transaction<'_>,
+    batch_id: &str,
+    opening: Option<i64>,
+    closing: Option<i64>,
+) -> Result<ImportReconciliation, ImportError> {
+    let (Some(opening), Some(closing)) = (opening, closing) else {
+        return Ok(ImportReconciliation {
+            opening_balance_minor: None,
+            closing_balance_minor: None,
+            expected_closing_balance_minor: None,
+            difference_minor: None,
+            outcome: "unavailable".into(),
+            explanation: "Statement opening or closing balance was not provided.".into(),
+        });
+    };
+    let invalid: i64 = tx.query_row("SELECT COUNT(*) FROM imported_records WHERE batch_id=?1 AND validation_status<>'valid'", [batch_id], |r| r.get(0)).map_err(|e| ImportError::Database(e.to_string()))?;
+    if invalid > 0 {
+        return Err(ImportError::InvalidBatch);
+    }
+    let mut stmt = tx.prepare("SELECT normalized_amount_minor,transaction_type FROM imported_records WHERE batch_id=?1 AND validation_status='valid'").map_err(|e|ImportError::Database(e.to_string()))?;
+    let rows = stmt
+        .query_map([batch_id], |r| {
+            Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<String>>(1)?))
+        })
+        .map_err(|e| ImportError::Database(e.to_string()))?;
+    let mut movement = 0i64;
+    let mut total = 0usize;
+    for row in rows {
+        let (amount, kind) = row.map_err(|e| ImportError::Database(e.to_string()))?;
+        let (Some(amount), Some(kind)) = (amount, kind) else {
+            return Err(ImportError::InvalidBatch);
+        };
+        if amount <= 0 {
+            return Err(ImportError::InvalidBatch);
+        }
+        let signed = match kind.as_str() {
+            "income" => amount,
+            "expense" => -amount,
+            _ => return Err(ImportError::InvalidBatch),
+        };
+        movement = movement
+            .checked_add(signed)
+            .ok_or(ImportError::InvalidBatch)?;
+        total += 1;
+    }
+    if total == 0 {
+        return Err(ImportError::InvalidBatch);
+    }
+    let expected = opening
+        .checked_add(movement)
+        .ok_or(ImportError::InvalidBatch)?;
+    let difference = closing
+        .checked_sub(expected)
+        .ok_or(ImportError::InvalidBatch)?;
+    let outcome = if difference == 0 {
+        "reconciled"
+    } else {
+        "discrepancy"
+    };
+    Ok(ImportReconciliation {
+        opening_balance_minor: Some(opening),
+        closing_balance_minor: Some(closing),
+        expected_closing_balance_minor: Some(expected),
+        difference_minor: Some(difference),
+        outcome: outcome.into(),
+        explanation: if difference == 0 {
+            "Statement closing balance matches the opening balance plus the staged movements."
+                .into()
+        } else {
+            "Statement closing balance differs from the calculated balance. Review the staged rows and statement conventions.".into()
+        },
+    })
 }
 fn parse_minor_units(raw: &str) -> Option<i64> {
     let (whole, fraction) = raw.split_once('.').unwrap_or((raw, ""));
@@ -787,5 +978,76 @@ mod tests {
         assert_eq!(status, "review");
         assert_eq!((txns, entries), (0, 0));
         assert!(!linked);
+    }
+
+    #[test]
+    fn reconciles_statement_balances_and_blocks_discrepancies() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "x.csv".into(),
+                source_format: "csv".into(),
+                source_file_hash: None,
+            })
+            .unwrap();
+        let row = staged_expense(&repo, &batch);
+        repo.review_record(&row, true).unwrap();
+        let reconciled = repo.reconcile(&batch, Some(10_000), Some(8_750)).unwrap();
+        assert_eq!(reconciled.outcome, "reconciled");
+        assert_eq!(reconciled.expected_closing_balance_minor, Some(8_750));
+        repo.correct_record(&row, "2026-11-05T00:00:00Z", 1_300, "expense", None)
+            .unwrap();
+        let discrepancy = repo.get_reconciliation(&batch).unwrap();
+        assert_eq!(discrepancy.outcome, "discrepancy");
+        assert_eq!(discrepancy.difference_minor, Some(50));
+        assert!(matches!(
+            repo.finalize(&batch),
+            Err(ImportError::InvalidBatch)
+        ));
+        let status: String = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT reconciliation_status FROM import_batches WHERE id=?1",
+                [&batch],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "discrepancy");
+    }
+
+    #[test]
+    fn reconciliation_rejects_unvalidated_rows_and_can_be_unavailable() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "x.csv".into(),
+                source_format: "csv".into(),
+                source_file_hash: None,
+            })
+            .unwrap();
+        let mapping = CsvImportMapping {
+            date_column: "d".into(),
+            description_column: None,
+            amount_column: "a".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "iso_date".into(),
+        };
+        repo.stage_csv(&batch, "d,a\nbad,12.00\n", &mapping)
+            .unwrap();
+        assert!(matches!(
+            repo.reconcile(&batch, Some(10_000), Some(8_800)),
+            Err(ImportError::InvalidBatch)
+        ));
+        let unavailable = repo.reconcile(&batch, None, None).unwrap();
+        assert_eq!(unavailable.outcome, "unavailable");
+        assert!(unavailable.difference_minor.is_none());
     }
 }

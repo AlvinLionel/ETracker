@@ -13,6 +13,15 @@ pub struct CsvImportMapping {
     pub positive_amount_type: String,
     pub date_format: String,
 }
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ImportReconciliation {
+    pub opening_balance_minor: Option<i64>,
+    pub closing_balance_minor: Option<i64>,
+    pub expected_closing_balance_minor: Option<i64>,
+    pub difference_minor: Option<i64>,
+    pub outcome: String,
+    pub explanation: String,
+}
 #[derive(Debug)]
 pub enum ImportError {
     Database(String),
@@ -31,6 +40,20 @@ pub trait ImportRepository {
     ) -> Result<(), ImportError>;
     fn review_record(&self, record_id: &str, keep: bool) -> Result<(), ImportError>;
     fn finalize(&self, batch_id: &str) -> Result<usize, ImportError>;
+    fn record_failure(
+        &self,
+        batch_id: &str,
+        record_id: Option<&str>,
+        stage: &str,
+        message: &str,
+        corrective_action: &str,
+    ) -> Result<(), ImportError>;
+    fn reconcile(
+        &self,
+        batch_id: &str,
+        opening: Option<i64>,
+        closing: Option<i64>,
+    ) -> Result<ImportReconciliation, ImportError>;
 }
 pub struct ImportService<R: ImportRepository> {
     repository: R,
@@ -73,5 +96,27 @@ impl<R: ImportRepository> ImportService<R> {
     }
     pub fn finalize(&self, id: &str) -> Result<usize, ImportError> {
         self.repository.finalize(id)
+    }
+    pub fn record_failure(
+        &self,
+        batch_id: &str,
+        record_id: Option<&str>,
+        stage: &str,
+        message: &str,
+        corrective_action: &str,
+    ) -> Result<(), ImportError> {
+        self.repository
+            .record_failure(batch_id, record_id, stage, message, corrective_action)
+    }
+    pub fn reconcile(
+        &self,
+        batch_id: &str,
+        opening: Option<i64>,
+        closing: Option<i64>,
+    ) -> Result<ImportReconciliation, ImportError> {
+        if opening.is_some() != closing.is_some() {
+            return Err(ImportError::InvalidBatch);
+        }
+        self.repository.reconcile(batch_id, opening, closing)
     }
 }
