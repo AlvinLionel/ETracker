@@ -29,6 +29,7 @@ pub fn run() {
             commands::imports::list_import_batches,
             commands::imports::stage_csv_import,
             commands::imports::csv_headers,
+            commands::imports::correct_import_record,
             commands::imports::list_staged_import_records,
             commands::transactions::list_transactions,
             commands::transactions::list_active_categories,

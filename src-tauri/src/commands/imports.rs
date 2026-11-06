@@ -22,6 +22,30 @@ pub struct StageCsvRequest {
     pub positive_amount_type: String,
     pub date_format: String,
 }
+#[derive(Deserialize)]
+pub struct CorrectImportRecordRequest {
+    pub record_id: String,
+    pub normalized_date: String,
+    pub amount_minor: i64,
+    pub transaction_type: String,
+    pub description: Option<String>,
+}
+#[tauri::command]
+pub fn correct_import_record(
+    state: State<'_, Database>,
+    request: CorrectImportRecordRequest,
+) -> Result<(), String> {
+    let service = ImportService::new(SqliteImportRepository::new(state.inner()));
+    service
+        .correct_record(
+            &request.record_id,
+            &request.normalized_date,
+            request.amount_minor,
+            &request.transaction_type,
+            request.description.as_deref(),
+        )
+        .map_err(|_| "The staged record could not be corrected.".into())
+}
 #[tauri::command]
 pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
     let mut reader = csv::ReaderBuilder::new()

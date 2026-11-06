@@ -2,7 +2,7 @@ use crate::{
     application::imports::{CsvImportMapping, ImportError, ImportRepository, NewImportBatch},
     infrastructure::database::Database,
 };
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 pub struct SqliteImportRepository<'a> {
     database: &'a Database,
@@ -33,6 +33,32 @@ impl ImportRepository for SqliteImportRepository<'_> {
         connection.execute("INSERT INTO import_batches(id,account_id,source_file_name,source_file_hash,source_format) VALUES (?1,?2,?3,?4,?5)",params![id,batch.account_id,batch.source_file_name,batch.source_file_hash,batch.source_format]).map_err(|e|ImportError::Database(e.to_string()))?;
         connection.execute("INSERT INTO import_logs(id,batch_id,stage,severity,message) VALUES (?1,?2,'staging','INFO','Import batch created')",params![Uuid::new_v4().to_string(),id]).map_err(|e|ImportError::Database(e.to_string()))?;
         Ok(id)
+    }
+    fn correct_record(
+        &self,
+        record_id: &str,
+        date: &str,
+        amount_minor: i64,
+        kind: &str,
+        description: Option<&str>,
+    ) -> Result<(), ImportError> {
+        let mut c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = c
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let batch:Option<String>=tx.query_row("SELECT b.id FROM imported_records r JOIN import_batches b ON b.id=r.batch_id WHERE r.id=?1 AND b.status='review'",[record_id],|r|r.get(0)).optional().map_err(|e|ImportError::Database(e.to_string()))?;
+        let Some(batch) = batch else {
+            return Err(ImportError::InvalidBatch);
+        };
+        tx.execute("UPDATE imported_records SET normalized_date=?1,normalized_amount_minor=?2,transaction_type=?3,normalized_description=?4,validation_status='valid',review_status='corrected' WHERE id=?5",params![date,amount_minor,kind,description,record_id]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.execute("INSERT INTO import_logs(id,batch_id,record_id,stage,severity,message) VALUES (?1,?2,?3,'review','INFO','Staged record corrected')",params![Uuid::new_v4().to_string(),batch,record_id]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        Ok(())
     }
 }
 #[derive(serde::Serialize)]
@@ -337,5 +363,50 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
             .unwrap();
         assert_eq!(entries, 0);
+    }
+    #[test]
+    fn corrected_csv_record_stays_staged_and_is_audited() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "x.csv".into(),
+                source_format: "csv".into(),
+                source_file_hash: None,
+            })
+            .unwrap();
+        let mapping = CsvImportMapping {
+            date_column: "d".into(),
+            description_column: None,
+            amount_column: "a".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "iso_date".into(),
+        };
+        repo.stage_csv(&batch, "d,a\nbad,1.00\n", &mapping).unwrap();
+        let row = repo.list_records(&batch).unwrap().remove(0);
+        repo.correct_record(
+            &row.id,
+            "2026-11-06T00:00:00Z",
+            100,
+            "income",
+            Some("Corrected"),
+        )
+        .unwrap();
+        let corrected = repo.list_records(&batch).unwrap().remove(0);
+        assert_eq!(corrected.validation_status, "valid");
+        assert_eq!(corrected.review_status, "corrected");
+        let logs: i64 = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM import_logs WHERE batch_id=?1 AND stage='review'",
+                [&batch],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(logs, 1);
     }
 }

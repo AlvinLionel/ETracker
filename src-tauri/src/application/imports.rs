@@ -5,6 +5,14 @@ pub struct NewImportBatch {
     pub source_format: String,
     pub source_file_hash: Option<String>,
 }
+#[derive(Clone, Debug)]
+pub struct CsvImportMapping {
+    pub date_column: String,
+    pub description_column: Option<String>,
+    pub amount_column: String,
+    pub positive_amount_type: String,
+    pub date_format: String,
+}
 #[derive(Debug)]
 pub enum ImportError {
     Database(String),
@@ -13,6 +21,14 @@ pub enum ImportError {
 }
 pub trait ImportRepository {
     fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError>;
+    fn correct_record(
+        &self,
+        record_id: &str,
+        date: &str,
+        amount_minor: i64,
+        transaction_type: &str,
+        description: Option<&str>,
+    ) -> Result<(), ImportError>;
 }
 pub struct ImportService<R: ImportRepository> {
     repository: R,
@@ -32,5 +48,22 @@ impl<R: ImportRepository> ImportService<R> {
             return Err(ImportError::InvalidBatch);
         }
         self.repository.create_batch(batch)
+    }
+    pub fn correct_record(
+        &self,
+        id: &str,
+        date: &str,
+        amount: i64,
+        kind: &str,
+        description: Option<&str>,
+    ) -> Result<(), ImportError> {
+        if amount <= 0
+            || !matches!(kind, "income" | "expense")
+            || chrono::DateTime::parse_from_rfc3339(date).is_err()
+        {
+            return Err(ImportError::InvalidBatch);
+        }
+        self.repository
+            .correct_record(id, date, amount, kind, description)
     }
 }
