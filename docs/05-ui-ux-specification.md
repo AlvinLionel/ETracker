@@ -534,7 +534,7 @@ The workspace should identify unfinished batches and allow the user to resume or
 
 ## 8. Budgeting Screen
 
-The initial budgeting workspace supports reusable templates, planned income/expense/savings lines and creation of an independent monthly snapshot. The monthly view shows planned remaining funds and posted actual expenses by category. Template editing and monthly instance editing remain in progress.
+The budgeting workspace supports reusable template editing, planned income/expense/savings lines, independent monthly snapshots, monthly instance editing, category actuals, and planned versus actual income, expenses, savings and unallocated funds.
 
 The savings screen supports goals, target dates, manual contribution history, progress, completion/archive status, and optional account links. When a goal is linked to an account, the user can link a posted incoming transfer; the UI explains the transfer is already reflected in the account balance. Manual contributions never create ledger movements.
 
@@ -639,7 +639,7 @@ Savings progress must be traceable to recorded contributions.
 
 ### 10.1 Purpose
 
-The subscriptions screen manages recurring financial obligations, term changes, status and upcoming due reminders. A monthly projection is shown separately from actual transactions.
+The subscriptions screen manages recurring financial obligations, term changes, status and upcoming due reminders. A monthly projection is shown separately from actual transactions. Users can link an existing posted expense from the ledger as an actual payment; linking never creates a second transaction, and voided or reversed payments no longer count toward subscription totals.
 
 ### 10.2 Subscription List
 

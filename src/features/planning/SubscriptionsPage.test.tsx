@@ -20,4 +20,13 @@ describe("SubscriptionsPage", () => {
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("create_subscription", expect.objectContaining({ request: expect.objectContaining({ name: "Music", amount_minor: 999 }) })));
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_transaction", expect.anything());
   });
+  it("links an already posted expense without creating another transaction", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => command === "list_subscriptions" ? [{ id: "sub", name: "Music", description: null, amount_minor: 999, currency_code: "KES", frequency: "monthly", next_due_date: "2026-11-20", account_id: null, category_id: null, status: "active", payment_count: 0, paid_minor: 0 }] : command === "list_eligible_subscription_payments" ? [{ transaction_id: "payment", amount_minor: 999, occurred_at: "2026-11-20T08:00:00Z", description: "Music" }] : undefined);
+    render(<SubscriptionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Link posted payment" }));
+    fireEvent.change(await screen.findByLabelText("Posted payment for Music"), { target: { value: "payment" } });
+    fireEvent.click(screen.getByRole("button", { name: "Link payment" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("link_subscription_payment", { subscriptionId: "sub", transactionId: "payment" }));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_transaction", expect.anything());
+  });
 });

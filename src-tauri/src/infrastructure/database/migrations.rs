@@ -38,6 +38,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 8,
         sql: include_str!("../../../migrations/0008_savings_account_links.sql"),
     },
+    Migration {
+        version: 9,
+        sql: include_str!("../../../migrations/0009_subscription_payments.sql"),
+    },
 ];
 
 pub(super) fn run(connection: &mut Connection) -> rusqlite::Result<()> {

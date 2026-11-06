@@ -39,6 +39,14 @@ pub struct BudgetLine {
 }
 
 #[derive(Serialize)]
+pub struct BudgetTotals {
+    pub actual_income_minor: i64,
+    pub actual_expense_minor: i64,
+    pub actual_savings_minor: i64,
+    pub unallocated_minor: i64,
+}
+
+#[derive(Serialize)]
 pub struct SavingsGoal {
     pub id: String,
     pub name: String,
@@ -70,6 +78,16 @@ pub struct Subscription {
     pub account_id: Option<String>,
     pub category_id: Option<String>,
     pub status: String,
+    pub payment_count: i64,
+    pub paid_minor: i64,
+}
+
+#[derive(Serialize)]
+pub struct EligibleSubscriptionPayment {
+    pub transaction_id: String,
+    pub amount_minor: i64,
+    pub occurred_at: String,
+    pub description: Option<String>,
 }
 
 pub struct SqlitePlanningRepository<'a> {
@@ -98,6 +116,27 @@ impl<'a> SqlitePlanningRepository<'a> {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     currency_code: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn template_items(&self, template_id: &str) -> Result<Vec<PlannedItem>, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let mut statement = connection.prepare("SELECT item_type,category_id,label,amount_minor FROM budget_template_items WHERE template_id=?1 ORDER BY item_type,label COLLATE NOCASE").map_err(|e| e.to_string())?;
+        statement
+            .query_map([template_id], |r| {
+                Ok(PlannedItem {
+                    item_type: r.get(0)?,
+                    category_id: r.get(1)?,
+                    label: r.get(2)?,
+                    amount_minor: r.get(3)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -137,6 +176,49 @@ impl<'a> SqlitePlanningRepository<'a> {
         insert_items(&tx, "budget_template_items", "template_id", &id, items)?;
         tx.commit().map_err(|e| e.to_string())?;
         Ok(id)
+    }
+
+    pub fn update_template(
+        &self,
+        template_id: &str,
+        name: &str,
+        items: &[PlannedItem],
+    ) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Template name is required.".into());
+        }
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        validate_items(&connection, items)?;
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        let changed = tx
+            .execute(
+                "UPDATE budget_templates SET name=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                params![name, template_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("The budget template no longer exists.".into());
+        }
+        tx.execute(
+            "DELETE FROM budget_template_items WHERE template_id=?1",
+            [template_id],
+        )
+        .map_err(|e| e.to_string())?;
+        insert_items(
+            &tx,
+            "budget_template_items",
+            "template_id",
+            template_id,
+            items,
+        )?;
+        tx.commit().map_err(|e| e.to_string())
     }
 
     pub fn create_period(&self, template_id: &str, month: &str) -> Result<String, String> {
@@ -210,18 +292,18 @@ impl<'a> SqlitePlanningRepository<'a> {
             .connection()
             .lock()
             .map_err(|_| "Database is unavailable")?;
-        let (starts, ends): (String, String) = connection
+        let (starts, ends, currency): (String, String, String) = connection
             .query_row(
-                "SELECT starts_on,ends_on FROM budget_periods WHERE id=?1",
+                "SELECT starts_on,ends_on,currency_code FROM budget_periods WHERE id=?1",
                 [budget_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .map_err(|e| e.to_string())?
             .ok_or("The selected budget no longer exists.")?;
-        let mut statement = connection.prepare("SELECT i.id,i.item_type,i.category_id,i.label,i.amount_minor,CASE WHEN i.item_type='expense' AND i.category_id IS NOT NULL THEN COALESCE((SELECT SUM(ca.amount_minor) FROM category_allocations ca JOIN financial_transactions t ON t.id=ca.transaction_id WHERE ca.category_id=i.category_id AND t.transaction_type='expense' AND t.status='posted' AND date(t.occurred_at) BETWEEN ?2 AND ?3),0) ELSE 0 END FROM budget_period_items i WHERE i.budget_id=?1 ORDER BY i.item_type,i.label COLLATE NOCASE").map_err(|e| e.to_string())?;
+        let mut statement = connection.prepare("SELECT i.id,i.item_type,i.category_id,i.label,i.amount_minor,CASE WHEN i.item_type IN ('expense','income') AND i.category_id IS NOT NULL THEN COALESCE((SELECT SUM(ca.amount_minor) FROM category_allocations ca JOIN financial_transactions t ON t.id=ca.transaction_id WHERE ca.category_id=i.category_id AND t.transaction_type=i.item_type AND t.currency_code=?4 AND t.status='posted' AND date(t.occurred_at) BETWEEN ?2 AND ?3 AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted')),0) ELSE 0 END FROM budget_period_items i WHERE i.budget_id=?1 ORDER BY i.item_type,i.label COLLATE NOCASE").map_err(|e| e.to_string())?;
         statement
-            .query_map(params![budget_id, starts, ends], |r| {
+            .query_map(params![budget_id, starts, ends, currency], |r| {
                 Ok(BudgetLine {
                     id: r.get(0)?,
                     item_type: r.get(1)?,
@@ -236,13 +318,70 @@ impl<'a> SqlitePlanningRepository<'a> {
             .map_err(|e| e.to_string())
     }
 
+    pub fn period_totals(&self, budget_id: &str) -> Result<BudgetTotals, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let (starts, ends, currency): (String, String, String) = connection
+            .query_row(
+                "SELECT starts_on,ends_on,currency_code FROM budget_periods WHERE id=?1",
+                [budget_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("The selected budget no longer exists.")?;
+        let (income, expense, savings): (i64, i64, i64) = connection.query_row("SELECT COALESCE(SUM(CASE WHEN transaction_type='income' THEN amount_minor ELSE 0 END),0),COALESCE(SUM(CASE WHEN transaction_type='expense' THEN amount_minor ELSE 0 END),0),COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id AND g.currency_code=?3 WHERE c.contribution_date BETWEEN ?1 AND ?2 AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions linked WHERE linked.id=c.transaction_id AND linked.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=linked.id AND reversal.status='posted')))),0) FROM financial_transactions WHERE status='posted' AND currency_code=?3 AND date(occurred_at) BETWEEN ?1 AND ?2 AND transaction_type IN ('income','expense') AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=financial_transactions.id AND reversal.status='posted')", params![starts,ends,currency], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e| e.to_string())?;
+        Ok(BudgetTotals {
+            actual_income_minor: income,
+            actual_expense_minor: expense,
+            actual_savings_minor: savings,
+            unallocated_minor: income - expense - savings,
+        })
+    }
+
+    pub fn update_period_items(
+        &self,
+        budget_id: &str,
+        items: &[PlannedItem],
+    ) -> Result<(), String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        validate_items(&connection, items)?;
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM budget_periods WHERE id=?1)",
+                [budget_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !exists {
+            return Err("The budget period no longer exists.".into());
+        }
+        tx.execute(
+            "DELETE FROM budget_period_items WHERE budget_id=?1",
+            [budget_id],
+        )
+        .map_err(|e| e.to_string())?;
+        insert_items(&tx, "budget_period_items", "budget_id", budget_id, items)?;
+        tx.commit().map_err(|e| e.to_string())
+    }
+
     pub fn list_savings_goals(&self) -> Result<Vec<SavingsGoal>, String> {
         let connection = self
             .database
             .connection()
             .lock()
             .map_err(|_| "Database is unavailable")?;
-        let mut statement = connection.prepare("SELECT g.id,g.name,g.target_amount_minor,COALESCE(SUM(c.amount_minor),0),g.currency_code,g.target_date,g.status,g.account_id FROM savings_goals g LEFT JOIN savings_contributions c ON c.goal_id=g.id GROUP BY g.id ORDER BY CASE g.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,g.created_at DESC").map_err(|e| e.to_string())?;
+        let mut statement = connection.prepare("SELECT g.id,g.name,g.target_amount_minor,COALESCE(SUM(c.amount_minor),0),g.currency_code,g.target_date,g.status,g.account_id FROM savings_goals g LEFT JOIN savings_contributions c ON c.goal_id=g.id AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted'))) GROUP BY g.id ORDER BY CASE g.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,g.created_at DESC").map_err(|e| e.to_string())?;
         statement
             .query_map([], |r| {
                 Ok(SavingsGoal {
@@ -433,7 +572,7 @@ impl<'a> SqlitePlanningRepository<'a> {
             .connection()
             .lock()
             .map_err(|_| "Database is unavailable")?;
-        let mut statement = connection.prepare("SELECT id,name,description,amount_minor,currency_code,frequency,next_due_date,account_id,category_id,status FROM subscriptions ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END,next_due_date,name COLLATE NOCASE").map_err(|e| e.to_string())?;
+        let mut statement = connection.prepare("SELECT s.id,s.name,s.description,s.amount_minor,s.currency_code,s.frequency,s.next_due_date,s.account_id,s.category_id,s.status,COUNT(t.id),COALESCE(SUM(t.amount_minor),0) FROM subscriptions s LEFT JOIN subscription_payments p ON p.subscription_id=s.id LEFT JOIN financial_transactions t ON t.id=p.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') GROUP BY s.id ORDER BY CASE s.status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END,s.next_due_date,s.name COLLATE NOCASE").map_err(|e| e.to_string())?;
         statement
             .query_map([], |r| {
                 Ok(Subscription {
@@ -447,11 +586,79 @@ impl<'a> SqlitePlanningRepository<'a> {
                     account_id: r.get(7)?,
                     category_id: r.get(8)?,
                     status: r.get(9)?,
+                    payment_count: r.get(10)?,
+                    paid_minor: r.get(11)?,
                 })
             })
             .map_err(|e| e.to_string())?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())
+    }
+
+    pub fn eligible_subscription_payments(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<EligibleSubscriptionPayment>, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let (currency, account, category): (String, Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT currency_code,account_id,category_id FROM subscriptions WHERE id=?1",
+                [subscription_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("The subscription no longer exists.")?;
+        let mut statement = connection.prepare("SELECT t.id,t.amount_minor,t.occurred_at,t.description FROM financial_transactions t WHERE t.transaction_type='expense' AND t.status='posted' AND t.currency_code=?1 AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted') AND NOT EXISTS(SELECT 1 FROM subscription_payments p WHERE p.transaction_id=t.id) AND (?2 IS NULL OR EXISTS(SELECT 1 FROM account_entries e WHERE e.transaction_id=t.id AND e.account_id=?2 AND e.amount_minor<0)) AND (?3 IS NULL OR EXISTS(SELECT 1 FROM category_allocations a WHERE a.transaction_id=t.id AND a.category_id=?3)) ORDER BY t.occurred_at DESC").map_err(|e| e.to_string())?;
+        statement
+            .query_map(params![currency, account, category], |r| {
+                Ok(EligibleSubscriptionPayment {
+                    transaction_id: r.get(0)?,
+                    amount_minor: r.get(1)?,
+                    occurred_at: r.get(2)?,
+                    description: r.get(3)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn link_subscription_payment(
+        &self,
+        subscription_id: &str,
+        transaction_id: &str,
+    ) -> Result<(), String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        let (currency, account, category): (String, Option<String>, Option<String>) = tx
+            .query_row(
+                "SELECT currency_code,account_id,category_id FROM subscriptions WHERE id=?1",
+                [subscription_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("The subscription no longer exists.")?;
+        let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=?1 AND t.transaction_type='expense' AND t.status='posted' AND t.currency_code=?2 AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted') AND (?3 IS NULL OR EXISTS(SELECT 1 FROM account_entries e WHERE e.transaction_id=t.id AND e.account_id=?3 AND e.amount_minor<0)) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM category_allocations a WHERE a.transaction_id=t.id AND a.category_id=?4)) AND NOT EXISTS(SELECT 1 FROM subscription_payments p WHERE p.transaction_id=t.id))", params![transaction_id,currency,account,category], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if !valid {
+            return Err(
+                "Choose a posted expense matching this subscription and not linked elsewhere."
+                    .into(),
+            );
+        }
+        tx.execute("INSERT INTO subscription_payments(id,subscription_id,transaction_id) VALUES (?1,?2,?3)", params![Uuid::new_v4().to_string(),subscription_id,transaction_id]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
     }
 
     pub fn create_subscription(&self, item: &SubscriptionInput) -> Result<String, String> {
@@ -663,19 +870,46 @@ mod tests {
             )
             .unwrap();
         let budget_id = repository.create_period(&template_id, "2026-02").unwrap();
-        database
-            .connection()
-            .lock()
-            .unwrap()
-            .execute(
-                "UPDATE budget_template_items SET amount_minor=50000 WHERE template_id=?1",
-                [&template_id],
+        repository
+            .update_template(
+                &template_id,
+                "Updated household",
+                &[PlannedItem {
+                    item_type: "expense".into(),
+                    category_id: Some("food".into()),
+                    label: "Food".into(),
+                    amount_minor: 50_000,
+                }],
             )
             .unwrap();
         let lines = repository.period_items(&budget_id).unwrap();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].planned_minor, 25000);
         assert_eq!(lines[0].actual_minor, 0);
+        let next_period = repository.create_period(&template_id, "2026-03").unwrap();
+        assert_eq!(
+            repository.period_items(&next_period).unwrap()[0].planned_minor,
+            50_000
+        );
+        repository
+            .update_period_items(
+                &budget_id,
+                &[PlannedItem {
+                    item_type: "expense".into(),
+                    category_id: Some("food".into()),
+                    label: "Food".into(),
+                    amount_minor: 30_000,
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            repository.period_items(&budget_id).unwrap()[0].planned_minor,
+            30_000
+        );
+        assert_eq!(
+            repository.period_items(&next_period).unwrap()[0].planned_minor,
+            50_000
+        );
         assert!(repository.create_period(&template_id, "2026-02").is_err());
         assert!(repository.create_period(&template_id, "2026-13").is_err());
     }
@@ -732,13 +966,29 @@ mod tests {
         let repository = SqlitePlanningRepository::new(&database);
         let budget_id = repository.create_period(&template_id, "2026-02").unwrap();
         let connection = database.connection().lock().unwrap();
-        connection.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('posted','expense',8000,'KES','2026-02-10T12:00:00Z','manual'),('voided','expense',3000,'KES','2026-02-12T12:00:00Z','manual'),('outside','expense',5000,'KES','2026-03-01T12:00:00Z','manual')", []).unwrap();
+        connection.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('posted','expense',8000,'KES','2026-02-10T12:00:00Z','manual'),('voided','expense',3000,'KES','2026-02-12T12:00:00Z','manual'),('outside','expense',5000,'KES','2026-03-01T12:00:00Z','manual'),('income','income',20000,'KES','2026-02-15T12:00:00Z','manual')", []).unwrap();
         connection.execute("UPDATE financial_transactions SET status='voided',voided_at=CURRENT_TIMESTAMP WHERE id='voided'", []).unwrap();
         connection.execute("INSERT INTO category_allocations(id,transaction_id,category_id,amount_minor) VALUES ('a1','posted','food',8000),('a2','voided','food',3000),('a3','outside','food',5000)", []).unwrap();
         drop(connection);
         assert_eq!(
             repository.period_items(&budget_id).unwrap()[0].actual_minor,
             8000
+        );
+        let goal = repository
+            .create_savings_goal("Reserve", 50_000, "KES", None, None, None)
+            .unwrap();
+        repository
+            .add_savings_contribution(&goal, 3_000, "2026-02-20", None)
+            .unwrap();
+        let totals = repository.period_totals(&budget_id).unwrap();
+        assert_eq!(
+            (
+                totals.actual_income_minor,
+                totals.actual_expense_minor,
+                totals.actual_savings_minor,
+                totals.unallocated_minor
+            ),
+            (20_000, 8_000, 3_000, 9_000)
         );
     }
 
@@ -812,10 +1062,18 @@ mod tests {
             5000
         );
         let connection = database.connection().lock().unwrap();
+        connection.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type,reversal_of_transaction_id) VALUES ('reversal','reversal',5000,'KES','2026-11-07T12:00:00Z','reversal','transfer')", []).unwrap();
+        connection.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES ('reverse-out','reversal','checking',5000),('reverse-in','reversal','savings',-5000)", []).unwrap();
+        drop(connection);
+        assert_eq!(
+            repository.list_savings_goals().unwrap()[0].contributed_minor,
+            0
+        );
+        let connection = database.connection().lock().unwrap();
         let entries: i64 = connection
             .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(entries, 2);
+        assert_eq!(entries, 4);
     }
 
     #[test]
@@ -833,6 +1091,35 @@ mod tests {
             category_id: None,
         };
         let id = repository.create_subscription(&subscription).unwrap();
+        database.connection().lock().unwrap().execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('payment','expense',1600,'KES','2026-11-20T08:00:00Z','manual')", []).unwrap();
+        database.connection().lock().unwrap().execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type,status,voided_at) VALUES ('wrong-currency','expense',1600,'USD','2026-11-20T08:00:00Z','manual','posted',NULL),('voided-payment','expense',1600,'KES','2026-11-20T08:00:00Z','manual','voided',CURRENT_TIMESTAMP)", []).unwrap();
+        assert_eq!(
+            repository
+                .eligible_subscription_payments(&id)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            repository
+                .link_subscription_payment(&id, "wrong-currency")
+                .is_err()
+        );
+        assert!(
+            repository
+                .link_subscription_payment(&id, "voided-payment")
+                .is_err()
+        );
+        repository
+            .link_subscription_payment(&id, "payment")
+            .unwrap();
+        let listed = repository.list_subscriptions().unwrap();
+        assert_eq!((listed[0].payment_count, listed[0].paid_minor), (1, 1600));
+        assert!(
+            repository
+                .link_subscription_payment(&id, "payment")
+                .is_err()
+        );
         let updated = SubscriptionInput {
             amount_minor: 1_500,
             ..subscription
@@ -840,6 +1127,10 @@ mod tests {
         repository.update_subscription(&id, &updated).unwrap();
         repository.set_subscription_status(&id, "paused").unwrap();
         assert_eq!(repository.list_subscriptions().unwrap()[0].status, "paused");
+        let connection = database.connection().lock().unwrap();
+        connection.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type,reversal_of_transaction_id) VALUES ('payment-reversal','reversal',1600,'KES','2026-11-21T08:00:00Z','reversal','payment')", []).unwrap();
+        drop(connection);
+        assert_eq!(repository.list_subscriptions().unwrap()[0].payment_count, 0);
         let connection = database.connection().lock().unwrap();
         let changes: i64 = connection
             .query_row(
@@ -849,11 +1140,21 @@ mod tests {
             )
             .unwrap();
         let transactions: i64 = connection
-            .query_row("SELECT COUNT(*) FROM financial_transactions", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM financial_transactions WHERE transaction_type='expense'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let linked: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM subscription_payments WHERE subscription_id=?1",
+                [&id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(changes, 2);
-        assert_eq!(transactions, 0);
+        assert_eq!(transactions, 3);
+        assert_eq!(linked, 1);
     }
 }

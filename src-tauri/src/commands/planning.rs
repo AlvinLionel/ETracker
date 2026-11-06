@@ -1,8 +1,9 @@
 use crate::{
     infrastructure::database::Database,
     persistence::planning::{
-        BudgetLine, BudgetPeriod, BudgetTemplate, EligibleSavingsTransfer, PlannedItem,
-        SavingsGoal, SqlitePlanningRepository, Subscription, SubscriptionInput,
+        BudgetLine, BudgetPeriod, BudgetTemplate, BudgetTotals, EligibleSavingsTransfer,
+        EligibleSubscriptionPayment, PlannedItem, SavingsGoal, SqlitePlanningRepository,
+        Subscription, SubscriptionInput,
     },
 };
 use serde::Deserialize;
@@ -39,6 +40,24 @@ pub fn list_budget_templates(state: State<'_, Database>) -> Result<Vec<BudgetTem
 }
 
 #[tauri::command]
+pub fn list_budget_template_items(
+    state: State<'_, Database>,
+    template_id: String,
+) -> Result<Vec<PlannedItem>, String> {
+    SqlitePlanningRepository::new(state.inner()).template_items(&template_id)
+}
+
+#[tauri::command]
+pub fn update_budget_template(
+    state: State<'_, Database>,
+    template_id: String,
+    name: String,
+    items: Vec<PlannedItem>,
+) -> Result<(), String> {
+    SqlitePlanningRepository::new(state.inner()).update_template(&template_id, &name, &items)
+}
+
+#[tauri::command]
 pub fn create_budget_template(
     state: State<'_, Database>,
     request: CreateTemplateRequest,
@@ -70,6 +89,23 @@ pub fn get_budget_period_items(
     budget_id: String,
 ) -> Result<Vec<BudgetLine>, String> {
     SqlitePlanningRepository::new(state.inner()).period_items(&budget_id)
+}
+
+#[tauri::command]
+pub fn get_budget_period_totals(
+    state: State<'_, Database>,
+    budget_id: String,
+) -> Result<BudgetTotals, String> {
+    SqlitePlanningRepository::new(state.inner()).period_totals(&budget_id)
+}
+
+#[tauri::command]
+pub fn update_budget_period_items(
+    state: State<'_, Database>,
+    budget_id: String,
+    items: Vec<PlannedItem>,
+) -> Result<(), String> {
+    SqlitePlanningRepository::new(state.inner()).update_period_items(&budget_id, &items)
 }
 
 #[tauri::command]
@@ -160,4 +196,22 @@ pub fn set_subscription_status(
     status: String,
 ) -> Result<(), String> {
     SqlitePlanningRepository::new(state.inner()).set_subscription_status(&id, &status)
+}
+
+#[tauri::command]
+pub fn list_eligible_subscription_payments(
+    state: State<'_, Database>,
+    subscription_id: String,
+) -> Result<Vec<EligibleSubscriptionPayment>, String> {
+    SqlitePlanningRepository::new(state.inner()).eligible_subscription_payments(&subscription_id)
+}
+
+#[tauri::command]
+pub fn link_subscription_payment(
+    state: State<'_, Database>,
+    subscription_id: String,
+    transaction_id: String,
+) -> Result<(), String> {
+    SqlitePlanningRepository::new(state.inner())
+        .link_subscription_payment(&subscription_id, &transaction_id)
 }
