@@ -46,7 +46,7 @@ export default function BudgetingPage() {
         const amount_minor = Number(BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2)));
         return { item_type: draft.item_type, category_id: draft.item_type === "savings" ? null : draft.category_id || null, label: draft.label.trim(), amount_minor };
       });
-      const id = await invoke<string>("create_budget_template", { request: { name: templateName, currencyCode: "KES", items } });
+      const id = await invoke<string>("create_budget_template", { request: { name: templateName, currency_code: "KES", items } });
       setTemplateName(""); setDrafts([emptyDraft()]); await refresh(); setTemplateId(id); setMessage("Budget template saved.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }

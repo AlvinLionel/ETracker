@@ -38,6 +38,40 @@ pub struct BudgetLine {
     pub actual_minor: i64,
 }
 
+#[derive(Serialize)]
+pub struct SavingsGoal {
+    pub id: String,
+    pub name: String,
+    pub target_amount_minor: i64,
+    pub contributed_minor: i64,
+    pub currency_code: String,
+    pub target_date: Option<String>,
+    pub status: String,
+    pub account_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct EligibleSavingsTransfer {
+    pub transaction_id: String,
+    pub amount_minor: i64,
+    pub occurred_at: String,
+    pub description: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Subscription {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub amount_minor: i64,
+    pub currency_code: String,
+    pub frequency: String,
+    pub next_due_date: String,
+    pub account_id: Option<String>,
+    pub category_id: Option<String>,
+    pub status: String,
+}
+
 pub struct SqlitePlanningRepository<'a> {
     database: &'a Database,
 }
@@ -201,6 +235,339 @@ impl<'a> SqlitePlanningRepository<'a> {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())
     }
+
+    pub fn list_savings_goals(&self) -> Result<Vec<SavingsGoal>, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let mut statement = connection.prepare("SELECT g.id,g.name,g.target_amount_minor,COALESCE(SUM(c.amount_minor),0),g.currency_code,g.target_date,g.status,g.account_id FROM savings_goals g LEFT JOIN savings_contributions c ON c.goal_id=g.id GROUP BY g.id ORDER BY CASE g.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,g.created_at DESC").map_err(|e| e.to_string())?;
+        statement
+            .query_map([], |r| {
+                Ok(SavingsGoal {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    target_amount_minor: r.get(2)?,
+                    contributed_minor: r.get(3)?,
+                    currency_code: r.get(4)?,
+                    target_date: r.get(5)?,
+                    status: r.get(6)?,
+                    account_id: r.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn create_savings_goal(
+        &self,
+        name: &str,
+        target_minor: i64,
+        currency: &str,
+        target_date: Option<&str>,
+        description: Option<&str>,
+        account_id: Option<&str>,
+    ) -> Result<String, String> {
+        let name = name.trim();
+        let currency = currency.trim().to_ascii_uppercase();
+        if name.is_empty()
+            || target_minor <= 0
+            || currency.len() != 3
+            || !currency.chars().all(|c| c.is_ascii_uppercase())
+        {
+            return Err(
+                "Enter a goal name, positive target and three-letter currency code.".into(),
+            );
+        }
+        if let Some(date) = target_date {
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .map_err(|_| "Enter a valid target date.")?;
+        }
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        if let Some(account_id) = account_id {
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1 AND archived_at IS NULL AND currency_code=?2)", params![account_id,currency], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if !valid {
+                return Err("Choose an active savings account using the goal currency.".into());
+            }
+        }
+        let id = Uuid::new_v4().to_string();
+        connection.execute("INSERT INTO savings_goals(id,name,description,target_amount_minor,currency_code,target_date,account_id) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![id,name,description.map(str::trim).filter(|v| !v.is_empty()),target_minor,currency,target_date,account_id]).map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    pub fn eligible_savings_transfers(
+        &self,
+        goal_id: &str,
+    ) -> Result<Vec<EligibleSavingsTransfer>, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let account_id: Option<String> = connection
+            .query_row(
+                "SELECT account_id FROM savings_goals WHERE id=?1 AND status='active'",
+                [goal_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("Choose an active savings goal.")?;
+        let Some(account_id) = account_id else {
+            return Ok(Vec::new());
+        };
+        let mut statement = connection.prepare("SELECT t.id,e.amount_minor,t.occurred_at,t.description FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.transaction_type='transfer' AND t.status='posted' AND e.account_id=?1 AND e.amount_minor>0 AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted') AND NOT EXISTS(SELECT 1 FROM savings_contributions c WHERE c.transaction_id=t.id) ORDER BY t.occurred_at DESC").map_err(|e| e.to_string())?;
+        statement
+            .query_map([account_id], |r| {
+                Ok(EligibleSavingsTransfer {
+                    transaction_id: r.get(0)?,
+                    amount_minor: r.get(1)?,
+                    occurred_at: r.get(2)?,
+                    description: r.get(3)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn add_savings_transfer(&self, goal_id: &str, transaction_id: &str) -> Result<(), String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        let (currency, account_id, status): (String, Option<String>, String) = tx
+            .query_row(
+                "SELECT currency_code,account_id,status FROM savings_goals WHERE id=?1",
+                [goal_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("The savings goal no longer exists.")?;
+        if status != "active" {
+            return Err("Choose an active savings goal.".into());
+        }
+        let account_id =
+            account_id.ok_or("Choose a linked savings account before recording a transfer.")?;
+        let (amount, date): (i64, String) = tx.query_row("SELECT e.amount_minor,date(t.occurred_at) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN accounts a ON a.id=e.account_id WHERE t.id=?1 AND t.transaction_type='transfer' AND t.status='posted' AND e.account_id=?2 AND e.amount_minor>0 AND t.currency_code=?3 AND a.currency_code=?3 AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted') AND NOT EXISTS(SELECT 1 FROM savings_contributions c WHERE c.transaction_id=t.id)", params![transaction_id,account_id,currency], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e| e.to_string())?.ok_or("That transfer is not an eligible incoming transfer to this savings account.")?;
+        tx.execute("INSERT INTO savings_contributions(id,goal_id,amount_minor,contribution_date,description,transaction_id) VALUES (?1,?2,?3,?4,'Linked incoming account transfer',?5)", params![Uuid::new_v4().to_string(),goal_id,amount,date,transaction_id]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
+    }
+
+    pub fn add_savings_contribution(
+        &self,
+        goal_id: &str,
+        amount_minor: i64,
+        date: &str,
+        description: Option<&str>,
+    ) -> Result<(), String> {
+        if amount_minor <= 0 {
+            return Err("Savings contribution must be positive.".into());
+        }
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| "Enter a valid contribution date.")?;
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let goal: Option<(String, Option<String>)> = connection
+            .query_row(
+                "SELECT status,account_id FROM savings_goals WHERE id=?1",
+                [goal_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let Some((status, account_id)) = goal else {
+            return Err("Choose an active savings goal.".into());
+        };
+        if status != "active" {
+            return Err("Choose an active savings goal.".into());
+        }
+        if let Some(account_id) = account_id {
+            let duplicate_transfer: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.transaction_type='transfer' AND t.status='posted' AND date(t.occurred_at)=?1 AND e.account_id=?2 AND e.amount_minor=?3 AND e.amount_minor>0 AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted'))", params![date,account_id,amount_minor], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if duplicate_transfer {
+                return Err("An incoming transfer matches this amount and date. Link it instead of adding it twice.".into());
+            }
+        }
+        connection.execute("INSERT INTO savings_contributions(id,goal_id,amount_minor,contribution_date,description) VALUES (?1,?2,?3,?4,?5)", params![Uuid::new_v4().to_string(),goal_id,amount_minor,date,description.map(str::trim).filter(|v| !v.is_empty())]).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn set_savings_goal_status(&self, goal_id: &str, status: &str) -> Result<(), String> {
+        if !["active", "completed", "archived"].contains(&status) {
+            return Err("Choose a valid savings goal status.".into());
+        }
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let changed = connection
+            .execute(
+                "UPDATE savings_goals SET status=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                params![status, goal_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("The savings goal no longer exists.".into());
+        }
+        Ok(())
+    }
+
+    pub fn list_subscriptions(&self) -> Result<Vec<Subscription>, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let mut statement = connection.prepare("SELECT id,name,description,amount_minor,currency_code,frequency,next_due_date,account_id,category_id,status FROM subscriptions ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END,next_due_date,name COLLATE NOCASE").map_err(|e| e.to_string())?;
+        statement
+            .query_map([], |r| {
+                Ok(Subscription {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    description: r.get(2)?,
+                    amount_minor: r.get(3)?,
+                    currency_code: r.get(4)?,
+                    frequency: r.get(5)?,
+                    next_due_date: r.get(6)?,
+                    account_id: r.get(7)?,
+                    category_id: r.get(8)?,
+                    status: r.get(9)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn create_subscription(&self, item: &SubscriptionInput) -> Result<String, String> {
+        validate_subscription(item)?;
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        if let Some(account_id) = &item.account_id {
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1 AND archived_at IS NULL AND currency_code=?2)", params![account_id,item.currency_code], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if !valid {
+                return Err(
+                    "Select an active payment account using the subscription currency.".into(),
+                );
+            }
+        }
+        if let Some(category_id) = &item.category_id {
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type='expense' AND archived_at IS NULL)", [category_id], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if !valid {
+                return Err("Select an active expense category.".into());
+            }
+        }
+        let id = Uuid::new_v4().to_string();
+        connection.execute("INSERT INTO subscriptions(id,name,description,amount_minor,currency_code,frequency,next_due_date,account_id,category_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![id,item.name.trim(),item.description.as_deref().map(str::trim).filter(|v| !v.is_empty()),item.amount_minor,item.currency_code,item.frequency,item.next_due_date,item.account_id,item.category_id]).map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    pub fn update_subscription(&self, id: &str, item: &SubscriptionInput) -> Result<(), String> {
+        validate_subscription(item)?;
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        if let Some(account_id) = &item.account_id {
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1 AND archived_at IS NULL AND currency_code=?2)", params![account_id,item.currency_code], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if !valid {
+                return Err(
+                    "Select an active payment account using the subscription currency.".into(),
+                );
+            }
+        }
+        if let Some(category_id) = &item.category_id {
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type='expense' AND archived_at IS NULL)", [category_id], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if !valid {
+                return Err("Select an active expense category.".into());
+            }
+        }
+        let previous: String = connection.query_row("SELECT json_object('name',name,'amount_minor',amount_minor,'frequency',frequency,'next_due_date',next_due_date,'account_id',account_id,'category_id',category_id,'status',status) FROM subscriptions WHERE id=?1", [id], |r| r.get(0)).optional().map_err(|e| e.to_string())?.ok_or("The subscription no longer exists.")?;
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        tx.execute("UPDATE subscriptions SET name=?1,description=?2,amount_minor=?3,currency_code=?4,frequency=?5,next_due_date=?6,account_id=?7,category_id=?8,updated_at=CURRENT_TIMESTAMP WHERE id=?9", params![item.name.trim(),item.description.as_deref().map(str::trim).filter(|v| !v.is_empty()),item.amount_minor,item.currency_code,item.frequency,item.next_due_date,item.account_id,item.category_id,id]).map_err(|e| e.to_string())?;
+        let current = serde_json::json!({"name":item.name.trim(),"description":item.description,"amount_minor":item.amount_minor,"currency_code":item.currency_code,"frequency":item.frequency,"next_due_date":item.next_due_date,"account_id":item.account_id,"category_id":item.category_id});
+        tx.execute("INSERT INTO subscription_history(id,subscription_id,previous_values,new_values) VALUES (?1,?2,?3,?4)", params![Uuid::new_v4().to_string(),id,previous,current.to_string()]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
+    }
+
+    pub fn set_subscription_status(&self, id: &str, status: &str) -> Result<(), String> {
+        if !["active", "paused", "cancelled"].contains(&status) {
+            return Err("Choose active, paused or cancelled.".into());
+        }
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let previous: String = connection
+            .query_row(
+                "SELECT json_object('status',status) FROM subscriptions WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("The subscription no longer exists.")?;
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE subscriptions SET status=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+            params![status, id],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute("INSERT INTO subscription_history(id,subscription_id,previous_values,new_values) VALUES (?1,?2,?3,?4)", params![Uuid::new_v4().to_string(),id,previous,serde_json::json!({"status":status}).to_string()]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
+    }
+}
+
+#[derive(Clone, serde::Deserialize)]
+pub struct SubscriptionInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub amount_minor: i64,
+    pub currency_code: String,
+    pub frequency: String,
+    pub next_due_date: String,
+    pub account_id: Option<String>,
+    pub category_id: Option<String>,
+}
+
+fn validate_subscription(item: &SubscriptionInput) -> Result<(), String> {
+    if item.name.trim().is_empty() || item.amount_minor <= 0 {
+        return Err("Enter a name and a positive subscription amount.".into());
+    }
+    if item.currency_code.len() != 3 || !item.currency_code.chars().all(|c| c.is_ascii_uppercase())
+    {
+        return Err("Enter a three-letter currency code.".into());
+    }
+    if !["weekly", "monthly", "quarterly", "yearly"].contains(&item.frequency.as_str()) {
+        return Err("Choose a supported billing frequency.".into());
+    }
+    chrono::NaiveDate::parse_from_str(&item.next_due_date, "%Y-%m-%d")
+        .map_err(|_| "Enter a valid next due date.")?;
+    Ok(())
 }
 
 fn validate_items(connection: &rusqlite::Connection, items: &[PlannedItem]) -> Result<(), String> {
@@ -373,5 +740,120 @@ mod tests {
             repository.period_items(&budget_id).unwrap()[0].actual_minor,
             8000
         );
+    }
+
+    #[test]
+    fn savings_contributions_are_tracked_without_ledger_movement() {
+        let database = database();
+        let repository = SqlitePlanningRepository::new(&database);
+        let goal_id = repository
+            .create_savings_goal(
+                "Emergency fund",
+                100_000,
+                "KES",
+                Some("2027-12-31"),
+                None,
+                None,
+            )
+            .unwrap();
+        repository
+            .add_savings_contribution(&goal_id, 12_500, "2026-11-06", Some("Monthly saving"))
+            .unwrap();
+        let goals = repository.list_savings_goals().unwrap();
+        assert_eq!(goals[0].contributed_minor, 12_500);
+        repository
+            .set_savings_goal_status(&goal_id, "completed")
+            .unwrap();
+        assert!(
+            repository
+                .add_savings_contribution(&goal_id, 100, "2026-11-07", None)
+                .is_err()
+        );
+        let connection = database.connection().lock().unwrap();
+        let transactions: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_transactions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let entries: i64 = connection
+            .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((transactions, entries), (0, 0));
+    }
+
+    #[test]
+    fn qualifying_savings_transfer_is_linked_once_without_duplicate_ledger_entries() {
+        let database = database();
+        database.connection().lock().unwrap().execute("INSERT INTO accounts(id,name,account_type,currency_code) VALUES ('checking','Checking','cash','KES'),('savings','Savings','cash','KES')", []).unwrap();
+        database.connection().lock().unwrap().execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('transfer','transfer',5000,'KES','2026-11-06T12:00:00Z','manual')", []).unwrap();
+        database.connection().lock().unwrap().execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES ('out','transfer','checking',-5000),('in','transfer','savings',5000)", []).unwrap();
+        let repository = SqlitePlanningRepository::new(&database);
+        let goal = repository
+            .create_savings_goal("Reserve", 100_000, "KES", None, None, Some("savings"))
+            .unwrap();
+        assert_eq!(
+            repository.eligible_savings_transfers(&goal).unwrap().len(),
+            1
+        );
+        repository.add_savings_transfer(&goal, "transfer").unwrap();
+        assert!(
+            repository
+                .eligible_savings_transfers(&goal)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            repository
+                .add_savings_contribution(&goal, 5000, "2026-11-06", None)
+                .is_err()
+        );
+        assert_eq!(
+            repository.list_savings_goals().unwrap()[0].contributed_minor,
+            5000
+        );
+        let connection = database.connection().lock().unwrap();
+        let entries: i64 = connection
+            .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(entries, 2);
+    }
+
+    #[test]
+    fn subscription_changes_are_historical_and_never_create_actual_payments() {
+        let database = database();
+        let repository = SqlitePlanningRepository::new(&database);
+        let subscription = SubscriptionInput {
+            name: "Music".into(),
+            description: None,
+            amount_minor: 1_000,
+            currency_code: "KES".into(),
+            frequency: "monthly".into(),
+            next_due_date: "2026-11-20".into(),
+            account_id: None,
+            category_id: None,
+        };
+        let id = repository.create_subscription(&subscription).unwrap();
+        let updated = SubscriptionInput {
+            amount_minor: 1_500,
+            ..subscription
+        };
+        repository.update_subscription(&id, &updated).unwrap();
+        repository.set_subscription_status(&id, "paused").unwrap();
+        assert_eq!(repository.list_subscriptions().unwrap()[0].status, "paused");
+        let connection = database.connection().lock().unwrap();
+        let changes: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM subscription_history WHERE subscription_id=?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let transactions: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_transactions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(changes, 2);
+        assert_eq!(transactions, 0);
     }
 }

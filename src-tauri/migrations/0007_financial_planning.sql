@@ -62,6 +62,8 @@ CREATE TABLE savings_contributions (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX idx_savings_contributions_transaction ON savings_contributions(transaction_id) WHERE transaction_id IS NOT NULL;
+
 CREATE TABLE subscriptions (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL CHECK (length(trim(name)) > 0),

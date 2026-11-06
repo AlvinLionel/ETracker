@@ -3,6 +3,8 @@ import TransactionsPage from "./features/transactions/TransactionsPage";
 import { useState } from "react";
 import ImportsPage from "./features/imports/ImportsPage";
 import BudgetingPage from "./features/planning/BudgetingPage";
+import SavingsPage from "./features/planning/SavingsPage";
+import SubscriptionsPage from "./features/planning/SubscriptionsPage";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
@@ -52,8 +54,8 @@ function App() {
                       const isActive = item.label === activePage;
 
                       return (
-                        <button key={item.label} type="button" onClick={() => { if (["Accounts","Transactions","Imports","Budgeting"].includes(item.label)) setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
-                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${!["Accounts","Transactions","Imports","Budgeting"].includes(item.label) ? "cursor-default opacity-50" : ""}`}
+                        <button key={item.label} type="button" onClick={() => { if (["Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions"].includes(item.label)) setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${!["Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions"].includes(item.label) ? "cursor-default opacity-50" : ""}`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"}`}/>
                           {item.label}
@@ -78,7 +80,7 @@ function App() {
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
           <div>
             <p className="text-xs text-slate-500">Finance / {activePage}</p>
-            <h2 className="text-sm font-semibold text-slate-900">{activePage === "Accounts" ? "Account management" : activePage === "Budgeting" ? "Budget planning" : activePage === "Transactions" ? "Transaction management" : "Statement imports"}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">{activePage === "Accounts" ? "Account management" : ["Budgeting","Savings","Subscriptions"].includes(activePage) ? "Financial planning" : activePage === "Transactions" ? "Transaction management" : activePage === "Imports" ? "Statement imports" : activePage}</h2>
           </div>
 
           <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5">
@@ -88,7 +90,7 @@ function App() {
         </header>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          {activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : <ImportsPage />}
+          {activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : <ImportsPage />}
         </main>
       </div>
     </div>

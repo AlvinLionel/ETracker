@@ -584,7 +584,7 @@ The current regression suite compares generic mapped imports, classifies unique 
 
 ## 7. Budgeting and Savings Testing
 
-The implemented initial budget slice verifies independent monthly snapshots, active category validation, uniqueness of category plan lines, month bounds, and actual expense totals derived only from posted transactions inside the budget period. Frontend coverage verifies the performance view and monthly budget creation action.
+The implemented planning slice verifies independent monthly snapshots, active category validation, uniqueness of category plan lines, month bounds, and actual expense totals derived only from posted transactions inside the budget period. Savings tests verify manual contributions do not create ledger movements and qualifying incoming transfers can be linked once without duplicating account entries. Subscription tests verify changed terms/status are historized and projections do not create transactions. Frontend coverage verifies budget performance/month creation, savings progress/contribution, and subscription entry paths.
 
 ### 7.1 Budget Template Tests
 
