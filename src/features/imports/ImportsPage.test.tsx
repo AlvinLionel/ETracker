@@ -36,6 +36,30 @@ describe("ImportsPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("2 staged rows");
   });
 
+  it("selects an XLSX worksheet and stages mapped rows", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "xlsx_sheet_names") return Promise.resolve(["Transactions", "Summary"]);
+      if (command === "xlsx_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
+      if (command === "create_import_batch") return Promise.resolve("batch-xlsx");
+      if (command === "stage_xlsx_import") return Promise.resolve(1);
+      if (command === "list_staged_import_records") return Promise.resolve([]);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    const file = new File([new Uint8Array([1, 2, 3])], "statement.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    await screen.findByLabelText("Worksheet");
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_xlsx_import", expect.objectContaining({
+      request: expect.objectContaining({ batch_id: "batch-xlsx", sheet_name: "Transactions", header_row: 1, date_column: "Date", amount_column: "Amount" }),
+    })));
+    expect(await screen.findByRole("status")).toHaveTextContent("1 staged rows");
+  });
+
   it("shows the saved processing logs for a workspace", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);

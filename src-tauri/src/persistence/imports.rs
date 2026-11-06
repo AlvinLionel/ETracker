@@ -5,7 +5,9 @@ use crate::{
     },
     infrastructure::database::Database,
 };
+use calamine::{Data, DataType, Reader, open_workbook_auto_from_rs};
 use rusqlite::{OptionalExtension, Transaction, params};
+use std::io::Cursor;
 use uuid::Uuid;
 pub struct SqliteImportRepository<'a> {
     database: &'a Database,
@@ -372,7 +374,7 @@ pub struct ImportBatchRecord {
     pub reconciliation_status: String,
     pub created_at: String,
 }
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct StagedImportRecord {
     pub id: String,
     pub source_row_reference: String,
@@ -593,7 +595,7 @@ impl SqliteImportRepository<'_> {
         let tx = connection
             .transaction()
             .map_err(|e| ImportError::Database(e.to_string()))?;
-        let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1 AND status='review' AND source_format='csv')",[batch_id],|r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
+        let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1 AND status='review' AND source_format IN ('csv','xlsx'))",[batch_id],|r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
         if !exists {
             return Err(ImportError::InvalidBatch);
         }
@@ -620,6 +622,175 @@ impl SqliteImportRepository<'_> {
         tx.commit()
             .map_err(|e| ImportError::Database(e.to_string()))?;
         Ok(rows.len())
+    }
+
+    pub fn xlsx_sheet_names(&self, contents: Vec<u8>) -> Result<Vec<String>, ImportError> {
+        let workbook = open_workbook_auto_from_rs(Cursor::new(contents))
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        Ok(workbook.sheet_names().to_vec())
+    }
+
+    pub fn xlsx_headers(
+        &self,
+        contents: Vec<u8>,
+        sheet_name: &str,
+        header_row: usize,
+    ) -> Result<Vec<String>, ImportError> {
+        if header_row == 0 {
+            return Err(ImportError::InvalidBatch);
+        }
+        let mut workbook = open_workbook_auto_from_rs(Cursor::new(contents))
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let range = workbook
+            .worksheet_range(sheet_name)
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let row = range
+            .rows()
+            .nth(header_row - 1)
+            .ok_or(ImportError::InvalidBatch)?;
+        Ok(row
+            .iter()
+            .enumerate()
+            .map(|(index, cell)| {
+                let value = cell_string(cell);
+                if value.trim().is_empty() {
+                    format!("Column {}", index + 1)
+                } else {
+                    value.trim().to_string()
+                }
+            })
+            .collect())
+    }
+
+    pub fn stage_xlsx(
+        &self,
+        batch_id: &str,
+        contents: Vec<u8>,
+        sheet_name: &str,
+        header_row: usize,
+        mapping: &CsvImportMapping,
+    ) -> Result<usize, ImportError> {
+        if header_row == 0 {
+            return Err(ImportError::InvalidBatch);
+        }
+        let mut workbook = open_workbook_auto_from_rs(Cursor::new(contents))
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let range = workbook
+            .worksheet_range(sheet_name)
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let formula_range = workbook
+            .worksheet_formula(sheet_name)
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let rows: Vec<_> = range.rows().collect();
+        let headers = rows.get(header_row - 1).ok_or(ImportError::InvalidBatch)?;
+        let header_names: Vec<String> = headers
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let v = cell_string(c);
+                if v.trim().is_empty() {
+                    format!("Column {}", i + 1)
+                } else {
+                    v.trim().to_string()
+                }
+            })
+            .collect();
+        let date_index = header_names
+            .iter()
+            .position(|h| h == &mapping.date_column)
+            .ok_or(ImportError::InvalidBatch)?;
+        let amount_index = header_names
+            .iter()
+            .position(|h| h == &mapping.amount_column)
+            .ok_or(ImportError::InvalidBatch)?;
+        if let Some(name) = &mapping.description_column {
+            if !header_names.iter().any(|h| h == name) {
+                return Err(ImportError::InvalidBatch);
+            }
+        }
+        let mut source_rows = Vec::new();
+        let mut formula_rows = 0usize;
+        let mut csv_bytes = Vec::new();
+        {
+            let mut writer = csv::Writer::from_writer(&mut csv_bytes);
+            let mut csv_headers = vec!["__etracker_source_row".to_string()];
+            csv_headers.extend(header_names.clone());
+            writer
+                .write_record(&csv_headers)
+                .map_err(|e| ImportError::Database(e.to_string()))?;
+            let (start_row, start_column) = range
+                .start()
+                .map(|(row, col)| (row as usize, col as usize))
+                .unwrap_or((0, 0));
+            for (index, row) in rows.iter().enumerate().skip(header_row) {
+                let source_row = start_row + index + 1;
+                let date_formula = formula_range
+                    .get_value((
+                        start_row as u32 + index as u32,
+                        start_column as u32 + date_index as u32,
+                    ))
+                    .is_some_and(|formula| !formula.is_empty());
+                let amount_formula = formula_range
+                    .get_value((
+                        start_row as u32 + index as u32,
+                        start_column as u32 + amount_index as u32,
+                    ))
+                    .is_some_and(|formula| !formula.is_empty());
+                let mut values = Vec::with_capacity(header_names.len() + 1);
+                values.push(format!("{}!{}", sheet_name, source_row));
+                for column in 0..header_names.len() {
+                    let formula = (column == date_index && date_formula)
+                        || (column == amount_index && amount_formula);
+                    if formula {
+                        values.push(String::new());
+                    } else {
+                        values.push(row.get(column).map(cell_string).unwrap_or_default());
+                    }
+                }
+                if date_formula || amount_formula {
+                    formula_rows += 1;
+                }
+                source_rows.push(format!("{}!{}", sheet_name, source_row));
+                writer
+                    .write_record(values)
+                    .map_err(|e| ImportError::Database(e.to_string()))?;
+            }
+            writer
+                .flush()
+                .map_err(|e| ImportError::Database(e.to_string()))?;
+        }
+        let mut csv_mapping = mapping.clone();
+        csv_mapping.date_column = mapping.date_column.clone();
+        let count = self.stage_csv(
+            batch_id,
+            std::str::from_utf8(&csv_bytes).map_err(|e| ImportError::Database(e.to_string()))?,
+            &csv_mapping,
+        )?;
+        let records = self.list_records(batch_id)?;
+        if records.len() != source_rows.len() || records.len() != count {
+            return Err(ImportError::InvalidBatch);
+        }
+        let mut c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = c
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        for (record, source_row) in records.iter().zip(source_rows) {
+            tx.execute(
+                "UPDATE imported_records SET source_row_reference=?1 WHERE id=?2",
+                params![source_row, record.id],
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        }
+        if formula_rows > 0 {
+            tx.execute("INSERT INTO import_logs(id,batch_id,stage,severity,message,corrective_action) VALUES (?1,?2,'parse','WARNING',?3,'Correct formula-derived date or amount cells after reviewing the original worksheet.')",params![Uuid::new_v4().to_string(),batch_id,format!("{} rows with formulas in mapped date or amount columns were staged as invalid for review",formula_rows)]).map_err(|e|ImportError::Database(e.to_string()))?;
+        }
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        Ok(count)
     }
     pub fn list_batches(&self) -> Result<Vec<ImportBatchRecord>, ImportError> {
         let c = self
@@ -718,6 +889,20 @@ fn calculate_reconciliation(
         },
     })
 }
+fn cell_string(cell: &Data) -> String {
+    match cell {
+        Data::Empty | Data::Error(_) => String::new(),
+        _ if cell.is_datetime() => cell
+            .as_date()
+            .map(|date| date.format("%Y-%m-%d").to_string())
+            .or_else(|| {
+                cell.as_datetime()
+                    .map(|date| date.format("%Y-%m-%dT%H:%M:%S").to_string())
+            })
+            .unwrap_or_default(),
+        _ => cell.to_string(),
+    }
+}
 fn parse_minor_units(raw: &str) -> Option<i64> {
     let (whole, fraction) = raw.split_once('.').unwrap_or((raw, ""));
     if whole.is_empty()
@@ -743,9 +928,43 @@ fn parse_minor_units(raw: &str) -> Option<i64> {
 mod tests {
     use super::*;
     use crate::infrastructure::database::Database;
+    use std::io::{Cursor, Write};
     use std::path::Path;
     fn db() -> Database {
         Database::initialize(Path::new(":memory:")).unwrap()
+    }
+    fn workbook_fixture() -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let files = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Transactions" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Date</t></is></c><c r="B1" t="inlineStr"><is><t>Amount</t></is></c><c r="C1" t="inlineStr"><is><t>Memo</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>2026-11-05</t></is></c><c r="B2"><v>12.5</v></c><c r="C2" t="inlineStr"><is><t>Market</t></is></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>2026-11-06</t></is></c><c r="B3"><f>SUM(B2:B2)</f><v>12.5</v></c><c r="C3" t="inlineStr"><is><t>Calculated total</t></is></c></row></sheetData></worksheet>"#,
+            ),
+        ];
+        for (name, contents) in files {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(contents.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
     }
     fn account(db: &Database) {
         db.connection()
@@ -1220,5 +1439,51 @@ mod tests {
             )
             .unwrap();
         assert_eq!((count, total), (2, 1250));
+    }
+
+    #[test]
+    fn parses_mapped_xlsx_rows_and_preserves_sheet_row_reference() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "sample.xlsx".into(),
+                source_format: "xlsx".into(),
+                source_file_hash: None,
+            })
+            .unwrap();
+        let bytes = workbook_fixture();
+        assert_eq!(
+            repo.xlsx_sheet_names(bytes.clone()).unwrap(),
+            vec!["Transactions"]
+        );
+        assert_eq!(
+            repo.xlsx_headers(bytes.clone(), "Transactions", 1).unwrap(),
+            vec!["Date", "Amount", "Memo"]
+        );
+        let mapping = CsvImportMapping {
+            date_column: "Date".into(),
+            description_column: Some("Memo".into()),
+            amount_column: "Amount".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "iso_date".into(),
+        };
+        assert_eq!(
+            repo.stage_xlsx(&batch, bytes, "Transactions", 1, &mapping)
+                .unwrap_or_else(|error| panic!(
+                    "xlsx staging failed: {error:?}; staged={:?}",
+                    repo.list_records(&batch)
+                )),
+            2
+        );
+        let records = repo.list_records(&batch).unwrap();
+        let record = &records[0];
+        assert_eq!(record.source_row_reference, "Transactions!2");
+        assert_eq!(record.normalized_amount_minor, Some(1250));
+        assert_eq!(record.original_description.as_deref(), Some("Market"));
+        assert_eq!(records[1].source_row_reference, "Transactions!3");
+        assert_eq!(records[1].validation_status, "invalid");
     }
 }

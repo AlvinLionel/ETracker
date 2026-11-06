@@ -399,6 +399,8 @@ The user must be able to distinguish:
 
 The imports workspace manages statement uploads, extraction, validation, duplicate detection, reconciliation and finalization.
 
+The generic file-mapping flow supports CSV and XLSX workbooks. For XLSX, users choose a worksheet and header row before mapping date, amount and optional description columns. Formula-derived values in mapped date or amount cells require correction in staged review.
+
 It is a critical financial workflow and must provide transparency throughout processing.
 
 ### 7.2 Import Workflow

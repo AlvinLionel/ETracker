@@ -450,6 +450,8 @@ Verify that workbook inspection identifies:
 - Cell data types.
 - Formatting.
 
+The current generic XLSX path verifies worksheet selection, header-row mapping, typed cell extraction, source-row references, and safe staging of formula-derived mapped date or amount cells. Table and style inspection remain future provider-parser work.
+
 **QA-IMP-006 — Formula interpretation**
 
 Verify that formulas and their available calculated results are inspected appropriately.

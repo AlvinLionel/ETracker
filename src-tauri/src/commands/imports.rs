@@ -27,6 +27,18 @@ pub struct StageCsvRequest {
     pub date_format: String,
 }
 #[derive(Deserialize)]
+pub struct StageXlsxRequest {
+    pub batch_id: String,
+    pub contents: Vec<u8>,
+    pub sheet_name: String,
+    pub header_row: usize,
+    pub date_column: String,
+    pub description_column: Option<String>,
+    pub amount_column: String,
+    pub positive_amount_type: String,
+    pub date_format: String,
+}
+#[derive(Deserialize)]
 pub struct CorrectImportRecordRequest {
     pub record_id: String,
     pub normalized_date: String,
@@ -100,6 +112,26 @@ pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
         .headers()
         .map(|h| h.iter().map(str::to_owned).collect())
         .map_err(|_| "The file does not contain a readable CSV header row.".into())
+}
+#[tauri::command]
+pub fn xlsx_sheet_names(
+    state: State<'_, Database>,
+    contents: Vec<u8>,
+) -> Result<Vec<String>, String> {
+    SqliteImportRepository::new(state.inner())
+        .xlsx_sheet_names(contents)
+        .map_err(|_| "The workbook could not be read. Choose an unencrypted XLSX workbook.".into())
+}
+#[tauri::command]
+pub fn xlsx_headers(
+    state: State<'_, Database>,
+    contents: Vec<u8>,
+    sheet_name: String,
+    header_row: usize,
+) -> Result<Vec<String>, String> {
+    SqliteImportRepository::new(state.inner())
+        .xlsx_headers(contents, &sheet_name, header_row)
+        .map_err(|_| "The selected worksheet header row could not be read.".into())
 }
 #[tauri::command]
 pub fn create_import_batch(
@@ -190,6 +222,42 @@ pub fn stage_csv_import(
                 "Check the mapped columns, date format, and CSV structure.",
             );
             Err("CSV rows could not be staged. Check the selected columns and file format.".into())
+        }
+    }
+}
+#[tauri::command]
+pub fn stage_xlsx_import(
+    state: State<'_, Database>,
+    request: StageXlsxRequest,
+) -> Result<usize, String> {
+    let mapping = CsvImportMapping {
+        date_column: request.date_column,
+        description_column: request.description_column,
+        amount_column: request.amount_column,
+        positive_amount_type: request.positive_amount_type,
+        date_format: request.date_format,
+    };
+    let repository = SqliteImportRepository::new(state.inner());
+    match repository.stage_xlsx(
+        &request.batch_id,
+        request.contents,
+        &request.sheet_name,
+        request.header_row,
+        &mapping,
+    ) {
+        Ok(count) => Ok(count),
+        Err(_) => {
+            let _ = ImportService::new(repository).record_failure(
+                &request.batch_id,
+                None,
+                "parse",
+                "Workbook parsing or validation failed",
+                "Check the worksheet, header row, mapped columns and workbook structure.",
+            );
+            Err(
+                "Workbook rows could not be staged. Check the selected worksheet and columns."
+                    .into(),
+            )
         }
     }
 }
