@@ -7,6 +7,7 @@ use crate::{
 };
 use calamine::{Data, DataType, Reader, open_workbook_auto_from_rs};
 use rusqlite::{OptionalExtension, Transaction, params};
+use sha2::{Digest, Sha256};
 use std::io::Cursor;
 use uuid::Uuid;
 pub struct SqliteImportRepository<'a> {
@@ -16,10 +17,27 @@ impl<'a> SqliteImportRepository<'a> {
     pub fn new(database: &'a Database) -> Self {
         Self { database }
     }
+
+    pub fn source_file_contents(&self, batch_id: &str) -> Result<Vec<u8>, ImportError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        connection
+            .query_row(
+                "UPDATE import_source_files SET expires_at=datetime('now', '+90 days') WHERE batch_id=?1 AND expires_at>CURRENT_TIMESTAMP RETURNING contents",
+                [batch_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| ImportError::Database(e.to_string()))?
+            .ok_or(ImportError::InvalidBatch)
+    }
 }
 impl ImportRepository for SqliteImportRepository<'_> {
     fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError> {
-        let connection = self
+        let mut connection = self
             .database
             .connection()
             .lock()
@@ -35,8 +53,19 @@ impl ImportRepository for SqliteImportRepository<'_> {
             return Err(ImportError::InvalidBatch);
         }
         let id = Uuid::new_v4().to_string();
-        connection.execute("INSERT INTO import_batches(id,account_id,source_file_name,source_file_hash,source_format) VALUES (?1,?2,?3,?4,?5)",params![id,batch.account_id,batch.source_file_name,batch.source_file_hash,batch.source_format]).map_err(|e|ImportError::Database(e.to_string()))?;
-        connection.execute("INSERT INTO import_logs(id,batch_id,stage,severity,message) VALUES (?1,?2,'staging','INFO','Import batch created')",params![Uuid::new_v4().to_string(),id]).map_err(|e|ImportError::Database(e.to_string()))?;
+        let tx = connection
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let calculated_hash = format!("{:x}", Sha256::digest(&batch.source_file_contents));
+        tx.execute("INSERT INTO import_batches(id,account_id,source_file_name,source_file_hash,source_format) VALUES (?1,?2,?3,?4,?5)",params![id,batch.account_id,batch.source_file_name,calculated_hash,batch.source_format]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.execute(
+            "INSERT INTO import_source_files(batch_id,contents,sha256) VALUES (?1,?2,?3)",
+            params![id, batch.source_file_contents, calculated_hash],
+        )
+        .map_err(|e| ImportError::Database(e.to_string()))?;
+        tx.execute("INSERT INTO import_logs(id,batch_id,stage,severity,message) VALUES (?1,?2,'staging','INFO','Import batch created; source file retained locally for up to 90 days after the latest activity')",params![Uuid::new_v4().to_string(),id]).map_err(|e|ImportError::Database(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
         Ok(id)
     }
     fn correct_record(
@@ -412,6 +441,7 @@ impl SqliteImportRepository<'_> {
             .connection()
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
+        refresh_source_retention(&c, batch_id)?;
         c.query_row("SELECT opening_balance_minor,closing_balance_minor,expected_closing_balance_minor,difference_minor,outcome,explanation FROM import_reconciliations WHERE batch_id=?1", [batch_id], |r|Ok(ImportReconciliation { opening_balance_minor:r.get(0)?, closing_balance_minor:r.get(1)?, expected_closing_balance_minor:r.get(2)?, difference_minor:r.get(3)?, outcome:r.get(4)?, explanation:r.get(5)? })).optional().map(|r|r.unwrap_or(ImportReconciliation{opening_balance_minor:None,closing_balance_minor:None,expected_closing_balance_minor:None,difference_minor:None,outcome:"unavailable".into(),explanation:"No statement balances provided.".into()})).map_err(|e|ImportError::Database(e.to_string()))
     }
 
@@ -421,6 +451,7 @@ impl SqliteImportRepository<'_> {
             .connection()
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
+        refresh_source_retention(&c, batch_id)?;
         let mut s = c.prepare("SELECT id,timestamp,stage,severity,message,record_id,corrective_action FROM import_logs WHERE batch_id=?1 ORDER BY timestamp,id").map_err(|e| ImportError::Database(e.to_string()))?;
         s.query_map([batch_id], |r| {
             Ok(ImportLogRecord {
@@ -444,6 +475,7 @@ impl SqliteImportRepository<'_> {
             .connection()
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
+        refresh_source_retention(&c, batch_id)?;
         let mut s=c.prepare("SELECT id,source_row_reference,original_date,normalized_date,original_description,original_amount,normalized_amount_minor,transaction_type,validation_status,duplicate_status,review_status FROM imported_records WHERE batch_id=?1 ORDER BY CAST(source_row_reference AS INTEGER)").map_err(|e|ImportError::Database(e.to_string()))?;
         let mut records = s
             .query_map([batch_id], |r| {
@@ -903,6 +935,18 @@ fn cell_string(cell: &Data) -> String {
         _ => cell.to_string(),
     }
 }
+fn refresh_source_retention(
+    connection: &rusqlite::Connection,
+    batch_id: &str,
+) -> Result<(), ImportError> {
+    connection
+        .execute(
+            "UPDATE import_source_files SET expires_at=datetime('now', '+90 days') WHERE batch_id=?1 AND expires_at>CURRENT_TIMESTAMP",
+            [batch_id],
+        )
+        .map(|_| ())
+        .map_err(|e| ImportError::Database(e.to_string()))
+}
 fn parse_minor_units(raw: &str) -> Option<i64> {
     let (whole, fraction) = raw.split_once('.').unwrap_or((raw, ""));
     if whole.is_empty()
@@ -985,10 +1029,11 @@ mod tests {
             account_id: "a".into(),
             source_file_name: "statement.csv".into(),
             source_format: "csv".into(),
-            source_file_hash: None,
+            source_file_contents: b"statement fixture".to_vec(),
         };
         let id = repository.create_batch(&batch).unwrap();
         assert_eq!(repository.list_batches().unwrap().len(), 1);
+        let stored_source = repository.source_file_contents(&id).unwrap();
         let c = db.connection().lock().unwrap();
         let entries: i64 = c
             .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
@@ -1000,8 +1045,59 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
+        let stored_hash: String = c
+            .query_row(
+                "SELECT source_file_hash FROM import_batches WHERE id=?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(entries, 0);
         assert_eq!(logs, 1);
+        assert_eq!(stored_source, b"statement fixture");
+        assert_eq!(
+            stored_hash,
+            format!("{:x}", Sha256::digest(b"statement fixture"))
+        );
+    }
+
+    #[test]
+    fn source_retention_expires_and_activity_refreshes_it() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let id = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.csv".into(),
+                source_format: "csv".into(),
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE import_source_files SET expires_at=datetime('now', '-1 day') WHERE batch_id=?1",
+                [&id],
+            )
+            .unwrap();
+        assert!(matches!(
+            repository.source_file_contents(&id),
+            Err(ImportError::InvalidBatch)
+        ));
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO import_logs(id,batch_id,stage,severity,message) VALUES ('activity',?1,'review','INFO','Reviewed import')",
+                [&id],
+            )
+            .unwrap();
+        assert_eq!(
+            repository.source_file_contents(&id).unwrap(),
+            b"statement fixture"
+        );
     }
     #[test]
     fn rejects_archived_account() {
@@ -1020,7 +1116,7 @@ mod tests {
             account_id: "a".into(),
             source_file_name: "statement.csv".into(),
             source_format: "csv".into(),
-            source_file_hash: None,
+            source_file_contents: b"statement fixture".to_vec(),
         };
         assert!(matches!(
             repo.create_batch(&batch),
@@ -1037,7 +1133,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "mapped.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let csv = "Date,Description,Amount\n2026-11-01,\"Cafe, downtown\",12.50\nnot-a-date,Unknown,4.00\n";
@@ -1075,7 +1171,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let mapping = CsvImportMapping {
@@ -1121,7 +1217,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let mapping = CsvImportMapping {
@@ -1163,7 +1259,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let mapping = CsvImportMapping {
@@ -1210,7 +1306,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let record = staged_expense(&repo, &batch);
@@ -1257,7 +1353,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         staged_expense(&repo, &batch);
@@ -1284,7 +1380,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let record = staged_expense(&repo, &batch);
@@ -1322,7 +1418,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let row = staged_expense(&repo, &batch);
@@ -1362,7 +1458,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let mapping = CsvImportMapping {
@@ -1394,7 +1490,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "x.csv".into(),
                 source_format: "csv".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let row = staged_expense(&repo, &batch);
@@ -1451,7 +1547,7 @@ mod tests {
                 account_id: "a".into(),
                 source_file_name: "sample.xlsx".into(),
                 source_format: "xlsx".into(),
-                source_file_hash: None,
+                source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
         let bytes = workbook_fixture();

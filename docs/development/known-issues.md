@@ -12,7 +12,7 @@ The following items represent functionality and engineering work that has not ye
 
 | ID | Area | Outstanding work | Status |
 |---|---|---|---|
-| OW-003 | Imports | Preserve uploaded source files and calculate stable content hashes | Pending |
+| OW-004 | Imports | Add PDF text extraction and mapped statement staging | Pending |
 | OW-006 | Imports | Verify provider statement formats and add sanitized fixtures before claiming provider parser support | Pending |
 | OW-011 | Imports | Compare revised statements and provide controlled keep, replace, merge and individual-review choices | Pending |
 | OW-007 | Planning | Implement budgets, savings goals and subscriptions | Pending |

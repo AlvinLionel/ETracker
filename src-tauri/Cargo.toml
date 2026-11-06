@@ -27,6 +27,7 @@ uuid = { version = "1.29.0", features = ["v4"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 csv = "1.4.0"
 calamine = { version = "0.38.0", features = ["chrono"] }
+sha2 = "0.10.9"
 
 [dev-dependencies]
 zip = { version = "9.4.1", default-features = false }

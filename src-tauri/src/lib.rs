@@ -26,6 +26,7 @@ pub fn run() {
             commands::transactions::reverse_transaction,
             commands::transactions::create_transfer,
             commands::imports::create_import_batch,
+            commands::imports::get_import_source_file,
             commands::imports::list_import_batches,
             commands::imports::stage_csv_import,
             commands::imports::csv_headers,

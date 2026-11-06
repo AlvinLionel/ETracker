@@ -14,7 +14,7 @@ pub struct CreateImportBatchRequest {
     pub account_id: String,
     pub source_file_name: String,
     pub source_format: String,
-    pub source_file_hash: Option<String>,
+    pub source_file_contents: Vec<u8>,
 }
 #[derive(Deserialize)]
 pub struct StageCsvRequest {
@@ -144,11 +144,20 @@ pub fn create_import_batch(
             account_id: request.account_id,
             source_file_name: request.source_file_name,
             source_format: request.source_format,
-            source_file_hash: request.source_file_hash,
+            source_file_contents: request.source_file_contents,
         })
         .map_err(|_| {
             "Import batch could not be created. Check the account and file details.".into()
         })
+}
+#[tauri::command]
+pub fn get_import_source_file(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<Vec<u8>, String> {
+    SqliteImportRepository::new(state.inner())
+        .source_file_contents(&batch_id)
+        .map_err(|_| "The retained source file is unavailable or past its retention period.".into())
 }
 #[tauri::command]
 pub fn list_import_batches(state: State<'_, Database>) -> Result<Vec<ImportBatchRecord>, String> {

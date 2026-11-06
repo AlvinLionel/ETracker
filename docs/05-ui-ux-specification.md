@@ -401,6 +401,8 @@ The imports workspace manages statement uploads, extraction, validation, duplica
 
 The generic file-mapping flow supports CSV and XLSX workbooks. For XLSX, users choose a worksheet and header row before mapping date, amount and optional description columns. Formula-derived values in mapped date or amount cells require correction in staged review.
 
+Each saved workspace provides access to its original uploaded file for 90 days after the latest workspace activity. The application removes expired source bytes at startup while retaining the financial records and import history.
+
 It is a critical financial workflow and must provide transparency throughout processing.
 
 ### 7.2 Import Workflow

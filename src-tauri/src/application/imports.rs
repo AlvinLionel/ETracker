@@ -3,7 +3,7 @@ pub struct NewImportBatch {
     pub account_id: String,
     pub source_file_name: String,
     pub source_format: String,
-    pub source_file_hash: Option<String>,
+    pub source_file_contents: Vec<u8>,
 }
 #[derive(Clone, Debug)]
 pub struct CsvImportMapping {
@@ -75,6 +75,7 @@ impl<R: ImportRepository> ImportService<R> {
     pub fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError> {
         if batch.account_id.trim().is_empty()
             || batch.source_file_name.trim().is_empty()
+            || batch.source_file_contents.is_empty()
             || !matches!(
                 batch.source_format.as_str(),
                 "csv" | "xlsx" | "pdf" | "unknown"

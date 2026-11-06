@@ -613,6 +613,27 @@ The user will be able to choose:
 
 ---
 
+## DB-026 — Local source-file retention
+
+**Status:** Approved
+**Date:** 6 November 2026
+**Related documents:** DOC-002, DOC-003, DOC-004, DOC-007
+
+### Context
+Original statement files are needed for traceability and review, while long-term retention of sensitive source files should be bounded.
+
+### Decision
+Store the original uploaded bytes locally with the import batch and calculate a SHA-256 content hash. Retain and make the source downloadable for 90 days after the latest import-batch activity. Remove expired source bytes during application startup; staged and finalized financial records and import history remain intact.
+
+### Rationale and implications
+- Import processing remains local and available offline.
+- Activity refreshes the retention deadline so active workspaces keep their source file.
+- Source-file expiration does not delete ledger entries, staged rows or audit history.
+- Cleanup is performed when the application starts, so physical deletion may occur after the exact expiry time.
+- Rules for discarding or cancelling entire import batches remain pending.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances
@@ -928,7 +949,7 @@ The following matters require additional research, technical validation or expli
 | PEND-003 | Duplicate confidence thresholds and matching rules | High | DOC-004 |
 | PEND-004 | Treatment of pending transactions in reconciliation | High | DOC-004 |
 | PEND-005 | Revised statement conflicts with manually corrected records | High | DOC-004 |
-| PEND-006 | Import staging retention, cancellation and discard policy | Medium | DOC-004 |
+| PEND-006 | Import batch cancellation and discard behavior (source-file retention resolved in DB-026) | Medium | DOC-004 |
 | PEND-007 | Exact savings-goal, contribution and ledger relationship | Medium | DOC-004 |
 | PEND-008 | Exact import extraction and OCR libraries | High | DOC-003, DOC-004 |
 

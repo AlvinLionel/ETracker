@@ -1,10 +1,6 @@
 use super::migrations;
 use rusqlite::{Connection, Result};
-use std::{
-    path::Path,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{path::Path, sync::Mutex, time::Duration};
 
 pub struct Database {
     connection: Mutex<Connection>,
@@ -32,6 +28,11 @@ impl Database {
         )?;
 
         migrations::run(&mut connection)?;
+
+        connection.execute(
+            "DELETE FROM import_source_files WHERE expires_at <= CURRENT_TIMESTAMP",
+            [],
+        )?;
 
         Ok(Self {
             connection: Mutex::new(connection),

@@ -33,6 +33,7 @@ describe("ImportsPage", () => {
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_csv_import", expect.objectContaining({
       request: expect.objectContaining({ batch_id: "batch-1", date_column: "Date", amount_column: "Amount" }),
     })));
+    expect(mocks.invoke).toHaveBeenCalledWith("create_import_batch", { request: expect.objectContaining({ source_file_contents: expect.any(Array) }) });
     expect(await screen.findByRole("status")).toHaveTextContent("2 staged rows");
   });
 
@@ -72,6 +73,29 @@ describe("ImportsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
     fireEvent.click(screen.getByRole("button", { name: "Logs" }));
     expect(await screen.findByText("Staged 2 CSV rows")).toBeInTheDocument();
+  });
+
+  it("downloads the retained original statement file", async () => {
+    const createObjectURL = vi.fn(() => "blob:source-file");
+    const revokeObjectURL = vi.fn();
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
+      if (command === "get_import_source_file") return Promise.resolve([65, 66, 67]);
+      if (command === "list_staged_import_records") return Promise.resolve([]);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download source" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("get_import_source_file", { batchId: "batch-1" }));
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:source-file");
+    expect(anchorClick).toHaveBeenCalled();
+    anchorClick.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it("submits statement balances for reconciliation", async () => {
