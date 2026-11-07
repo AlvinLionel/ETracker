@@ -56,7 +56,7 @@ function App() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-7 overflow-y-auto px-4 py-6">
+        <nav aria-label="Primary navigation" className="flex-1 space-y-7 overflow-y-auto px-4 py-6">
           {["Overview", "Finance", "Planning", "Insights", "System"].map(
             (section) => {
               const items = navigationItems.filter(

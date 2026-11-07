@@ -26,6 +26,7 @@ describe("application navigation shell", () => {
     render(<App />);
 
     expect(await screen.findByText("Dashboard test content")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const compactNavigation = screen.getByRole("navigation", { name: "Compact navigation" });
     fireEvent.click(within(compactNavigation).getByRole("button", { name: "Accounts" }));
 
