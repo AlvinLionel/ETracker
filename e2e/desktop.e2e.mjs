@@ -253,4 +253,18 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const savingsCard = await driver.findElement(By.xpath(`${accountsPanel}//button[contains(.,'${savings}')]`));
   assert.match(await checkingCard.getText(), /66[.,]00/);
   assert.match(await savingsCard.getText(), /50[.,]00/);
+
+  await navigateTo("Settings");
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Settings and reminders']")), 15_000);
+  const themeSelect = new Select(await driver.findElement(By.css("select[aria-label='Color theme']")));
+  await themeSelect.selectByValue("dark");
+  await driver.findElement(By.xpath("//button[normalize-space()='Save preferences']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Preferences saved')]")), 15_000);
+  assert.equal(
+    await driver.executeScript("return getComputedStyle(document.querySelector('.app-shell')).backgroundColor"),
+    "rgb(23, 25, 31)",
+  );
+  await themeSelect.selectByValue("light");
+  await driver.findElement(By.xpath("//button[normalize-space()='Save preferences']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Preferences saved')]")), 15_000);
 });
