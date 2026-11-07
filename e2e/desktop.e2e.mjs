@@ -203,6 +203,25 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized 1 transactions')]")), 15_000);
   await unlink(statementPath).catch(() => {});
 
+  const invalidStatementPath = join(tmpdir(), `etracker-invalid-${suffix}.csv`);
+  await writeFile(invalidStatementPath, `Date,Amount,Memo\nnot-a-date,9.00,E2E invalid row ${suffix}\n`, "utf8");
+  await driver.findElement(By.css("input[type='file']")).sendKeys(invalidStatementPath);
+  await driver.wait(async () => (await driver.findElement(By.css("main form")).findElements(By.css("select"))).length >= 6, 15_000);
+  await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 staged rows')]")), 15_000);
+  const invalidBatchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]`)), 15_000);
+  await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='uncertain']]")), 15_000);
+  await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  const importFailure = await driver.wait(async () => {
+    const alerts = await driver.findElements(By.css("[role='alert']"));
+    return alerts[0] ?? false;
+  }, 15_000);
+  assert.match(await importFailure.getText(), /resolve|valid|review|finaliz/i);
+  await unlink(invalidStatementPath).catch(() => {});
+
   await navigateTo("Dashboard");
   await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Dashboard']")), 15_000);
   const accountsPanel = "//section[.//h2[normalize-space()='Accounts'] and not(.//section[.//h2[normalize-space()='Accounts']])]";
