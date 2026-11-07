@@ -203,6 +203,27 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized 1 transactions')]")), 15_000);
   await unlink(statementPath).catch(() => {});
 
+  const revisedStatementPath = join(tmpdir(), `etracker-revised-${suffix}.csv`);
+  await writeFile(revisedStatementPath, `Date,Amount,Memo\n2026-11-01,9.00,${importDescription}\n`, "utf8");
+  const revisionOption = await driver.wait(until.elementLocated(By.xpath(`//main//option[contains(.,'etracker-${suffix}.csv')]`)), 15_000);
+  await new Select(await revisionOption.findElement(By.xpath(".."))).selectByValue(await revisionOption.getAttribute("value"));
+  await driver.findElement(By.css("input[type='file']")).sendKeys(revisedStatementPath);
+  await driver.wait(async () => (await driver.findElement(By.css("main form")).findElements(By.css("select"))).length >= 7, 15_000);
+  await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 staged rows')]")), 15_000);
+  const revisedBatchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-revised-${suffix}.csv']]`)), 15_000);
+  await revisedBatchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//h3[normalize-space()='Revised statement comparison']")), 15_000);
+  await driver.wait(until.elementLocated(By.xpath("//td[normalize-space()='modified']")), 15_000);
+  const revisedDecision = await driver.findElement(By.css("select[aria-label^='Review change']"));
+  await new Select(revisedDecision).selectByValue("use_revised");
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Statement change decision saved')]")), 15_000);
+  await revisedBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized')]")), 15_000);
+  await unlink(revisedStatementPath).catch(() => {});
+
   const invalidStatementPath = join(tmpdir(), `etracker-invalid-${suffix}.csv`);
   await writeFile(invalidStatementPath, `Date,Amount,Memo\nnot-a-date,9.00,E2E invalid row ${suffix}\n`, "utf8");
   await driver.findElement(By.css("input[type='file']")).sendKeys(invalidStatementPath);
@@ -230,6 +251,6 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
     return matches[0] ?? false;
   }, 15_000).catch(async () => { throw new Error(`Dashboard account list did not contain ${checking}. Visible text: ${await driver.findElement(By.css("main")).getText()}`); });
   const savingsCard = await driver.findElement(By.xpath(`${accountsPanel}//button[contains(.,'${savings}')]`));
-  assert.match(await checkingCard.getText(), /67[.,]00/);
+  assert.match(await checkingCard.getText(), /66[.,]00/);
   assert.match(await savingsCard.getText(), /50[.,]00/);
 });
