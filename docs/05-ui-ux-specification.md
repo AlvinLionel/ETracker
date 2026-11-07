@@ -106,7 +106,7 @@ Theme changes must apply consistently across all screens and visual components.
 
 ### 2.4.1 Current Implementation Note
 
-The application shell and dashboard now use warm neutral light surfaces, restrained purple selection states, and charcoal/navy dark surfaces through shared CSS tokens. Compact horizontal navigation is available in narrower windows, and budget progress is exposed as an accessible progress indicator. Other feature screens still contain mixed legacy colors; apply the design direction incrementally and verify each screen without changing its business behavior.
+The application shell and dashboard use warm neutral light surfaces, restrained purple selection states, and charcoal/navy dark surfaces through shared CSS tokens. Common surface, neutral text, border, and status color utilities inside the application shell resolve through those tokens, including legacy feature pages. Compact horizontal navigation is available in narrower windows, and budget progress is exposed as an accessible progress indicator. Feature layouts still need screen-by-screen refinement and desktop visual review without changing business behavior.
 
 ### 2.5 Colour Semantics
 
