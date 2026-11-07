@@ -1,0 +1,6 @@
+{
+  "identifier": "com.etracker.app.e2e",
+  "app": {
+    "appDirectoriesOverride": "./etracker-e2e-data"
+  }
+}
