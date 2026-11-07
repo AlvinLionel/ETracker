@@ -8,6 +8,7 @@ import SubscriptionsPage from "./features/planning/SubscriptionsPage";
 import AnalyticsPage from "./features/analytics/AnalyticsPage";
 import ForecastingPage from "./features/forecasting/ForecastingPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
+import SettingsPage from "./features/settings/SettingsPage";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
@@ -24,7 +25,7 @@ const navigationItems = [
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
-  const availablePages=["Dashboard","Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting"];
+  const availablePages=["Dashboard","Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting","Settings"];
 
   return (
     <div className="flex min-h-screen bg-[#f7f8f7] text-slate-900">
@@ -94,7 +95,7 @@ function App() {
         </header>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : <DashboardPage navigate={setActivePage} />}
+          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
         </main>
       </div>
     </div>

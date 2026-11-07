@@ -14,6 +14,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::analytics::get_analytics_summary,
             commands::dashboard::get_dashboard_summary,
+            commands::preferences::get_user_preferences,
+            commands::preferences::set_user_preferences,
             commands::forecasting::generate_forecast,
             commands::forecasting::list_forecasts,
             commands::forecasting::evaluate_forecast,
