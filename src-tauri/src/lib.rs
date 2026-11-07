@@ -19,6 +19,7 @@ pub fn run() {
             commands::preferences::get_user_preferences,
             commands::preferences::set_user_preferences,
             commands::integrity::check_database_integrity,
+            commands::diagnostics::get_diagnostic_report,
             commands::forecasting::generate_forecast,
             commands::forecasting::list_forecasts,
             commands::forecasting::evaluate_forecast,

@@ -97,4 +97,18 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("restore_encrypted_backup", { backupBase64: "ZW5jcnlwdGVk", passphrase: "a sufficiently long passphrase" }));
     expect(await screen.findByRole("button", { name: "Reload ETracker" })).toBeInTheDocument();
   });
+
+  it("downloads a diagnostic report on request", async () => {
+    invoke.mockImplementation((command: string) => command === "get_user_preferences"
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      : command === "list_subscriptions" ? Promise.resolve([])
+        : command === "get_diagnostic_report" ? Promise.resolve({ app_version: "0.1.0", operating_system: "windows", architecture: "x86_64", sqlite_version: "3.50.0", schema_version: 14, latest_supported_schema_version: 14, database_integrity: "passed", foreign_key_check: "passed" }) : Promise.resolve());
+    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:diagnostics");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download diagnostic report" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_diagnostic_report"));
+    expect(create).toHaveBeenCalled();
+    expect(await screen.findByRole("status")).toHaveTextContent(/Privacy-safe diagnostic report downloaded/);
+  });
 });

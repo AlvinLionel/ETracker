@@ -723,6 +723,20 @@ The application stores financial records and retained statement source files loc
 
 ---
 
+## DB-031 — Privacy-safe diagnostic export
+
+**Status:** Approved
+**Date:** 7 November 2026
+**Related documents:** DOC-005, DOC-006, DOC-007
+
+### Decision
+Settings may create a user-requested local JSON report containing application/platform versions, SQLite/schema versions, and redacted database integrity and foreign-key status. The report excludes transaction, account, category, statement and personal data; it is downloaded locally and never transmitted by ETracker. Do not persist diagnostic logs until a separate logging and retention policy is approved.
+
+### Rationale and implications
+This offers useful first-line support details while limiting sensitive data exposure. It does not replace detailed local integrity results, operational logs, or desktop workflow verification.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances
@@ -1071,7 +1085,7 @@ The following matters require additional research, technical validation or expli
 | PEND-022 | Installer format and distribution | Medium | DOC-007 |
 | PEND-023 | Code signing and integrity verification | Medium | DOC-007 |
 | PEND-024 | Application update distribution strategy | Medium | DOC-007 |
-| PEND-028 | Diagnostic and log retention | Medium | DOC-007 |
+| PEND-028 | Persistent diagnostic logging and retention policy | Medium | DOC-007 |
 | PEND-029 | Release branch, tagging and versioning policy | Medium | DOC-007 |
 | PEND-030 | Release cadence | Low | DOC-007 |
 | PEND-031 | Secure storage and handling of optional AI credentials | High | DOC-003, DOC-007 |

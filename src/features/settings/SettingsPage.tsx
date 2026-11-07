@@ -5,6 +5,7 @@ import { applyTheme } from "./theme";
 type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: "system" | "light" | "dark" };
 type Subscription = { id: string; name: string; amount_minor: number; currency_code: string; frequency: string; next_due_date: string; status: string };
 type IntegrityReport = { integrity_messages: string[]; foreign_key_violations: string[] };
+type DiagnosticReport = { app_version: string; operating_system: string; architecture: string; sqlite_version: string; schema_version: number; latest_supported_schema_version: number; database_integrity: "passed" | "issues_found"; foreign_key_check: "passed" | "issues_found" };
 const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(minor / 100);
 const defaultPreferences: Preferences = { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" };
 
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   const [backupBusy, setBackupBusy] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreComplete, setRestoreComplete] = useState(false);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -53,6 +55,20 @@ export default function SettingsPage() {
     try { setIntegrity(await invoke<IntegrityReport>("check_database_integrity")); }
     catch { setError("The local data check could not be completed."); }
     finally { setChecking(false); }
+  }
+
+  async function exportDiagnostics() {
+    setDiagnosticsBusy(true); setError(""); setMessage("");
+    try {
+      const report = await invoke<DiagnosticReport>("get_diagnostic_report");
+      const blob = new Blob([JSON.stringify({ generated_at: new Date().toISOString(), ...report }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `ETracker_diagnostics_${new Date().toISOString().slice(0, 10)}.json`; link.click();
+      URL.revokeObjectURL(url);
+      setMessage("Privacy-safe diagnostic report downloaded. It contains software and database health details, not financial records.");
+    } catch { setError("A diagnostic report could not be created."); }
+    finally { setDiagnosticsBusy(false); }
   }
 
   async function exportBackup() {
@@ -105,5 +121,6 @@ export default function SettingsPage() {
       <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Restore backup</h3><p className="text-sm text-slate-600">Restoring replaces all current data with the selected backup. The backup is validated before the current database is changed.</p><label className="block text-sm">Encrypted backup file<input aria-label="Encrypted backup file" type="file" accept=".etracker-backup,application/octet-stream" onChange={(event) => { setRestoreFile(event.target.files?.[0] ?? null); setRestoreComplete(false); }} className="mt-1 block w-full max-w-md text-sm" /></label><label className="block text-sm">Backup passphrase<input aria-label="Restore passphrase" type="password" autoComplete="current-password" value={restorePassphrase} onChange={(event) => setRestorePassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Type RESTORE to confirm replacement<input aria-label="Restore confirmation" value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={restoreBusy || !restoreFile || restorePassphrase.length < 12 || restoreConfirmation !== "RESTORE"} onClick={restoreBackup} className="rounded-md bg-rose-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{restoreBusy ? "Validating and restoring…" : "Replace current data"}</button>{restoreComplete && <button type="button" onClick={() => window.location.reload()} className="ml-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium">Reload ETracker</button>}</div>
     </section>
     <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Local data integrity</h2><p className="mt-1 text-sm text-slate-600">Check SQLite structure and references between saved records.</p><button type="button" disabled={checking} onClick={checkIntegrity} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{checking ? "Checking…" : "Check local data"}</button>{integrity && <div role="status" className="mt-3 text-sm">{integrity.integrity_messages.length === 1 && integrity.integrity_messages[0].toLowerCase() === "ok" && integrity.foreign_key_violations.length === 0 ? <p className="text-emerald-800">The local database passed both checks.</p> : <div className="text-rose-700"><p>Database check found issues. Avoid editing affected records; this report may help diagnose the problem.</p>{integrity.integrity_messages.map((item) => <p key={item}>{item}</p>)}{integrity.foreign_key_violations.map((item) => <p key={item}>{item}</p>)}</div>}</div>}</section>
+    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Diagnostic report</h2><p className="mt-1 text-sm text-slate-600">Download app version, platform, SQLite/schema versions, and redacted database health status. The report excludes financial records and is not sent anywhere.</p><button type="button" disabled={diagnosticsBusy} onClick={exportDiagnostics} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{diagnosticsBusy ? "Preparing report…" : "Download diagnostic report"}</button></section>
   </section>;
 }

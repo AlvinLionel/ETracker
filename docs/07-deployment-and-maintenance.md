@@ -331,34 +331,19 @@ A complete backup should account for:
 
 ### 7.3 Backup Creation
 
-The application should support user-initiated backup creation.
+Settings supports user-initiated encrypted backups and restore. Backups are downloaded through the desktop file download flow; automatic scheduling and app-managed generations are not implemented.
 
-Automatic backup scheduling may also be provided according to the final backup settings design.
-
-The backup process must create a consistent snapshot of the database and associated files.
+The SQLite backup API creates a consistent database snapshot. Current managed statement source files are included because they are stored in the database.
 
 SQLite's journaling and transaction behaviour must be considered when implementing backup operations. Copying a database file while it is actively being modified must not be assumed safe.
 
 ### 7.4 Backup Retention
 
-The application should support multiple backup generations.
-
-The retention policy should be configurable or use a sensible default.
-
-The exact number of retained backups remains subject to implementation and storage evaluation.
+Downloaded backup retention is user-managed; ETracker does not maintain an archive or delete exported files. Users should keep multiple copies as appropriate and remove them when no longer needed.
 
 ### 7.5 Backup Integrity
 
-The application should verify backups where practical.
-
-Verification should establish that:
-- The backup can be opened.
-- The database passes integrity checks.
-- Required schema metadata is available.
-- Attachment references can be resolved.
-- Required files are present.
-
-A backup that has not been verified must not be presented as guaranteed recoverable.
+Restore authenticates/decrypts the file, validates SQLite structure and schema compatibility, migrates a supported older schema in an isolated in-memory copy, and checks integrity and foreign keys before replacing current data. Automated tests cover valid restore and rejection of wrong-passphrase, tampered and invalid files. Manual Windows restore testing remains open.
 
 ### 7.6 Backup Location
 
@@ -372,7 +357,7 @@ Backups contain sensitive financial information.
 
 The application must communicate the importance of protecting backup files.
 
-Backup encryption is a pending design decision and must be resolved before the backup format is considered final.
+Backups use AES-256-GCM with a random salt and nonce; PBKDF2-HMAC-SHA256 derives keys with 600,000 iterations. Passphrases must contain at least 12 characters and are never stored. A lost passphrase cannot be recovered. The current database remains unencrypted at rest.
 
 ---
 
@@ -386,17 +371,12 @@ Restoration must return ETracker to a valid and usable state without silently in
 
 The proposed workflow is:
 
-1. Select a backup.
-2. Inspect backup metadata.
-3. Verify backup integrity.
-4. Check application and schema compatibility.
-5. Explain the consequences of restoration.
-6. Confirm the operation.
-7. Protect the current data state.
-8. Restore the selected backup.
-9. Verify the restored database.
-10. Verify attachment references.
-11. Confirm successful recovery.
+1. Select an encrypted backup and enter its passphrase.
+2. Type `RESTORE` to confirm replacement.
+3. Authenticate and validate the backup before replacement.
+4. Migrate supported older schemas in memory.
+5. Replace current data using SQLite's backup API.
+6. Reload the app to show restored data.
 
 ### 8.3 Restoration Safety
 
@@ -404,7 +384,7 @@ Restoration may replace the current database state.
 
 The application must clearly explain this before the user confirms.
 
-The current database should be protected before restoration where possible.
+The restore workflow validates before replacing current data. A guaranteed rollback after an underlying SQLite page-copy failure is not provided; verify a separate backup exists before restoring important data.
 
 ### 8.4 Recovery Testing
 
@@ -466,9 +446,7 @@ Diagnostic messages should provide enough information to investigate failures wi
 
 ### 9.5 Log Retention
 
-The application should implement an appropriate retention and rotation strategy.
-
-The retention policy must balance diagnostic usefulness, storage usage and privacy.
+Persistent application logging is not currently enabled, so no persistent log retention or rotation policy has been selected. Settings can create a user-requested diagnostic JSON download with app/platform versions, schema/SQLite versions and redacted database health status. It excludes financial records and is not transmitted by ETracker. The report is not retained by the application.
 
 ### 9.6 Import Logs
 
@@ -800,10 +778,10 @@ The exact synchronization architecture must be designed and approved separately 
 | DM-002 | Installer format | Pending evaluation |
 | DM-003 | Code signing and installer trust | Pending evaluation |
 | DM-004 | Update and distribution mechanism | Pending evaluation |
-| DM-005 | Backup format and retention | Pending detailed design |
-| DM-006 | Backup encryption | Pending security decision |
-| DM-007 | Database migration framework | Pending technology evaluation |
-| DM-008 | Log retention and diagnostic export | Pending detailed design |
+| DM-005 | Backup format and retention | Approved: manual encrypted exports, user-managed retention (`DB-030`) |
+| DM-006 | Backup encryption | Approved: passphrase-based authenticated encryption (`DB-030`) |
+| DM-007 | Database migration framework | Implemented with versioned SQLite migrations; rollback after page-copy failure remains unguaranteed |
+| DM-008 | Log retention and diagnostic export | Redacted local export implemented (`DB-031`); persistent logging/retention pending |
 | DM-009 | Release branch and tagging policy | Pending workflow finalization |
 | DM-010 | Stable release cadence | Pending |
 | DM-011 | External AI credential handling | Pending security design |
@@ -812,7 +790,7 @@ The exact synchronization architecture must be designed and approved separately 
 
 ## 18. Current Deployment and Maintenance Status
 
-As of 4 November 2026:
+As of 7 November 2026:
 
 | Area | Status |
 |---|---|
@@ -832,9 +810,9 @@ As of 4 November 2026:
 | Maintenance categories | Defined |
 | Linux compatibility direction | Approved for future consideration |
 | Cloud synchronization | Future requirement; implementation deferred |
-| Installer | Not implemented |
-| Database migrations | Not implemented |
-| Backup and restoration | Not implemented |
+| x64 MSI and NSIS installer packages | Built; manual install/upgrade verification pending |
+| Database migrations | Implemented and tested |
+| Encrypted backup and restoration | Implemented and automated tests pass; manual desktop verification pending |
 | CI pipeline | Not implemented |
 | Stable release | Not produced |
 
