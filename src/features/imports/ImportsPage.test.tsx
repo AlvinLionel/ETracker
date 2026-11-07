@@ -121,6 +121,7 @@ describe("ImportsPage", () => {
     });
     render(<ImportsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
+    expect(screen.getByRole("navigation", { name: "Import workspace views" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Logs" }));
     expect(await screen.findByText("Staged 2 CSV rows")).toBeInTheDocument();
   });
