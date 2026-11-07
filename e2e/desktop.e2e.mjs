@@ -125,9 +125,56 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Transfer saved')]")), 15_000);
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='Transfer fee'] and .//td[normalize-space()='expense']]")), 15_000);
 
+  await navigateTo("Transactions");
+  const expenseDescription = `E2E lunch ${suffix}`;
+  const editedExpenseDescription = `E2E lunch edited ${suffix}`;
+  const expenseForm = (await driver.findElements(By.css("main form")))[0];
+  const expenseSelects = await expenseForm.findElements(By.css("select"));
+  await new Select(expenseSelects[0]).selectByValue("expense");
+  await new Select(expenseSelects[1]).selectByVisibleText(`${checking} (KES)`);
+  await expenseForm.findElement(By.css("input[placeholder='0.00']")).sendKeys("10.00");
+  const descriptionInput = expenseForm.findElement(By.xpath(".//label[normalize-space()='Description']/input"));
+  await descriptionInput.sendKeys(expenseDescription);
+  await expenseForm.findElement(By.xpath(".//button[normalize-space()='Save transaction']")).click();
+  await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${expenseDescription}']]`)), 15_000);
+
+  let expenseRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${expenseDescription}']]`));
+  await expenseRow.findElement(By.xpath(".//button[normalize-space()='Edit']")).click();
+  const editForm = (await driver.findElements(By.css("main form")))[0];
+  const editAmount = editForm.findElement(By.css("input[placeholder='0.00']"));
+  await editAmount.clear();
+  await editAmount.sendKeys("12.00");
+  const editDescription = editForm.findElement(By.xpath(".//label[normalize-space()='Description']/input"));
+  await editDescription.clear();
+  await editDescription.sendKeys(editedExpenseDescription);
+  await editForm.findElement(By.xpath(".//button[normalize-space()='Update transaction']")).click();
+  await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${editedExpenseDescription}']]`)), 15_000);
+
+  expenseRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${editedExpenseDescription}']]`));
+  await expenseRow.findElement(By.xpath(".//button[normalize-space()='History']")).click();
+  const auditHistory = await driver.wait(until.elementLocated(By.xpath("//aside[.//h3[normalize-space()='Audit history']]")), 15_000);
+  assert.match(await auditHistory.getText(), new RegExp(editedExpenseDescription));
+
+  await expenseRow.findElement(By.xpath(".//button[normalize-space()='Void']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().sendKeys("E2E void regression");
+  await driver.switchTo().alert().accept();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  await driver.wait(async () => {
+    const currentRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${editedExpenseDescription}']]`));
+    return (await currentRow.findElements(By.xpath(".//td[normalize-space()='voided']"))).length > 0;
+  }, 15_000);
+
+  const transferFeeRow = await driver.findElement(By.xpath("//tbody/tr[.//td[normalize-space()='Transfer fee'] and .//td[normalize-space()='expense']]"));
+  await transferFeeRow.findElement(By.xpath(".//button[normalize-space()='Reverse']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='reversal']]")), 15_000);
+
   await navigateTo("Dashboard");
   const checkingCard = await driver.wait(until.elementLocated(By.xpath(`//section[.//h2[normalize-space()='Accounts']]//button[contains(.,'${checking}')]`)), 15_000);
   const savingsCard = await driver.findElement(By.xpath(`//section[.//h2[normalize-space()='Accounts']]//button[contains(.,'${savings}')]`));
-  assert.match(await checkingCard.getText(), /73[.,]00/);
+  assert.match(await checkingCard.getText(), /75[.,]00/);
   assert.match(await savingsCard.getText(), /50[.,]00/);
 });
