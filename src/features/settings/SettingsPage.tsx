@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number };
 type Subscription = { id: string; name: string; amount_minor: number; currency_code: string; frequency: string; next_due_date: string; status: string };
+type IntegrityReport = { integrity_messages: string[]; foreign_key_violations: string[] };
 const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(minor / 100);
 const defaultPreferences: Preferences = { subscription_reminders_enabled: true, subscription_reminder_days: 7 };
 
@@ -12,6 +13,8 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [integrity, setIntegrity] = useState<IntegrityReport | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -36,6 +39,13 @@ export default function SettingsPage() {
     finally { setSaving(false); }
   }
 
+  async function checkIntegrity() {
+    setChecking(true); setError(""); setIntegrity(null);
+    try { setIntegrity(await invoke<IntegrityReport>("check_database_integrity")); }
+    catch { setError("The local data check could not be completed."); }
+    finally { setChecking(false); }
+  }
+
   return <section className="mx-auto max-w-4xl space-y-6">
     <header><p className="text-sm font-medium text-emerald-800">System</p><h1 className="mt-1 text-2xl font-bold">Settings and reminders</h1><p className="mt-1 text-sm text-slate-600">Manage local reminder preferences for subscription payments.</p></header>
     {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}{message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
@@ -46,5 +56,6 @@ export default function SettingsPage() {
       <button type="button" disabled={saving || preferences.subscription_reminder_days < 1 || preferences.subscription_reminder_days > 30} onClick={save} className="mt-4 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving ? "Saving…" : "Save preferences"}</button>
     </section>
     <section aria-live="polite" className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Upcoming payment reminders</h2>{!preferences.subscription_reminders_enabled ? <p className="mt-3 text-sm text-slate-500">Subscription reminders are turned off.</p> : reminders.length === 0 ? <p className="mt-3 text-sm text-slate-500">No active subscriptions are due within {preferences.subscription_reminder_days} days.</p> : <ul className="mt-3 divide-y">{reminders.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span><strong>{item.name}</strong><span className="ml-2 text-slate-500">{item.frequency}</span></span><span>{item.next_due_date} · {money(item.amount_minor, item.currency_code)}</span></li>)}</ul>}</section>
+    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Local data integrity</h2><p className="mt-1 text-sm text-slate-600">Check SQLite structure and references between saved records.</p><button type="button" disabled={checking} onClick={checkIntegrity} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{checking ? "Checking…" : "Check local data"}</button>{integrity && <div role="status" className="mt-3 text-sm">{integrity.integrity_messages.length === 1 && integrity.integrity_messages[0].toLowerCase() === "ok" && integrity.foreign_key_violations.length === 0 ? <p className="text-emerald-800">The local database passed both checks.</p> : <div className="text-rose-700"><p>Database check found issues. Avoid editing affected records; this report may help diagnose the problem.</p>{integrity.integrity_messages.map((item) => <p key={item}>{item}</p>)}{integrity.foreign_key_violations.map((item) => <p key={item}>{item}</p>)}</div>}</div>}</section>
   </section>;
 }

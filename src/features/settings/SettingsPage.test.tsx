@@ -29,4 +29,15 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: false, subscription_reminder_days: 14 } }));
     expect(await screen.findByText("Subscription reminders are turned off.")).toBeInTheDocument();
   });
+
+  it("runs and displays the local database integrity check", async () => {
+    invoke.mockImplementation((command: string) => command === "get_user_preferences"
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7 })
+      : command === "list_subscriptions" ? Promise.resolve([])
+        : Promise.resolve({ integrity_messages: ["ok"], foreign_key_violations: [] }));
+    render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Check local data" }));
+    expect(await screen.findByText("The local database passed both checks.")).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("check_database_integrity");
+  });
 });
