@@ -482,6 +482,27 @@ Logs must avoid unnecessary exposure of sensitive financial information. Complet
 
 ---
 
+## UX-012 — Statement-first finance workspace and restrained visualizations
+
+**Status:** Approved  
+**Date:** 7 November 2026  
+**Related documents:** DOC-002, DOC-005
+
+### Context
+Historical spending should be captured primarily from financial statements, while users also need a practical way to plan budgets and understand spending patterns.
+
+### Decision
+Statement imports are the primary route for adding past spending. Manual transaction entry remains available for cash spending and other gaps. The finance workspace will include an editable, spreadsheet-style monthly plan, with actuals alongside planned amounts. Analytics charts may use accessible native SVG components; a separate charting or UI-generation tool is not required. Large page backgrounds use the user's subtle, low-contrast accounting grid direction in both light and dark themes, while content surfaces remain clear.
+
+### Rationale and implications
+- Prioritize reviewable statement data and reconciliation for historical records.
+- Keep manual entry for activity that does not appear on statements.
+- Present plans and actuals together in a finance-focused worksheet.
+- Preserve exact chart values for keyboard and screen-reader users.
+- Keep decorative background treatment away from chart and control surfaces.
+
+---
+
 ## DB-021 — Separate persistent import staging area
 
 **Status:** Approved  
@@ -1062,8 +1083,6 @@ The following matters require additional research, technical validation or expli
 | PEND-009 | Final colour palette and contrast validation | Medium | DOC-005 |
 | PEND-010 | Typography and spacing system | Medium | DOC-005 |
 | PEND-011 | Main navigation structure and final wireframes | High | DOC-005 |
-| PEND-012 | Charting library | Medium | DOC-005 |
-| PEND-013 | Grid background appearance and density | Low | DOC-005 |
 | PEND-014 | Detailed table interactions and presentation | Medium | DOC-005 |
 | PEND-015 | Notification presentation and interaction | Medium | DOC-005 |
 | PEND-016 | Accessibility and responsive behaviour specifications | Medium | DOC-005 |
