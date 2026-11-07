@@ -267,4 +267,39 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await themeSelect.selectByValue("light");
   await driver.findElement(By.xpath("//button[normalize-space()='Save preferences']")).click();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Preferences saved')]")), 15_000);
+
+  await driver.executeScript(`
+    window.__etrackerE2eBackup = null;
+    URL.createObjectURL = (blob) => { window.__etrackerE2eBackup = blob; return "blob:e2e-backup"; };
+    HTMLAnchorElement.prototype.click = function () {};
+  `);
+  const backupPassphrase = "E2E backup passphrase 2026";
+  await driver.findElement(By.css("input[aria-label='Backup passphrase']")).sendKeys(backupPassphrase);
+  await driver.findElement(By.css("input[aria-label='Confirm backup passphrase']")).sendKeys(backupPassphrase);
+  await driver.findElement(By.xpath("//button[normalize-space()='Download encrypted backup']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Encrypted backup created')]")), 15_000);
+  const backupBytes = await driver.executeAsyncScript(`
+    const done = arguments[arguments.length - 1];
+    if (!window.__etrackerE2eBackup) { done(null); return; }
+    window.__etrackerE2eBackup.arrayBuffer()
+      .then((buffer) => done(Array.from(new Uint8Array(buffer))))
+      .catch(() => done(null));
+  `);
+  assert.ok(Array.isArray(backupBytes));
+  assert.equal(String.fromCharCode(...backupBytes.slice(0, 8)), "ETRBKUP1");
+  const backupPath = join(tmpdir(), `etracker-backup-${suffix}.etracker-backup`);
+  await writeFile(backupPath, Uint8Array.from(backupBytes));
+  await driver.findElement(By.css("input[aria-label='Encrypted backup file']")).sendKeys(backupPath);
+  await driver.findElement(By.css("input[aria-label='Restore passphrase']")).sendKeys("incorrect e2e passphrase");
+  await driver.findElement(By.css("input[aria-label='Restore confirmation']")).sendKeys("RESTORE");
+  await driver.findElement(By.xpath("//button[normalize-space()='Replace current data']")).click();
+  await driver.wait(until.elementLocated(By.css("[role='alert']")), 15_000);
+  assert.match(await driver.findElement(By.css("[role='alert']")).getText(), /Restore failed/);
+  const restorePassphrase = driver.findElement(By.css("input[aria-label='Restore passphrase']"));
+  await restorePassphrase.clear();
+  await restorePassphrase.sendKeys(backupPassphrase);
+  await driver.findElement(By.xpath("//button[normalize-space()='Replace current data']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Database restored')]")), 15_000);
+  assert.equal(await driver.findElements(By.xpath("//button[normalize-space()='Reload ETracker']")).then((items) => items.length > 0), true);
+  await unlink(backupPath).catch(() => {});
 });
