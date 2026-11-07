@@ -97,16 +97,17 @@ export default function AccountsPage() {
     }
 
     return (
-        <div className="mx-auto max-w-6xl">
-            <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div className="mx-auto max-w-6xl space-y-6">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
-                    <p className="text-sm font-medium text-emerald-700"> FINANCIAL ACCOUNTS </p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900"> Your accounts </h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500"> Manage the accounts you use to hold and move your money.</p>
+                    <p className="workspace-accent text-xs font-semibold uppercase tracking-[0.14em]">Financial accounts</p>
+                    <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Your accounts</h1>
+                    <p className="workspace-muted mt-2 max-w-2xl text-sm leading-6">Manage the accounts you use to hold and move your money.</p>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
                     <button type="button" onClick={showArchived ? () => setShowArchived(false) : handleShowArchived}
+                        aria-pressed={showArchived}
                         className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
                         {showArchived ? "Active accounts" : "Archived accounts"}
                     </button>
@@ -121,7 +122,7 @@ export default function AccountsPage() {
 
             {showArchived
                 ? (
-                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <div className="workspace-panel overflow-hidden rounded-xl">
                         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                             <h3 className="font-semibold text-slate-800"> Archived accounts </h3>
                             <span className="text-xs text-slate-500">
@@ -148,7 +149,7 @@ export default function AccountsPage() {
                                     : (
                                         <div className="divide-y divide-slate-100">
                                             {archivedAccounts.map((account) => (
-                                                <div key={account.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+                                                <div key={account.id} className="workspace-row flex flex-wrap items-center justify-between gap-4 px-5 py-4">
                                                     <div className="min-w-0">
                                                         <h4 className="truncate text-sm font-semibold text-slate-800"> {account.name} </h4>
                                                         <p className="mt-1 text-xs text-slate-500">
@@ -171,12 +172,12 @@ export default function AccountsPage() {
                     </div>)
                 : isLoading
                     ? (
-                        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+                        <div className="workspace-panel rounded-xl p-10 text-center">
                             <p className="text-sm text-slate-500"> Loading your accounts... </p>
                         </div>)
                     : loadError
                         ? (
-                            <div className="rounded-xl border border-red-200 bg-white p-8">
+                            <div className="workspace-panel workspace-error-panel rounded-xl p-8">
                                 <h3 className="font-semibold text-red-700"> Unable to load accounts </h3>
                                 <p className="mt-2 text-sm text-slate-600">{loadError}</p>
                                 <button type="button" onClick={() => void refresh().catch(() => { })}
@@ -186,7 +187,7 @@ export default function AccountsPage() {
                             </div>)
                         : accounts.length === 0
                             ? (
-                                <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+                                <div className="workspace-panel flex min-h-72 flex-col items-center justify-center rounded-xl border-dashed border-slate-300 px-6 py-12 text-center">
                                     <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl text-slate-500"> + </div>
                                     <h3 className="text-base font-semibold text-slate-800"> No active accounts </h3>
                                     <p className="mt-2 max-w-md text-sm leading-6 text-slate-500"> Add an account to start managing your finances, or view your archived accounts. </p>
@@ -196,7 +197,7 @@ export default function AccountsPage() {
                                     </button>
                                 </div>)
                             : (
-                                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                <div className="workspace-panel overflow-hidden rounded-xl">
                                     <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                                         <h3 className="font-semibold text-slate-800"> Active accounts </h3>
                                         <span className="text-xs text-slate-500">
@@ -207,7 +208,7 @@ export default function AccountsPage() {
                                     <div className="divide-y divide-slate-100">
                                         {accounts.map((account) => (
                                             <div key={account.id}
-                                                className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+                                                className="workspace-row flex flex-wrap items-center justify-between gap-4 px-5 py-4">
                                                 <div className="min-w-0">
                                                     <h4 className="truncate text-sm font-semibold text-slate-800"> {account.name} </h4>
                                                     <p className="mt-1 text-xs text-slate-500">

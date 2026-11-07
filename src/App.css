@@ -49,6 +49,11 @@ body {
   color: var(--workspace-text);
 }
 
+:where(.app-shell) :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--workspace-accent);
+  outline-offset: 2px;
+}
+
 .app-sidebar,
 .app-header,
 .app-compact-nav {
@@ -76,6 +81,10 @@ body {
   box-shadow: 0 1px 2px rgb(32 34 31 / 4%);
 }
 
+.workspace-error-panel {
+  border-color: color-mix(in srgb, var(--workspace-negative) 32%, var(--workspace-line));
+}
+
 :root[data-theme="dark"] .workspace-panel {
   box-shadow: 0 1px 2px rgb(0 0 0 / 16%);
 }
@@ -94,6 +103,10 @@ body {
 
 .workspace-accent-track {
   background: var(--workspace-accent-soft);
+}
+
+.workspace-row:hover {
+  background-color: var(--workspace-subtle-surface);
 }
 
 .app-shell [class~="bg-white"] {
