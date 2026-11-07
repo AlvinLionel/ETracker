@@ -10,12 +10,14 @@ import AnalyticsPage from "./features/analytics/AnalyticsPage";
 import ForecastingPage from "./features/forecasting/ForecastingPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import SettingsPage from "./features/settings/SettingsPage";
+import CategoriesPage from "./features/transactions/CategoriesPage";
 import { applyTheme, type ThemePreference } from "./features/settings/theme";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
   { label: "Accounts", section: "Finance" },
   { label: "Imports", section: "Finance" },
+  { label: "Categories", section: "Finance" },
   { label: "Transactions", section: "Finance" },
   { label: "Budgeting", section: "Planning" },
   { label: "Savings", section: "Planning" },
@@ -27,7 +29,7 @@ const navigationItems = [
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
-  const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
+  const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Categories", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
 
   useEffect(() => {
     let active = true;
@@ -129,7 +131,7 @@ function App() {
         </nav>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
+          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
         </main>
       </div>
     </div>

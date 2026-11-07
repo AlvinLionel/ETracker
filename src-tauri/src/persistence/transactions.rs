@@ -31,6 +31,7 @@ pub struct CategoryRecord {
     pub id: String,
     pub name: String,
     pub category_type: String,
+    pub is_system: bool,
 }
 #[derive(serde::Serialize)]
 pub struct TransactionAuditRecord {
@@ -217,7 +218,7 @@ impl SqliteTransactionRepository<'_> {
             .lock()
             .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
         let mut statement = connection.prepare(
-            "SELECT id,name,category_type FROM categories WHERE archived_at IS NULL AND (?1 IS NULL OR category_type=?1) ORDER BY is_system DESC, lower(name)"
+            "SELECT id,name,category_type,is_system FROM categories WHERE archived_at IS NULL AND (?1 IS NULL OR category_type=?1) ORDER BY is_system DESC, lower(name)"
         ).map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
         statement
             .query_map([category_type], |row| {
@@ -225,11 +226,62 @@ impl SqliteTransactionRepository<'_> {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     category_type: row.get(2)?,
+                    is_system: row.get(3)?,
                 })
             })
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))
+    }
+
+    pub fn create_category(
+        &self,
+        name: &str,
+        category_type: &str,
+    ) -> Result<CategoryRecord, TransactionRepositoryError> {
+        let name = name.trim();
+        if name.is_empty()
+            || name.chars().count() > 100
+            || !matches!(category_type, "income" | "expense")
+        {
+            return Err(TransactionRepositoryError::InvalidCategory);
+        }
+        let id = Uuid::new_v4().to_string();
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
+        connection
+            .execute(
+                "INSERT INTO categories(id,name,category_type,is_system) VALUES (?1,?2,?3,0)",
+                params![id, name, category_type],
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        Ok(CategoryRecord {
+            id,
+            name: name.to_owned(),
+            category_type: category_type.to_owned(),
+            is_system: false,
+        })
+    }
+
+    pub fn archive_category(&self, id: &str) -> Result<(), TransactionRepositoryError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
+        let changed = connection
+            .execute(
+                "UPDATE categories SET archived_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND archived_at IS NULL AND is_system=0",
+                [id],
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        if changed == 0 {
+            return Err(TransactionRepositoryError::InvalidCategory);
+        }
+        Ok(())
     }
 
     pub fn list(
@@ -705,6 +757,61 @@ mod tests {
         assert_eq!(expenses[0].id, "food");
         let all = repository.list_active_categories(None).unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn creates_trimmed_typed_categories_and_rejects_empty_or_duplicate_names() {
+        let db = db();
+        let repository = SqliteTransactionRepository::new(&db);
+        let category = repository.create_category("  Food  ", "expense").unwrap();
+        assert_eq!(category.name, "Food");
+        assert_eq!(category.category_type, "expense");
+        assert!(!category.is_system);
+        assert!(matches!(
+            repository.create_category("  ", "expense"),
+            Err(TransactionRepositoryError::InvalidCategory)
+        ));
+        assert!(matches!(
+            repository.create_category("Salary", "transfer"),
+            Err(TransactionRepositoryError::InvalidCategory)
+        ));
+        assert!(matches!(
+            repository.create_category("food", "expense"),
+            Err(TransactionRepositoryError::Database(_))
+        ));
+    }
+
+    #[test]
+    fn archives_user_categories_without_deleting_history_or_system_categories() {
+        let db = db();
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO categories(id,name,category_type,is_system) VALUES ('system','System','expense',1)",
+                [],
+            )
+            .unwrap();
+        let repository = SqliteTransactionRepository::new(&db);
+        let category = repository.create_category("Travel", "expense").unwrap();
+        repository.archive_category(&category.id).unwrap();
+        let active = repository.list_active_categories(Some("expense")).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "system");
+        let connection = db.connection().lock().unwrap();
+        let remaining: (i64, i64) = connection
+            .query_row(
+                "SELECT COUNT(*),SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) FROM categories WHERE id=?1",
+                [&category.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(remaining, (1, 1));
+        drop(connection);
+        assert!(matches!(
+            repository.archive_category("system"),
+            Err(TransactionRepositoryError::InvalidCategory)
+        ));
     }
 
     #[test]

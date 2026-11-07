@@ -141,17 +141,7 @@ The final typeface and typography scale remain open for visual evaluation.
 
 ### 2.7 Background Grid Treatment
 
-A subtle spreadsheet-inspired grid may be used to reinforce the accounting workspace concept.
-
-Possible placements:
-- Main dashboard background.
-- Empty or introductory states.
-- Transitions between major navigation areas.
-- Selected analytical views.
-
-The grid should be restrained and low contrast.
-
-It must not reduce text readability, interfere with charts or make the interface visually noisy.
+The app shell uses an understated, evenly spaced graph-paper texture on large page backgrounds. Light mode uses warm neutral surfaces and faint grey lines; dark mode uses charcoal surfaces and subtly lighter lines. Content cards, worksheets, charts and controls retain clean surfaces so the texture does not reduce readability or make the app feel like graph paper.
 
 ---
 
@@ -1046,7 +1036,7 @@ As of 4 November 2026:
 | Subscription presentation | Defined |
 | Analytics and forecasting presentation | Defined |
 | Final wireframes | Not completed |
-| Design system implementation | Not started |
+| Design system implementation | Core theme tokens, background texture, navigation and shared surfaces implemented; screen-level refinement remains |
 | Usability testing | Not performed |
 | Accessibility testing | Not performed |
 

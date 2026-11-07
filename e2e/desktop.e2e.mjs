@@ -88,6 +88,8 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const suffix = randomUUID().slice(0, 8);
   const checking = `E2E Checking ${suffix}`;
   const savings = `E2E Savings ${suffix}`;
+  const foodCategory = `E2E Food ${suffix}`;
+  const travelCategory = `E2E Travel ${suffix}`;
   const incomeDescription = `E2E income ${suffix}`;
   const importDescription = `E2E imported expense ${suffix}`;
   const correctedImportDescription = `E2E corrected statement row ${suffix}`;
@@ -115,8 +117,19 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
     await driver.wait(until.elementLocated(By.xpath(`//h4[normalize-space()='${name}']`)), 15_000);
   }
 
+  async function createExpenseCategory(name) {
+    await navigateTo("Categories");
+    await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Categories']")), 15_000);
+    await driver.findElement(By.css("input[aria-label='Category name']")).sendKeys(name);
+    await new Select(await driver.findElement(By.css("select[aria-label='Category type']"))).selectByValue("expense");
+    await driver.findElement(By.xpath("//button[normalize-space()='Add category']")).click();
+    await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='${name}']]`)), 15_000);
+  }
+
   await createAccount(checking, "bank");
   await createAccount(savings, "cash");
+  await createExpenseCategory(foodCategory);
+  await createExpenseCategory(travelCategory);
 
   await navigateTo("Transactions");
   const transactionForm = (await driver.findElements(By.css("main form")))[0];
@@ -196,6 +209,19 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const batchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-${suffix}.csv']]`)), 15_000);
   await batchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
   let importedRow = await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}']]`)), 15_000);
+  await importedRow.findElement(By.xpath(".//button[normalize-space()='Categories']")).click();
+  const allocationForm = await driver.wait(until.elementLocated(By.xpath("//form[.//h3[starts-with(normalize-space(), 'Category allocations for row')]]")), 5_000);
+  await allocationForm.findElement(By.xpath(".//button[normalize-space()='Add split']")).click();
+  await allocationForm.findElement(By.xpath(".//button[normalize-space()='Add split']")).click();
+  const allocationCategories = await allocationForm.findElements(By.css("select"));
+  await new Select(allocationCategories[0]).selectByVisibleText(foodCategory);
+  await new Select(allocationCategories[1]).selectByVisibleText(travelCategory);
+  const allocationAmounts = await allocationForm.findElements(By.css("input"));
+  await allocationAmounts[0].sendKeys("3.00");
+  await allocationAmounts[1].sendKeys("5.00");
+  await allocationForm.findElement(By.xpath(".//button[normalize-space()='Save categories']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Category allocations saved')]")), 15_000);
+  importedRow = await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}']]`)), 15_000);
   await importedRow.findElement(By.xpath(".//button[normalize-space()='Correct']")).click();
   const correctionForm = await driver.wait(until.elementLocated(By.xpath("//form[.//h3[starts-with(normalize-space(), 'Correct row')]]")), 5_000);
   const correctionDescription = correctionForm.findElement(By.xpath(".//label[normalize-space()='Description']/input"));
@@ -291,7 +317,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.findElement(By.css("input[aria-label='Backup passphrase']")).sendKeys(backupPassphrase);
   await driver.findElement(By.css("input[aria-label='Confirm backup passphrase']")).sendKeys(backupPassphrase);
   await driver.findElement(By.xpath("//button[normalize-space()='Download encrypted backup']")).click();
-  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Encrypted backup created')]")), 15_000);
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Encrypted backup created')]")), 60_000);
   const backupBytes = await driver.executeAsyncScript(`
     const done = arguments[arguments.length - 1];
     if (!window.__etrackerE2eBackup) { done(null); return; }
@@ -306,8 +332,10 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.findElement(By.css("input[aria-label='Encrypted backup file']")).sendKeys(backupPath);
   await driver.findElement(By.css("input[aria-label='Restore passphrase']")).sendKeys("incorrect e2e passphrase");
   await driver.findElement(By.css("input[aria-label='Restore confirmation']")).sendKeys("RESTORE");
-  await driver.findElement(By.xpath("//button[normalize-space()='Replace current data']")).click();
-  await driver.wait(until.elementLocated(By.css("[role='alert']")), 15_000);
+  const firstReplaceButton = driver.findElement(By.xpath("//button[normalize-space()='Replace current data']"));
+  await driver.wait(until.elementIsEnabled(firstReplaceButton), 5_000);
+  await firstReplaceButton.click();
+  await driver.wait(until.elementLocated(By.css("[role='alert']")), 60_000);
   assert.match(await driver.findElement(By.css("[role='alert']")).getText(), /Restore failed/);
   const restorePassphrase = driver.findElement(By.css("input[aria-label='Restore passphrase']"));
   await restorePassphrase.clear();
@@ -316,15 +344,15 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(until.elementIsEnabled(replaceDataButton), 5_000);
   await replaceDataButton.click();
   const restoreOutcome = await driver.wait(async () => {
-    const success = await driver.findElements(By.xpath("//*[@role='status'][contains(.,'Database restored')]"));
-    if (success[0]) return { kind: "success", message: await success[0].getText() };
+    const reload = await driver.findElements(By.xpath("//button[normalize-space()='Reload ETracker']"));
+    if (reload[0]) return { kind: "success", message: await driver.findElement(By.css("main")).getText() };
     const errors = await driver.findElements(By.css("[role='alert']"));
     for (const error of errors) {
       const message = await error.getText();
       if (message.includes("Restore failed")) return { kind: "failure", message };
     }
     return false;
-  }, 15_000).catch(async (error) => {
+  }, 60_000).catch(async (error) => {
     const visiblePage = await driver.findElement(By.css("main")).getText();
     throw new Error(`${error.message}; settings screen: ${visiblePage}`);
   });

@@ -199,6 +199,40 @@ pub fn list_active_categories(
         .map_err(|_| "Categories could not be loaded.".into())
 }
 #[tauri::command]
+pub fn create_category(
+    state: State<'_, Database>,
+    name: String,
+    category_type: String,
+) -> Result<CategoryRecord, String> {
+    if !matches!(category_type.as_str(), "income" | "expense") {
+        return Err("Choose income or expense for the category.".into());
+    }
+    SqliteTransactionRepository::new(state.inner())
+        .create_category(&name, &category_type)
+        .map_err(|error| match error {
+            TransactionRepositoryError::InvalidCategory => {
+                "Enter a category name up to 100 characters.".into()
+            }
+            TransactionRepositoryError::Database(message)
+                if message.contains("idx_categories_unique_active_name") =>
+            {
+                "An active category with that name and type already exists.".into()
+            }
+            _ => "The category could not be created.".into(),
+        })
+}
+#[tauri::command]
+pub fn archive_category(state: State<'_, Database>, id: String) -> Result<(), String> {
+    SqliteTransactionRepository::new(state.inner())
+        .archive_category(&id)
+        .map_err(|error| match error {
+            TransactionRepositoryError::InvalidCategory => {
+                "This category cannot be archived or is already archived.".into()
+            }
+            _ => "The category could not be archived.".into(),
+        })
+}
+#[tauri::command]
 pub fn get_transaction_audit_history(
     state: State<'_, Database>,
     id: String,

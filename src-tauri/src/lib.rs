@@ -81,6 +81,8 @@ pub fn run() {
             commands::planning::link_subscription_payment,
             commands::transactions::list_transactions,
             commands::transactions::list_active_categories,
+            commands::transactions::create_category,
+            commands::transactions::archive_category,
             commands::transactions::get_transaction_audit_history,
             commands::transactions::get_transaction_allocations,
             commands::transactions::list_eligible_refunds,
