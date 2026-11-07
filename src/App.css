@@ -1,13 +1,56 @@
 @import "tailwindcss";
 
+:root {
+  --workspace-canvas: #f5f0e6;
+  --workspace-surface: #fffdf8;
+  --workspace-line: #e8e0d2;
+  --workspace-text: #20221f;
+  --workspace-muted: #666b63;
+  --workspace-accent: #7654a8;
+  --workspace-accent-soft: #efe7f7;
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --workspace-canvas: #17191f;
+  --workspace-surface: #202638;
+  --workspace-line: #3a4253;
+  --workspace-text: #f1f5f9;
+  --workspace-muted: #cbd5e1;
+  --workspace-accent: #c4a9ef;
+  --workspace-accent-soft: #3a3150;
 }
 
 :root[data-theme="dark"] body,
 :root[data-theme="dark"] [class~="bg-[#f7f8f7]"] {
   background-color: #0f172a;
   color: #e2e8f0;
+}
+
+.app-shell {
+  background-color: var(--workspace-canvas);
+  color: var(--workspace-text);
+}
+
+.app-sidebar,
+.app-header,
+.app-compact-nav {
+  background-color: var(--workspace-surface);
+  border-color: var(--workspace-line);
+}
+
+.app-nav-active {
+  background-color: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.app-nav-idle {
+  color: var(--workspace-muted);
+}
+
+.app-nav-idle:hover {
+  background-color: var(--workspace-canvas);
+  color: var(--workspace-text);
 }
 
 :root[data-theme="dark"] [class~="bg-white"] {

@@ -27,7 +27,7 @@ const navigationItems = [
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
-  const availablePages=["Dashboard","Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting","Settings"];
+  const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
 
   useEffect(() => {
     let active = true;
@@ -43,9 +43,9 @@ function App() {
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-[#f7f8f7] text-slate-900">
+    <div className="app-shell flex min-h-screen">
       {/* Sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+      <aside className="app-sidebar hidden w-64 shrink-0 flex-col border-r lg:flex">
         <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-6">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-700 text-lg font-bold text-white">
             E
@@ -75,7 +75,7 @@ function App() {
 
                       return (
                         <button key={item.label} type="button" onClick={() => { if (availablePages.includes(item.label)) setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
-                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${!availablePages.includes(item.label) ? "cursor-default opacity-50" : ""}`}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${isActive ? "app-nav-active" : "app-nav-idle"}`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"}`}/>
                           {item.label}
@@ -97,7 +97,7 @@ function App() {
 
       {/* Main workspace */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
+        <header className="app-header flex min-h-16 flex-wrap items-center justify-between gap-3 border-b px-5 py-2 sm:px-8">
           <div>
             <p className="text-xs text-slate-500">Finance / {activePage}</p>
             <h2 className="text-sm font-semibold text-slate-900">{activePage === "Accounts" ? "Account management" : ["Budgeting","Savings","Subscriptions"].includes(activePage) ? "Financial planning" : activePage === "Transactions" ? "Transaction management" : activePage === "Imports" ? "Statement imports" : activePage}</h2>
@@ -108,6 +108,25 @@ function App() {
             <span className="text-xs font-medium text-slate-600">Local mode</span>
           </div>
         </header>
+
+        <nav aria-label="Compact navigation" className="app-compact-nav overflow-x-auto border-b px-3 py-2 lg:hidden">
+          <div className="flex min-w-max gap-1">
+            {navigationItems.map((item) => {
+              const isActive = item.label === activePage;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => setActivePage(item.label)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive ? "app-nav-active" : "app-nav-idle"}`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
           {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
