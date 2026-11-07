@@ -991,6 +991,7 @@ pub struct StagedImportRecord {
     pub original_date: Option<String>,
     pub normalized_date: Option<String>,
     pub original_description: Option<String>,
+    pub normalized_description: Option<String>,
     pub original_amount: Option<String>,
     pub normalized_amount_minor: Option<i64>,
     pub transaction_type: Option<String>,
@@ -1057,7 +1058,7 @@ impl SqliteImportRepository<'_> {
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
         refresh_source_retention(&c, batch_id)?;
-        let mut s=c.prepare("SELECT id,source_row_reference,original_date,normalized_date,original_description,original_amount,normalized_amount_minor,transaction_type,validation_status,duplicate_status,review_status FROM imported_records WHERE batch_id=?1 ORDER BY CAST(source_row_reference AS INTEGER)").map_err(|e|ImportError::Database(e.to_string()))?;
+        let mut s=c.prepare("SELECT id,source_row_reference,original_date,normalized_date,original_description,normalized_description,original_amount,normalized_amount_minor,transaction_type,validation_status,duplicate_status,review_status FROM imported_records WHERE batch_id=?1 ORDER BY CAST(source_row_reference AS INTEGER)").map_err(|e|ImportError::Database(e.to_string()))?;
         let mut records = s
             .query_map([batch_id], |r| {
                 Ok(StagedImportRecord {
@@ -1066,12 +1067,13 @@ impl SqliteImportRepository<'_> {
                     original_date: r.get(2)?,
                     normalized_date: r.get(3)?,
                     original_description: r.get(4)?,
-                    original_amount: r.get(5)?,
-                    normalized_amount_minor: r.get(6)?,
-                    transaction_type: r.get(7)?,
-                    validation_status: r.get(8)?,
-                    duplicate_status: r.get(9)?,
-                    review_status: r.get(10)?,
+                    normalized_description: r.get(5)?,
+                    original_amount: r.get(6)?,
+                    normalized_amount_minor: r.get(7)?,
+                    transaction_type: r.get(8)?,
+                    validation_status: r.get(9)?,
+                    duplicate_status: r.get(10)?,
+                    review_status: r.get(11)?,
                     allocations: Vec::new(),
                 })
             })
@@ -1956,6 +1958,7 @@ mod tests {
         let corrected = repo.list_records(&batch).unwrap().remove(0);
         assert_eq!(corrected.validation_status, "valid");
         assert_eq!(corrected.review_status, "corrected");
+        assert_eq!(corrected.normalized_description.as_deref(), Some("Corrected"));
         let logs: i64 = db
             .connection()
             .lock()

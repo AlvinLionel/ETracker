@@ -125,6 +125,23 @@ describe("ImportsPage", () => {
     expect(await screen.findByText("Staged 2 CSV rows")).toBeInTheDocument();
   });
 
+  it("shows and pre-fills the corrected normalized description", async () => {
+    const batch = { id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" };
+    const record = { id: "row-1", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Raw statement memo", normalized_description: "Corrected merchant", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "corrected", allocations: [] };
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([batch]);
+      if (command === "list_staged_import_records") return Promise.resolve([record]);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Records" }));
+    expect(await screen.findByText("Corrected merchant")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    expect(screen.getByLabelText("Description")).toHaveValue("Corrected merchant");
+  });
+
   it("downloads the retained original statement file", async () => {
     const createObjectURL = vi.fn(() => "blob:source-file");
     const revokeObjectURL = vi.fn();
