@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
+import { rm, writeFile, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { test, before, after } from "node:test";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { Builder, By, Capabilities, Select, until } from "selenium-webdriver";
 
 const repositoryRoot = process.cwd();
 const toolsDirectory = resolve(repositoryRoot, "src-tauri/target/e2e-tools/bin");
 const appBinary = resolve(repositoryRoot, "src-tauri/target/debug/etracker.exe");
+const testDataDirectory = resolve(repositoryRoot, "src-tauri/target/debug/etracker-e2e-data");
 const tauriDriverBinary = resolve(toolsDirectory, "tauri-driver.exe");
 const webDriverPort = 54231;
 const nativeDriverPort = 54232;
@@ -17,6 +20,11 @@ let tauriDriver;
 let driver;
 
 before(async () => {
+  if (resolve(testDataDirectory) !== resolve(repositoryRoot, "src-tauri/target/debug/etracker-e2e-data")) {
+    throw new Error("Refusing to clear an unexpected E2E app-data directory.");
+  }
+  await rm(testDataDirectory, { recursive: true, force: true });
+
   for (const requiredPath of [appBinary, tauriDriverBinary, resolve(toolsDirectory, "msedgedriver.exe")]) {
     try {
       await access(requiredPath);
@@ -81,6 +89,8 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const checking = `E2E Checking ${suffix}`;
   const savings = `E2E Savings ${suffix}`;
   const incomeDescription = `E2E income ${suffix}`;
+  const importDescription = `E2E imported expense ${suffix}`;
+  const statementPath = join(tmpdir(), `etracker-${suffix}.csv`);
 
   async function navigateTo(page) {
     const buttons = await driver.findElements(By.xpath(`//nav//button[normalize-space()='${page}']`));
@@ -172,9 +182,35 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.switchTo().alert().accept();
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='reversal']]")), 15_000);
 
+  await writeFile(statementPath, `Date,Amount,Memo\n2026-11-01,8.00,${importDescription}\n`, "utf8");
+  await navigateTo("Imports");
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Statement imports']")), 15_000);
+  const importAccountOption = await driver.wait(until.elementLocated(By.xpath(`//main//select[1]/option[contains(.,'${checking}')]`)), 15_000);
+  await new Select(await driver.findElement(By.css("main form select"))).selectByValue(await importAccountOption.getAttribute("value"));
+  await driver.findElement(By.css("input[type='file']")).sendKeys(statementPath);
+  await driver.wait(async () => (await driver.findElement(By.css("main form")).findElements(By.css("select"))).length >= 6, 15_000);
+  await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 staged rows')]")), 15_000);
+
+  const batchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-${suffix}.csv']]`)), 15_000);
+  await batchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
+  const importedRow = await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}']]`)), 15_000);
+  await importedRow.findElement(By.xpath(".//button[normalize-space()='Confirm new']")).click();
+  await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}'] and .//td[normalize-space()='confirmed']]`)), 15_000);
+  await batchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized 1 transactions')]")), 15_000);
+  await unlink(statementPath).catch(() => {});
+
   await navigateTo("Dashboard");
-  const checkingCard = await driver.wait(until.elementLocated(By.xpath(`//section[.//h2[normalize-space()='Accounts']]//button[contains(.,'${checking}')]`)), 15_000);
-  const savingsCard = await driver.findElement(By.xpath(`//section[.//h2[normalize-space()='Accounts']]//button[contains(.,'${savings}')]`));
-  assert.match(await checkingCard.getText(), /75[.,]00/);
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Dashboard']")), 15_000);
+  const accountsPanel = "//section[.//h2[normalize-space()='Accounts'] and not(.//section[.//h2[normalize-space()='Accounts']])]";
+  const checkingCard = await driver.wait(async () => {
+    const matches = await driver.findElements(By.xpath(`${accountsPanel}//button[contains(.,'${checking}')]`));
+    return matches[0] ?? false;
+  }, 15_000).catch(async () => { throw new Error(`Dashboard account list did not contain ${checking}. Visible text: ${await driver.findElement(By.css("main")).getText()}`); });
+  const savingsCard = await driver.findElement(By.xpath(`${accountsPanel}//button[contains(.,'${savings}')]`));
+  assert.match(await checkingCard.getText(), /67[.,]00/);
   assert.match(await savingsCard.getText(), /50[.,]00/);
 });
