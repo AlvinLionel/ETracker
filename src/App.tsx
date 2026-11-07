@@ -7,6 +7,7 @@ import SavingsPage from "./features/planning/SavingsPage";
 import SubscriptionsPage from "./features/planning/SubscriptionsPage";
 import AnalyticsPage from "./features/analytics/AnalyticsPage";
 import ForecastingPage from "./features/forecasting/ForecastingPage";
+import DashboardPage from "./features/dashboard/DashboardPage";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
@@ -22,7 +23,8 @@ const navigationItems = [
 ];
 
 function App() {
-  const [activePage, setActivePage] = useState("Accounts");
+  const [activePage, setActivePage] = useState("Dashboard");
+  const availablePages=["Dashboard","Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting"];
 
   return (
     <div className="flex min-h-screen bg-[#f7f8f7] text-slate-900">
@@ -56,8 +58,8 @@ function App() {
                       const isActive = item.label === activePage;
 
                       return (
-                        <button key={item.label} type="button" onClick={() => { if (["Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting"].includes(item.label)) setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
-                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${!["Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting"].includes(item.label) ? "cursor-default opacity-50" : ""}`}
+                        <button key={item.label} type="button" onClick={() => { if (availablePages.includes(item.label)) setActivePage(item.label); }} aria-current={isActive ? "page" : undefined}
+                          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isActive ? "bg-emerald-50 text-emerald-800" : "text-slate-600"} ${!availablePages.includes(item.label) ? "cursor-default opacity-50" : ""}`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-slate-300"}`}/>
                           {item.label}
@@ -92,7 +94,7 @@ function App() {
         </header>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          {activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : <ImportsPage />}
+          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : <DashboardPage navigate={setActivePage} />}
         </main>
       </div>
     </div>

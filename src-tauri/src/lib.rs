@@ -13,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::analytics::get_analytics_summary,
+            commands::dashboard::get_dashboard_summary,
             commands::forecasting::generate_forecast,
             commands::forecasting::list_forecasts,
             commands::forecasting::evaluate_forecast,
