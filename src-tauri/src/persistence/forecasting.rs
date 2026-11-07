@@ -102,7 +102,17 @@ impl<'a> SqliteForecastRepository<'a> {
     }
 
     pub fn set_schedule(&self, schedule: &ForecastSchedule) -> Result<bool, String> {
-        if schedule.currency_code.len() != 3
+        if !schedule.enabled {
+            let connection = self
+                .database
+                .connection()
+                .lock()
+                .map_err(|_| "Database is unavailable")?;
+            connection.execute("UPDATE forecast_schedule SET enabled=0,updated_at=CURRENT_TIMESTAMP WHERE id=1", []).map_err(|e|e.to_string())?;
+            return Ok(false);
+        }
+        if schedule.currency_code != "KES"
+            || schedule.currency_code.len() != 3
             || !schedule
                 .currency_code
                 .chars()
@@ -136,7 +146,7 @@ impl<'a> SqliteForecastRepository<'a> {
 
     fn generate_scheduled_as_of(&self, today: NaiveDate) -> Result<bool, String> {
         let schedule = self.get_schedule()?;
-        if !schedule.enabled {
+        if !schedule.enabled || schedule.currency_code != "KES" {
             return Ok(false);
         }
         let scheduled_month = today
@@ -177,7 +187,8 @@ impl<'a> SqliteForecastRepository<'a> {
         today: NaiveDate,
         scheduled_month: Option<&str>,
     ) -> Result<String, String> {
-        if request.currency_code.len() != 3
+        if request.currency_code != "KES"
+            || request.currency_code.len() != 3
             || !request
                 .currency_code
                 .chars()
@@ -430,6 +441,17 @@ mod tests {
                 &ForecastRequest {
                     currency_code: "kes".into(),
                     period_months: 2
+                },
+                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            repo.generate_as_of(
+                &ForecastRequest {
+                    currency_code: "USD".into(),
+                    period_months: 1
                 },
                 NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
                 None

@@ -61,6 +61,8 @@ The proposed approach is integer storage in the currency's smallest supported un
 
 For KES, amounts will normally be represented in cents where required.
 
+The initial release accepts new planning and forecast records in KES only. Existing rows carrying another currency code must be preserved and handled in their own currency context; no foreign-exchange conversion or cross-currency summation is performed.
+
 ### 2.2 Separation of Concerns
 
 Different financial concepts must have distinct representations.
@@ -886,11 +888,11 @@ Generating a new forecast must not overwrite an earlier forecast.
 
 Migration `0010_forecasting.sql` implements this as `forecast_snapshots`, `forecast_periods` and `forecast_evaluations`. Each run stores its currency, horizon, six-month history window, calculation method, activity-coverage tier, serialized input assumptions and limitations. Period rows store predicted income, expenses, normalized subscription costs, savings, ending balance and any matching budget plan values. Evaluation rows preserve actual income, expense and savings totals, their variances and evaluation limitations; each forecast month can be evaluated once. Forecast generation uses the six completed months before the current month, excludes voided or reversed activity, separates linked subscription costs from the historical expense baseline and does not create or modify ledger records. Budget plans are stored as contextual comparison values and are not added to projected amounts.
 
-Migration `0012_forecast_schedule.sql` adds an opt-in singleton schedule with currency, horizon and enabled state. At application startup, an enabled schedule creates at most one tagged forecast snapshot for that calendar month. The partial unique index on `forecast_snapshots.scheduled_month` makes retries idempotent; manual snapshots remain independently repeatable.
+Migration `0012_forecast_schedule.sql` adds an opt-in singleton schedule with currency, horizon and enabled state. At application startup and when schedule settings are saved, an enabled schedule creates at most one tagged forecast snapshot for the current UTC calendar month. Missed months are not backfilled. The partial unique index on `forecast_snapshots.scheduled_month` makes retries idempotent; manual snapshots remain independently repeatable.
 
 ### 11.4 Refund Records
 
-Migration `0011_refund_records.sql` adds `refund_transactions`, linking a positive account inflow to an optional original expense. The underlying ledger movement remains an income entry for balance calculations; the relation gives transaction history and analytics an explicit refund identity. Linked refunds must match the original expense account and currency and cannot exceed its remaining unreversed amount. When the original expense has category allocations, the refund receives proportional minor-unit allocations with rounding remainder assigned deterministically. Unlinked refunds remain uncategorized. Analytics reports refunds separately from ordinary income and gross expenses. Forecast baselines exclude refunds from ordinary income and state that future refunds are not projected.
+Migration `0011_refund_records.sql` adds `refund_transactions`, linking a positive account inflow to an optional original expense. The underlying ledger movement remains an income entry for balance calculations; the relation gives transaction history and analytics an explicit refund identity. Linked refunds must match the original expense account and currency and cannot exceed its remaining unreversed amount. When the original expense has category allocations, the refund receives proportional minor-unit allocations with rounding remainder assigned deterministically. Unlinked refunds remain uncategorized. Analytics reports ordinary income, gross expenses and refunds separately, plus net spending (gross expenses less refunds); monthly net cash flow includes refund inflows. Budget actual expenses stay gross and are not reduced by refunds. Forecast historical/evaluation income excludes refunds, and future refunds are not projected. Existing non-KES rows remain preserved and are displayed in their own currency context without conversion.
 
 ---
 

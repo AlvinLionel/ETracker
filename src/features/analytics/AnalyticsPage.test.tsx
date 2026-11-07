@@ -12,6 +12,7 @@ const sample = {
   total_income_minor: 250000,
   total_expense_minor: 87500,
   total_refund_minor: 0,
+  total_net_spending_minor:87500,
   trends: [{ period: "2026-11", income_minor: 250000, expense_minor: 87500, refund_minor:0 }],
   category_breakdown: [{ category_id: "food", name: "Food", transaction_type: "expense", amount_minor: 87500 }],
   account_comparison: [{ account_id: "cash", name: "Cash", income_minor: 250000, expense_minor: 87500, refund_minor:0 }],
@@ -25,7 +26,7 @@ describe("AnalyticsPage", () => {
   beforeEach(() => { invoke.mockReset(); invoke.mockResolvedValue(sample); });
   it("loads summaries with filters and exports reports", async () => {
     render(<AnalyticsPage />);
-    expect(await screen.findByText("Income and expense trends")).toBeInTheDocument();
+    expect(await screen.findByText("Income, expense and refund trends")).toBeInTheDocument();
     expect(screen.getAllByText("Food").length).toBeGreaterThan(1);
     expect(screen.getByText("Internet")).toBeInTheDocument();
     expect(screen.getByText("Utility bill")).toBeInTheDocument();

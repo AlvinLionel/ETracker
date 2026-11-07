@@ -619,6 +619,8 @@ The user will be able to choose:
 **Date:** 6 November 2026
 **Related documents:** DOC-002, DOC-003, DOC-004, DOC-007
 
+**Owner confirmation:** Confirmed by the project owner on 7 November 2026: retain original imported statement files for 90 days from latest relevant batch activity and clean up expired source rows at startup. This is the policy implemented below; it does not claim secure physical erasure.
+
 ### Context
 Original statement files are needed for traceability and review, while long-term retention of sensitive source files should be bounded.
 
@@ -672,6 +674,29 @@ Use the Rust `pdf-extract` crate for page-level selectable text extraction. Stag
 - Headings, balances and summaries cannot silently become ledger entries.
 - Selectable line text is retained in the staged description for traceability.
 - OCR library selection is pending until the supported Windows deployment and privacy requirements can be validated.
+
+---
+
+## DB-029 — Refund reporting and KES-only v1 planning
+
+**Status:** Approved
+**Date:** 7 November 2026
+**Related documents:** DOC-002, DOC-004, DOC-005, DOC-006
+
+### Context
+Refunds are represented as tagged positive ledger inflows, and the initial release is KES-only. Reports must communicate their effect without misclassifying them or changing the approved ledger representation.
+
+### Decision
+- Preserve refunds as tagged income inflows with optional original-expense linkage; do not add a separate financial transaction type.
+- Analytics presents gross expenses and refunds separately and also shows net spending calculated as gross expenses minus refunds. Monthly net cash flow includes refund inflows.
+- Budget actual expense and category comparisons remain gross; refunds are not silently reassigned as income or netted against category budgets.
+- New planning and forecasting records in v1 use KES. Existing records with other currency codes are preserved and shown only in their own currency context; no exchange-rate conversion or cross-currency summation is performed.
+- Forecast income baselines and evaluations exclude tagged refunds from ordinary income; future refunds are not projected.
+
+### Rationale and implications
+- Keeps the ledger and audit trail intact while making refund effects visible.
+- Leaves linked refunds’ original category attribution available for separate refund analysis without changing gross budget actuals.
+- Maintains compatibility with existing currency codes without expanding KES-only v1 or rewriting stored data.
 
 ---
 

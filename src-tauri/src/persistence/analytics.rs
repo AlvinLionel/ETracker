@@ -76,6 +76,7 @@ pub struct AnalyticsSummary {
     pub total_income_minor: i64,
     pub total_expense_minor: i64,
     pub total_refund_minor: i64,
+    pub total_net_spending_minor: i64,
     pub trends: Vec<AnalyticsPoint>,
     pub category_breakdown: Vec<AnalyticsCategory>,
     pub account_comparison: Vec<AnalyticsAccount>,
@@ -299,6 +300,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             .map_err(|e| e.to_string())?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())?;
+        let total_net_spending_minor = total_expense_minor - total_refund_minor;
         Ok(AnalyticsSummary {
             currencies,
             accounts,
@@ -306,6 +308,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             total_income_minor,
             total_expense_minor,
             total_refund_minor,
+            total_net_spending_minor,
             trends,
             category_breakdown,
             account_comparison,
@@ -347,6 +350,7 @@ mod tests {
             (5000, 1000, 250)
         );
         assert_eq!(summary.trends[0].refund_minor, 250);
+        assert_eq!(summary.total_net_spending_minor, 750);
         assert!(
             summary
                 .category_breakdown

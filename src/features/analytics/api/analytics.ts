@@ -14,6 +14,7 @@ export interface AnalyticsSummary {
   total_income_minor: number;
   total_expense_minor: number;
   total_refund_minor:number;
+  total_net_spending_minor:number;
   trends: AnalyticsPoint[];
   category_breakdown: AnalyticsCategory[];
   account_comparison: AnalyticsAccount[];

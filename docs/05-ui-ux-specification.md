@@ -672,7 +672,7 @@ A projected subscription payment must not be counted as an actual expense.
 
 ### 11.1 Purpose
 
-The analytics screen presents historical financial patterns and comparisons. The implemented views show ordinary income, gross expenses and refunds as separate totals and monthly trends, category breakdowns, account comparisons, repeated expense descriptions, review-only unusual-spending signals, budget performance, savings progress and CSV export. Linked refunds inherit proportional category allocations from the original expense. A temporary what-if simulator changes assumed income/expenses for the selected period without writing financial records. Date, currency, account and category filters apply to report data. Internal transfers and voided or reversed activity are excluded.
+The analytics screen presents historical financial patterns and comparisons. The implemented views show ordinary income, gross expenses and refunds as separate totals and monthly trends, plus net spending calculated as gross expenses less refunds. Monthly net cash flow includes refund inflows; budget actual expenses remain gross. Category breakdowns, account comparisons, repeated expense descriptions, review-only unusual-spending signals, budget performance, savings progress and CSV export are also available. Linked refunds inherit proportional category allocations from the original expense. A temporary what-if simulator changes assumed income/expenses for the selected period without writing financial records. Date, currency, account and category filters apply to report data. Internal transfers and voided or reversed activity are excluded.
 
 ### 11.2 Analytical Views
 

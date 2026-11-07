@@ -1,48 +1,51 @@
-# ETracker — Known Issues and Outstanding Work
+# ETracker — Known Issues and Open Questions
 
-**Last updated:** 2026-11-06
+**Last reviewed:** 2026-11-07 · **Baseline:** `77512b23d7141fb6cd428ac574a1a9e0b57612e9`
 
-## 1. Confirmed Defects
+This list reflects repository inspection at the baseline above. “Confirmed” means the limitation or defect is visible in current code. “Needs verification” means available evidence is insufficient to close it. Product and architecture choices remain subject to the decision log; recording a question here does not approve a change.
 
-No open confirmed defects are currently recorded. A TypeScript build defect (unused `formatKES` helper in `AccountsPage.tsx`, TS6133) was found during transaction-slice verification and fixed in this milestone.
+## Confirmed defects and risks
 
-## 2. Outstanding Implementation Work
+| ID | Area | Finding and impact | Evidence / next action | Status |
+|---|---|---|---|---|
+| KI-002 | Forecast scheduling | Scheduled generation runs when enabled settings are saved and during app startup. It uses a unique UTC `scheduled_month`, so retries that month are idempotent. If the app misses a month, next startup generates only for the current month; it does not backfill missed months. | `src-tauri/src/persistence/forecasting.rs`, `generate_scheduled_if_due`; behavior is explicitly approved. | Documented limitation |
+| KI-003 | Refund data/audit | Refunds are income ledger rows tagged through `refund_transactions`; transaction history derives the displayed `refund` label. Creating a refund audits the refund transaction but does not add a corresponding audit event to the original expense. | `src-tauri/migrations/0011_refund_records.sql`; `persistence/transactions.rs`, `create_refund`, `list`; confirm this provenance/audit model is sufficient. | Open — design confirmation |
+| KI-004 | Source-file privacy | Expiry deletes the source-file row/BLOB from SQLite, but this is not a secure physical overwrite guarantee (for example, WAL/filesystem remnants may persist). No source-size limit was confirmed during this review. | `infrastructure/database/connection.rs`; `migrations/0005_import_source_files.sql`; `persistence/imports.rs`; assess storage protection, size limits and deletion expectations before release. | Open — security/privacy verification |
+| KI-005 | Diagnostics | Some Tauri commands translate persistence failures to generic user errors; an end-user diagnostic export/structured operational logging and retention policy are not implemented/verified. | `src-tauri/src/commands/`; deployment decision `PEND-028`; define privacy-safe diagnostics. | Open — incomplete |
 
-The following items represent functionality and engineering work that has not yet been implemented. They are not necessarily defects.
+## Incomplete implementation
 
-| ID | Area | Outstanding work | Status |
+| ID | Area | Remaining work | Status / dependency |
 |---|---|---|---|
-| OW-004 | Imports | Add local OCR for scanned PDF statements | Pending |
-| OW-006 | Imports | Verify provider statement formats and add sanitized fixtures before claiming provider parser support | Pending |
-| OW-007 | Planning | Complete budget editing/history, savings goal progress/contributions and subscription workflows | In progress |
-| OW-008 | System | Implement analytics, forecasting, reminders and backup/recovery | Pending |
-| OW-009 | Security | Review Content Security Policy and local data protection before release | Pending |
-| OW-010 | Documentation | Replace the README repository URL placeholder and finish setup instructions | Pending |
-| OW-012 | Release | Decide licensing and installer/distribution policies | Pending |
+| OW-001 | Statement imports | Institution-specific M-Pesa and bank parsers are absent; current CSV/XLSX mapping and selectable-text PDF extraction are generic. | Pending verified provider samples and normalized formats (`PEND-002`). Do not claim provider parser support. |
+| OW-002 | PDF imports | Scanned-PDF OCR is unsupported; text-based PDFs are staged as uncertain rows for review. | Pending local OCR library decision (`PEND-008`). |
+| OW-003 | Dashboard | Dashboard navigation is present but nonfunctional; no financial dashboard view exists. | Pending implementation and final wireframes (`PEND-011`). |
+| OW-004 | Notifications/reminders | Subscription due dates are shown in the subscription screen and forecast evaluation is user-triggered. A notification/reminder center, scheduling and preference management are absent. | Pending notification UX (`PEND-015`) and reminder implementation. Import reminder cadence also needs product definition. |
+| OW-005 | Settings/themes | Settings navigation is a placeholder. Light/dark/system theme selection and persistent settings are absent. | Pending UI design/accessibility choices (`PEND-009`, `010`, `016`). |
+| OW-006 | Backup/recovery | No user backup, verification or restoration workflow is implemented. | Backup format, retention, encryption and migration/recovery policy remain pending (`PEND-025–027`). |
+| OW-007 | Release | Windows installer/package, supported OS versions, signing and update path are not verified. | Pending release decisions (`PEND-021–024`, `PEND-029–030`). No manual install verification evidenced. |
+| OW-008 | Verification | No executed Tauri/Playwright E2E suite or manual desktop workflow verification is evidenced. Offline behavior and production CSP/local-data protection are not comprehensively verified. | Tooling/release gates pending (`PEND-017–019`); CSP/security review outstanding. |
+| OW-009 | Project setup/docs | README repository URL placeholder/setup instructions and license decision remain open; current progress/known-issues documents have had stale entries. | Verify README and align status docs after resolving this list. Licensing/distribution decision is not recorded in the open decision table. |
 
-## 3. Configuration Review Items
+## Scope, behavior and decision questions
 
-The following generated scaffold configuration requires review as the project develops:
+| ID | Question or uncertainty | Evidence and required confirmation |
+|---|---|---|
+| Q-001 | Legacy non-KES display behavior | KES-only new-write enforcement is implemented for planning and forecasts. Existing non-KES rows are retained and subscription projections show separate currency totals without conversion. Verify future screens preserve this separation; never sum these values. |
+| Q-002 | Original-expense audit visibility for refunds | `DB-029` approves tagged-income refunds, separate gross/refund/net analytics and gross budget actuals. A linked refund has its own audit record, but the original expense’s audit history does not list that refund. Confirm whether this cross-link is required; do not change refund representation. |
+| Q-003 | Forecast scheduling cadence | Approved behavior is opt-in checks on setting save and app startup, UTC calendar month, one scheduled snapshot/month, no backfill. Operational limitation: a month is skipped if the application is never started during it. |
+| Q-004 | Is duplicate detection’s conservative rule sufficient? | Current matching flags exact account/date/type/amount candidates as probable; provider reference matching and confidence thresholds are pending (`PEND-003`). |
+| Q-005 | What should happen to pending transactions during reconciliation? | Still pending (`PEND-004`). Current staged format assumes reviewed posted rows. |
+| Q-006 | What are the full savings goal/contribution semantics? | Implemented manual and linked-transfer contributions; exact relationship remains listed pending (`PEND-007`). Verify withdrawals, corrections and goal/account balance expectations before extending. |
+| Q-007 | What is the policy for discarding/cancelling import batches? | 90-day source-byte retention is approved in `DB-026`; it is not configurable. Whole-batch discard/cancellation remains pending (`PEND-006`). |
+| Q-008 | Refund transaction screen’s audit linkage | Verify the UI identifies the selected original expense and that users can inspect the refund’s own audit history. It does not add a record to the original expense’s audit history. |
 
-- Root `.gitignore` completeness.
-- Tauri application identity and display configuration.
-- Tauri Content Security Policy.
-- Default application icons.
-- Development and production configuration consistency.
-- Dependency and lockfile maintenance.
+Other open decision-log items remain applicable: `PEND-001` final physical schema; `PEND-009–016` visual design, navigation, charting, interaction and accessibility; `PEND-017–020` QA tooling, CI, release gates and acceptance criteria; and `PEND-021–031` deployment, backup, logs, versioning, cadence and AI credential handling. `PEND-005` is absent from the current table and its disposition needs checking. `DB-026` records the owner-approved source retention rule; `DB-029` records the refund reporting and KES-only planning rules.
 
-These are review items, not confirmed configuration failures.
+## Resolved items removed from the old outstanding list
 
-## 4. Reporting and Resolution Guidelines
+The earlier entries for planning, analytics and forecasting were stale: budgets, savings, subscriptions, analytics, local forecasts and forecast evaluation now exist and have tests. The unused `formatKES` TypeScript compiler error was fixed. CSV formula-prefix protection was added for untrusted text columns while preserving negative numeric amounts and quote escaping. These are not open issues; broader release verification remains.
 
-When a defect is identified:
+## Configuration review still required
 
-1. Assign a unique issue identifier.
-2. Describe the observed behavior.
-3. Record expected behavior.
-4. Record reproduction steps where applicable.
-5. Identify severity and impact.
-6. Document the investigation and resolution.
-7. Add regression coverage where practical.
-
-Outstanding implementation work should be removed from this document once implemented and verified, with progress recorded in `implementation-progress.md`.
+Review Tauri CSP and app identity, default icons, `.gitignore`, dev/production configuration, dependency/lockfile maintenance, sensitive-data logging, import size limits, backup confidentiality, and local database protection before release. These are review items, not confirmed failures except where explicitly identified above.

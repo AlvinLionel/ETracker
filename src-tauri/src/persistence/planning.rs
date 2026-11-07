@@ -152,11 +152,8 @@ impl<'a> SqlitePlanningRepository<'a> {
     ) -> Result<String, String> {
         let name = name.trim();
         let currency = currency.trim().to_ascii_uppercase();
-        if name.is_empty()
-            || currency.len() != 3
-            || !currency.chars().all(|c| c.is_ascii_uppercase())
-        {
-            return Err("Enter a template name and three-letter currency code.".into());
+        if name.is_empty() || currency != "KES" {
+            return Err("Budget templates in the initial release use KES.".into());
         }
         let connection = self
             .database
@@ -358,7 +355,7 @@ impl<'a> SqlitePlanningRepository<'a> {
             .map_err(|e| e.to_string())?;
         let exists: bool = tx
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM budget_periods WHERE id=?1)",
+                "SELECT EXISTS(SELECT 1 FROM budget_periods WHERE id=?1 AND currency_code='KES')",
                 [budget_id],
                 |r| r.get(0),
             )
@@ -411,14 +408,8 @@ impl<'a> SqlitePlanningRepository<'a> {
     ) -> Result<String, String> {
         let name = name.trim();
         let currency = currency.trim().to_ascii_uppercase();
-        if name.is_empty()
-            || target_minor <= 0
-            || currency.len() != 3
-            || !currency.chars().all(|c| c.is_ascii_uppercase())
-        {
-            return Err(
-                "Enter a goal name, positive target and three-letter currency code.".into(),
-            );
+        if name.is_empty() || target_minor <= 0 || currency != "KES" {
+            return Err("Enter a goal name, positive target and KES currency.".into());
         }
         if let Some(date) = target_date {
             chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
@@ -663,6 +654,9 @@ impl<'a> SqlitePlanningRepository<'a> {
 
     pub fn create_subscription(&self, item: &SubscriptionInput) -> Result<String, String> {
         validate_subscription(item)?;
+        if item.currency_code != "KES" {
+            return Err("New subscriptions in the initial release use KES.".into());
+        }
         let connection = self
             .database
             .connection()
@@ -708,7 +702,10 @@ impl<'a> SqlitePlanningRepository<'a> {
                 return Err("Select an active expense category.".into());
             }
         }
-        let previous: String = connection.query_row("SELECT json_object('name',name,'amount_minor',amount_minor,'frequency',frequency,'next_due_date',next_due_date,'account_id',account_id,'category_id',category_id,'status',status) FROM subscriptions WHERE id=?1", [id], |r| r.get(0)).optional().map_err(|e| e.to_string())?.ok_or("The subscription no longer exists.")?;
+        let (previous,old_currency):(String,String) = connection.query_row("SELECT json_object('name',name,'amount_minor',amount_minor,'currency_code',currency_code,'frequency',frequency,'next_due_date',next_due_date,'account_id',account_id,'category_id',category_id,'status',status),currency_code FROM subscriptions WHERE id=?1", [id], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e| e.to_string())?.ok_or("The subscription no longer exists.")?;
+        if item.currency_code != old_currency {
+            return Err("A subscription's currency cannot be changed.".into());
+        }
         let tx = connection
             .unchecked_transaction()
             .map_err(|e| e.to_string())?;
@@ -842,6 +839,85 @@ mod tests {
 
     fn database() -> Database {
         Database::initialize(Path::new(":memory:")).unwrap()
+    }
+
+    #[test]
+    fn new_planning_records_reject_non_kes_while_legacy_currency_is_preserved() {
+        let database = database();
+        let repository = SqlitePlanningRepository::new(&database);
+        let item = PlannedItem {
+            item_type: "expense".into(),
+            category_id: None,
+            label: "Test".into(),
+            amount_minor: 100,
+        };
+        assert!(
+            repository
+                .create_template("Foreign plan", "USD", &[item])
+                .is_err()
+        );
+        assert!(
+            repository
+                .create_savings_goal("Foreign goal", 100, "USD", None, None, None)
+                .is_err()
+        );
+        let subscription = SubscriptionInput {
+            name: "Foreign sub".into(),
+            description: None,
+            amount_minor: 100,
+            currency_code: "USD".into(),
+            frequency: "monthly".into(),
+            next_due_date: "2026-12-01".into(),
+            account_id: None,
+            category_id: None,
+        };
+        assert!(repository.create_subscription(&subscription).is_err());
+        database.connection().lock().unwrap().execute("INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('legacy','Legacy USD',100,'USD','monthly','2026-12-01')",[]).unwrap();
+        assert_eq!(
+            repository.list_subscriptions().unwrap()[0].currency_code,
+            "USD"
+        );
+    }
+
+    #[test]
+    fn new_planning_records_reject_non_kes_but_do_not_rewrite_existing_data() {
+        let database = database();
+        let repository = SqlitePlanningRepository::new(&database);
+        assert!(
+            repository
+                .create_template(
+                    "Foreign plan",
+                    "USD",
+                    &[PlannedItem {
+                        item_type: "expense".into(),
+                        category_id: None,
+                        label: "Test".into(),
+                        amount_minor: 100
+                    }]
+                )
+                .is_err()
+        );
+        assert!(
+            repository
+                .create_savings_goal("Foreign goal", 100, "USD", None, None, None)
+                .is_err()
+        );
+        let subscription = SubscriptionInput {
+            name: "Foreign sub".into(),
+            description: None,
+            amount_minor: 100,
+            currency_code: "USD".into(),
+            frequency: "monthly".into(),
+            next_due_date: "2026-12-01".into(),
+            account_id: None,
+            category_id: None,
+        };
+        assert!(repository.create_subscription(&subscription).is_err());
+        database.connection().lock().unwrap().execute("INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('legacy','Legacy USD',100,'USD','monthly','2026-12-01')",[]).unwrap();
+        assert_eq!(
+            repository.list_subscriptions().unwrap()[0].currency_code,
+            "USD"
+        );
     }
 
     #[test]
