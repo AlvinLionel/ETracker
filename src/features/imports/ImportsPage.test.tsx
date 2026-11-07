@@ -37,6 +37,16 @@ describe("ImportsPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("2 staged rows");
   });
 
+  it("rejects an oversized statement before reading or sending it", async () => {
+    render(<ImportsPage />);
+    const file = new File(["small fixture"], "large-statement.csv", { type: "text/csv" });
+    Object.defineProperty(file, "size", { value: 25 * 1024 * 1024 + 1 });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/25 MiB or smaller/);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("csv_headers", expect.anything());
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
   it("selects an XLSX worksheet and stages mapped rows", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);

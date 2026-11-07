@@ -1,6 +1,6 @@
 use crate::{
     application::imports::{
-        CsvImportMapping, ImportService, NewImportBatch, StagedCategoryAllocation,
+        CsvImportMapping, ImportError, ImportService, NewImportBatch, StagedCategoryAllocation,
     },
     infrastructure::database::Database,
     persistence::imports::{
@@ -154,8 +154,11 @@ pub fn create_import_batch(
             revision_of_batch_id: request.revision_of_batch_id,
             source_file_contents: request.source_file_contents,
         })
-        .map_err(|_| {
-            "Import batch could not be created. Check the account and file details.".into()
+        .map_err(|error| match error {
+            ImportError::SourceFileTooLarge => {
+                "Statement files must be 25 MiB or smaller.".into()
+            }
+            _ => "Import batch could not be created. Check the account and file details.".into(),
         })
 }
 #[tauri::command]

@@ -1,3 +1,9 @@
+pub const MAX_SOURCE_FILE_BYTES: usize = 25 * 1024 * 1024;
+
+fn source_file_is_too_large(size: usize) -> bool {
+    size > MAX_SOURCE_FILE_BYTES
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewImportBatch {
     pub account_id: String,
@@ -33,6 +39,7 @@ pub enum ImportError {
     Database(String),
     ConnectionPoisoned,
     InvalidBatch,
+    SourceFileTooLarge,
 }
 pub trait ImportRepository {
     fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError>;
@@ -83,6 +90,9 @@ impl<R: ImportRepository> ImportService<R> {
             )
         {
             return Err(ImportError::InvalidBatch);
+        }
+        if source_file_is_too_large(batch.source_file_contents.len()) {
+            return Err(ImportError::SourceFileTooLarge);
         }
         self.repository.create_batch(batch)
     }
@@ -146,5 +156,16 @@ impl<R: ImportRepository> ImportService<R> {
         }
         self.repository
             .set_record_allocations(record_id, allocations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_SOURCE_FILE_BYTES, source_file_is_too_large};
+
+    #[test]
+    fn source_file_size_limit_accepts_the_limit_and_rejects_larger_files() {
+        assert!(!source_file_is_too_large(MAX_SOURCE_FILE_BYTES));
+        assert!(source_file_is_too_large(MAX_SOURCE_FILE_BYTES + 1));
     }
 }

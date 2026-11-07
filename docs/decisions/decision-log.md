@@ -758,6 +758,25 @@ This offers useful first-line support details while limiting sensitive data expo
 
 ---
 
+## DB-032 — Statement source-file size limit
+
+**Status:** Approved  
+**Date:** 7 November 2026  
+**Related documents:** DOC-004, DOC-006
+
+### Context
+Statement source files are read into memory, passed to the local desktop backend, and retained in the database for up to 90 days. Unbounded inputs can cause high memory and storage use.
+
+### Decision
+Limit each imported statement source file to 25 MiB. Reject larger files in the interface before reading them and enforce the same limit in the application service before saving a batch. Users can divide larger statements into smaller files.
+
+### Rationale and implications
+- Bound routine memory, IPC and retained database use for local statement imports.
+- Keep the limit consistent between user interface and backend validation.
+- The limit applies to the original uploaded file; decompressed workbook and PDF extraction resource limits remain subject to separate review.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances
