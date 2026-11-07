@@ -53,6 +53,32 @@
   color: var(--workspace-text);
 }
 
+.workspace-panel {
+  border: 1px solid var(--workspace-line);
+  background: var(--workspace-surface);
+  box-shadow: 0 1px 2px rgb(32 34 31 / 4%);
+}
+
+:root[data-theme="dark"] .workspace-panel {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 16%);
+}
+
+.workspace-divider {
+  border-color: var(--workspace-line);
+}
+
+.workspace-muted {
+  color: var(--workspace-muted);
+}
+
+.workspace-accent {
+  color: var(--workspace-accent);
+}
+
+.workspace-accent-track {
+  background: var(--workspace-accent-soft);
+}
+
 :root[data-theme="dark"] [class~="bg-white"] {
   background-color: #1e293b;
 }

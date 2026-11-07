@@ -1,20 +1,194 @@
-import { useEffect,useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-type Summary={currency_code:string;balance_minor:number;income_minor:number;expense_minor:number;refund_minor:number;net_spending_minor:number;accounts:{id:string;name:string;currency_code:string;balance_minor:number}[];recent_transactions:{id:string;account_id:string;account_name:string;transaction_type:string;amount_minor:number;entry_amount_minor:number;currency_code:string;occurred_at:string;description:string|null}[];budgets:{id:string;name:string;currency_code:string;ends_on:string;planned_expense_minor:number;actual_expense_minor:number}[];savings_goals:{id:string;name:string;currency_code:string;target_amount_minor:number;contributed_minor:number}[];upcoming_subscriptions:{id:string;name:string;currency_code:string;amount_minor:number;next_due_date:string}[]};
-const money=(minor:number,currency:string)=>new Intl.NumberFormat(undefined,{style:"currency",currency,maximumFractionDigits:2}).format(minor/100);
+type Summary = {
+  currency_code: string;
+  balance_minor: number;
+  income_minor: number;
+  expense_minor: number;
+  refund_minor: number;
+  net_spending_minor: number;
+  accounts: { id: string; name: string; currency_code: string; balance_minor: number }[];
+  recent_transactions: {
+    id: string;
+    account_id: string;
+    account_name: string;
+    transaction_type: string;
+    amount_minor: number;
+    entry_amount_minor: number;
+    currency_code: string;
+    occurred_at: string;
+    description: string | null;
+  }[];
+  budgets: {
+    id: string;
+    name: string;
+    currency_code: string;
+    ends_on: string;
+    planned_expense_minor: number;
+    actual_expense_minor: number;
+  }[];
+  savings_goals: { id: string; name: string; currency_code: string; target_amount_minor: number; contributed_minor: number }[];
+  upcoming_subscriptions: { id: string; name: string; currency_code: string; amount_minor: number; next_due_date: string }[];
+};
 
-export default function DashboardPage({navigate}:{navigate:(page:string)=>void}){
- const [data,setData]=useState<Summary|null>(null);const [error,setError]=useState("");
- useEffect(()=>{invoke<Summary>("get_dashboard_summary").then(setData).catch(()=>setError("Dashboard information could not be loaded."));},[]);
- if(error)return <p role="alert" className="text-sm text-rose-700">{error}</p>;
- if(!data)return <p role="status" className="text-sm text-slate-500">Loading overview…</p>;
- return <section className="mx-auto max-w-6xl space-y-6"><header><p className="text-sm font-medium text-emerald-800">Overview</p><h1 className="mt-1 text-2xl font-bold">Dashboard</h1><p className="mt-1 text-sm text-slate-600">Current balances and this month’s posted activity, in KES.</p></header>
-  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Account balances",money(data.balance_minor,"KES")],["Income this month",money(data.income_minor,"KES")],["Gross expenses",money(data.expense_minor,"KES")],["Net spending",money(data.net_spending_minor,"KES")]].map(([title,value])=><article key={title} className="rounded-xl border border-slate-200 bg-white p-5"><p className="text-sm text-slate-500">{title}</p><p className="mt-2 text-2xl font-semibold">{value}</p></article>)}</div>
-  {data.refund_minor>0&&<p className="text-sm text-sky-800">Refunds this month: {money(data.refund_minor,"KES")}</p>}
-  <div className="grid gap-6 lg:grid-cols-2"><section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Accounts</h2>{data.accounts.length?data.accounts.map(a=><button key={a.id} onClick={()=>navigate("Accounts")} className="flex w-full justify-between border-b py-3 text-left text-sm"><span>{a.name} · {a.currency_code}</span><strong>{money(a.balance_minor,a.currency_code)}</strong></button>):<p className="mt-3 text-sm text-slate-500">No accounts yet.</p>}</section>
-  <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Recent transactions</h2>{data.recent_transactions.length?data.recent_transactions.map(t=><button key={`${t.id}-${t.account_id}`} onClick={()=>navigate("Transactions")} className="flex w-full justify-between gap-3 border-b py-3 text-left text-sm"><span className="min-w-0"><strong className="block truncate">{t.description||t.transaction_type}</strong><span className="text-xs text-slate-500">{t.account_name} · {new Date(t.occurred_at).toLocaleDateString()} · {t.transaction_type}</span></span><span className={t.entry_amount_minor<0?"text-rose-700":"text-emerald-700"}>{t.entry_amount_minor<0?"−":"+"}{money(Math.abs(t.entry_amount_minor),t.currency_code)}</span></button>):<p className="mt-3 text-sm text-slate-500">No posted transactions yet.</p>}</section>
-  <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Budget progress</h2>{data.budgets.length?data.budgets.map(b=><div key={b.id} className="mt-3"><div className="flex justify-between text-sm"><span>{b.name} · ends {b.ends_on}</span><span>{money(b.actual_expense_minor,b.currency_code)} / {money(b.planned_expense_minor,b.currency_code)}</span></div><div className="mt-1 h-2 rounded bg-slate-100"><div className="h-2 rounded bg-emerald-600" style={{width:`${Math.min(100,b.planned_expense_minor?b.actual_expense_minor/b.planned_expense_minor*100:0)}%`}}/></div></div>):<p className="mt-3 text-sm text-slate-500">No current budget periods.</p>}</section>
-  <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Savings and upcoming subscriptions</h2>{data.savings_goals.map(g=><p key={g.id} className="mt-3 text-sm">{g.name} · {money(g.contributed_minor,g.currency_code)} of {money(g.target_amount_minor,g.currency_code)}</p>)}{data.upcoming_subscriptions.map(s=><p key={s.id} className="mt-3 text-sm">{s.name} due {s.next_due_date} · {money(s.amount_minor,s.currency_code)}</p>)}{!data.savings_goals.length&&!data.upcoming_subscriptions.length&&<p className="mt-3 text-sm text-slate-500">No active goals or subscriptions due in the next 30 days.</p>}</section></div>
- </section>;
+const money = (minor: number, currency: string) =>
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(minor / 100);
+
+function DashboardPage({ navigate }: { navigate: (page: string) => void }) {
+  const [data, setData] = useState<Summary | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    invoke<Summary>("get_dashboard_summary")
+      .then(setData)
+      .catch(() => setError("Dashboard information could not be loaded."));
+  }, []);
+
+  if (error) return <p role="alert" className="text-sm text-rose-700">{error}</p>;
+  if (!data) return <p role="status" className="text-sm text-slate-500">Loading overview…</p>;
+
+  const metrics = [
+    ["Account balances", money(data.balance_minor, "KES")],
+    ["Income this month", money(data.income_minor, "KES")],
+    ["Gross expenses", money(data.expense_minor, "KES")],
+    ["Net spending", money(data.net_spending_minor, "KES")],
+  ];
+
+  return (
+    <section className="mx-auto max-w-6xl space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="workspace-accent text-sm font-semibold">Overview</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="workspace-muted mt-1 text-sm">Current balances and this month’s posted activity, in KES.</p>
+        </div>
+        <span className="rounded-full border border-emerald-700/20 bg-emerald-700/5 px-3 py-1 text-xs font-medium text-emerald-800">
+          Updated from posted activity
+        </span>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map(([title, value]) => (
+          <article key={title} className="workspace-panel rounded-xl p-5">
+            <p className="workspace-muted text-sm">{title}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+          </article>
+        ))}
+      </div>
+
+      {data.refund_minor > 0 && (
+        <p className="rounded-lg border border-sky-800/15 bg-sky-800/5 px-4 py-3 text-sm text-sky-800">
+          Refunds this month: <strong>{money(data.refund_minor, "KES")}</strong>
+        </p>
+      )}
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="workspace-panel rounded-xl p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Accounts</h2>
+            <button type="button" onClick={() => navigate("Accounts")} className="workspace-accent text-xs font-semibold hover:underline">
+              View accounts
+            </button>
+          </div>
+          {data.accounts.length ? (
+            <div className="mt-2">
+              {data.accounts.map((account) => (
+                <button
+                  key={account.id}
+                  type="button"
+                  onClick={() => navigate("Accounts")}
+                  className="workspace-divider flex w-full justify-between gap-4 border-b py-3 text-left text-sm last:border-b-0"
+                >
+                  <span>{account.name} <span className="workspace-muted">· {account.currency_code}</span></span>
+                  <strong className="shrink-0 tabular-nums">{money(account.balance_minor, account.currency_code)}</strong>
+                </button>
+              ))}
+            </div>
+          ) : <p className="workspace-muted mt-3 text-sm">No accounts yet.</p>}
+        </section>
+
+        <section className="workspace-panel rounded-xl p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Recent transactions</h2>
+            <button type="button" onClick={() => navigate("Transactions")} className="workspace-accent text-xs font-semibold hover:underline">
+              View transactions
+            </button>
+          </div>
+          {data.recent_transactions.length ? (
+            <div className="mt-2">
+              {data.recent_transactions.map((transaction) => (
+                <button
+                  key={`${transaction.id}-${transaction.account_id}`}
+                  type="button"
+                  onClick={() => navigate("Transactions")}
+                  className="workspace-divider flex w-full justify-between gap-3 border-b py-3 text-left text-sm last:border-b-0"
+                >
+                  <span className="min-w-0">
+                    <strong className="block truncate">{transaction.description || transaction.transaction_type}</strong>
+                    <span className="workspace-muted text-xs">
+                      {transaction.account_name} · {new Date(transaction.occurred_at).toLocaleDateString()} · {transaction.transaction_type}
+                    </span>
+                  </span>
+                  <span className={`shrink-0 tabular-nums ${transaction.entry_amount_minor < 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                    {transaction.entry_amount_minor < 0 ? "−" : "+"}{money(Math.abs(transaction.entry_amount_minor), transaction.currency_code)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : <p className="workspace-muted mt-3 text-sm">No posted transactions yet.</p>}
+        </section>
+
+        <section className="workspace-panel rounded-xl p-5">
+          <h2 className="font-semibold">Budget progress</h2>
+          {data.budgets.length ? data.budgets.map((budget) => {
+            const progress = budget.planned_expense_minor > 0
+              ? Math.max(0, Math.min(100, budget.actual_expense_minor / budget.planned_expense_minor * 100))
+              : 0;
+            return (
+              <div key={budget.id} className="mt-4">
+                <div className="flex flex-wrap justify-between gap-2 text-sm">
+                  <span>{budget.name} <span className="workspace-muted">· ends {budget.ends_on}</span></span>
+                  <span className="tabular-nums">{money(budget.actual_expense_minor, budget.currency_code)} / {money(budget.planned_expense_minor, budget.currency_code)}</span>
+                </div>
+                <div
+                  className="workspace-accent-track mt-2 h-2 overflow-hidden rounded-full"
+                  role="progressbar"
+                  aria-label={`${budget.name} spending`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress)}
+                >
+                  <div className="h-full rounded-full bg-violet-700" style={{ width: `${progress}%` }} />
+                </div>
+              </div>
+            );
+          }) : <p className="workspace-muted mt-3 text-sm">No current budget periods.</p>}
+        </section>
+
+        <section className="workspace-panel rounded-xl p-5">
+          <h2 className="font-semibold">Savings and upcoming subscriptions</h2>
+          {data.savings_goals.map((goal) => (
+            <p key={goal.id} className="workspace-divider mt-3 border-b pb-3 text-sm last:border-b-0">
+              {goal.name} <span className="workspace-muted">·</span> {money(goal.contributed_minor, goal.currency_code)} of {money(goal.target_amount_minor, goal.currency_code)}
+            </p>
+          ))}
+          {data.upcoming_subscriptions.map((subscription) => (
+            <p key={subscription.id} className="workspace-divider mt-3 border-b pb-3 text-sm last:border-b-0">
+              {subscription.name} <span className="workspace-muted">· due {subscription.next_due_date}</span> · {money(subscription.amount_minor, subscription.currency_code)}
+            </p>
+          ))}
+          {!data.savings_goals.length && !data.upcoming_subscriptions.length && (
+            <p className="workspace-muted mt-3 text-sm">No active goals or subscriptions due in the next 30 days.</p>
+          )}
+        </section>
+      </div>
+    </section>
+  );
 }
+
+export default DashboardPage;
