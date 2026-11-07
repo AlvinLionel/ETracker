@@ -720,7 +720,7 @@ Avoid charts that add decoration without improving understanding.
 
 ### 12.1 Purpose
 
-The forecasting screen presents projected financial outcomes and allows comparison with actual results.
+The forecasting screen presents projected financial outcomes and allows comparison with actual results. Users can generate one-to-twelve-month local forecasts from six completed months of posted activity, see monthly normalized active subscription costs and matching budget plans as separate context, and evaluate a forecast after its month closes. Every run creates an independent snapshot. Forecasts remain distinct from budgets and actual records.
 
 ### 12.2 Forecast Presentation
 

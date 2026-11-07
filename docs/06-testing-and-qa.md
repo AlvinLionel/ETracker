@@ -704,6 +704,8 @@ Verify that refunds follow the approved reporting conventions.
 
 Analytics tests verify posted income/expense totals and monthly trends against the ledger, exclude internal transfers and voided or reversed activity, respect date/currency/account/category filters, report allocated values for split transactions, surface repeated descriptions and transactions at least twice the category's six-month average after three prior examples, compare stored budget plans to actuals, show savings-goal progress and export report data as CSV. The what-if scenario is temporary client state and does not write to the ledger or budget records. Refunds are not yet a distinct transaction type, so the QA-ANA-005 refund convention still needs its underlying transaction capability.
 
+Forecasting tests verify local generation, six-completed-month averaging, normalized active subscription costs, future budget context, independent snapshot preservation, assumption/limitation storage, evaluation only after a forecast month ends, duplicate-evaluation rejection and actual variance persistence. Forecast generation and evaluation do not create or modify ledger activity.
+
 ### 9.2 Forecasting
 
 **QA-FOR-001 — Local forecast availability**

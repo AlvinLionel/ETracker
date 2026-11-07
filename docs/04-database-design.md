@@ -884,6 +884,8 @@ Forecast snapshots must be preserved.
 
 Generating a new forecast must not overwrite an earlier forecast.
 
+Migration `0010_forecasting.sql` implements this as `forecast_snapshots`, `forecast_periods` and `forecast_evaluations`. Each run stores its currency, horizon, six-month history window, calculation method, activity-coverage tier, serialized input assumptions and limitations. Period rows store predicted income, expenses, normalized subscription costs, savings, ending balance and any matching budget plan values. Evaluation rows preserve actual income, expense and savings totals, their variances and evaluation limitations; each forecast month can be evaluated once. Forecast generation uses the six completed months before the current month, excludes voided or reversed activity, separates linked subscription costs from the historical expense baseline and does not create or modify ledger records. Budget plans are stored as contextual comparison values and are not added to projected amounts.
+
 ---
 
 ## 12. Notification Data Architecture
@@ -1182,8 +1184,8 @@ As of 4 November 2026:
 | Local attachment storage | Approved direction |
 | Future synchronization readiness | Approved direction |
 | Physical database schema | Not finalized |
-| Migrations | Implemented through 0009 for foundation, imports, revisions and financial planning |
-| Database tests | Implemented for account, transaction, import, budget, savings and subscription workflows |
+| Migrations | Implemented through 0010 for foundation, imports, revisions, financial planning and forecast snapshots |
+| Database tests | Implemented for account, transaction, import, budget, savings, subscription, analytics and forecast workflows |
 
 ---
 
