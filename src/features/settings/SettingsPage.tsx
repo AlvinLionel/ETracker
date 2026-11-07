@@ -106,7 +106,7 @@ export default function SettingsPage() {
   }
 
   return <section className="mx-auto max-w-4xl space-y-6">
-    <header><p className="text-sm font-medium text-emerald-800">System</p><h1 className="mt-1 text-2xl font-bold">Settings and reminders</h1><p className="mt-1 text-sm text-slate-600">Manage local reminder preferences for subscription payments.</p></header>
+    <header><p className="workspace-accent text-xs font-semibold uppercase tracking-[0.14em]">System</p><h1 className="mt-2 text-2xl font-bold tracking-tight">Settings and reminders</h1><p className="workspace-muted mt-2 text-sm">Manage local reminder preferences for subscription payments.</p></header>
     {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}{message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
     <section className="rounded-xl border border-slate-200 bg-white p-5">
       <h2 className="font-semibold">Subscription reminders</h2>

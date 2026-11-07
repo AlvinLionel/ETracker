@@ -96,7 +96,7 @@ export default function BudgetingPage() {
   }
 
   return <section className="mx-auto max-w-6xl space-y-7">
-    <div><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Planning</p><h1 className="mt-2 text-2xl font-semibold">Budgeting</h1><p className="mt-1 text-sm text-slate-600">Plan income, spending and savings, then compare category spending with posted transactions.</p></div>
+    <header><p className="workspace-accent text-xs font-semibold uppercase tracking-[0.14em]">Planning</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Budgeting</h1><p className="workspace-muted mt-2 text-sm">Plan income, spending and savings, then compare category spending with posted transactions.</p></header>
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}{message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
     <div className="grid gap-6 lg:grid-cols-2">
       <form onSubmit={saveTemplate} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
