@@ -65,4 +65,31 @@ mod tests {
         assert_eq!(report.integrity_messages, vec!["ok"]);
         assert!(report.foreign_key_violations.is_empty());
     }
+
+    #[test]
+    fn reports_foreign_key_violations_without_mutating_records() {
+        let database = Database::initialize(Path::new(":memory:")).unwrap();
+        {
+            let connection = database.connection().lock().unwrap();
+            connection
+                .pragma_update(None, "foreign_keys", "OFF")
+                .unwrap();
+            connection.execute(
+                "INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES ('orphan','missing-transaction','missing-account',1)",
+                [],
+            ).unwrap();
+            connection
+                .pragma_update(None, "foreign_keys", "ON")
+                .unwrap();
+        }
+        let report = SqliteIntegrityRepository::new(&database).check().unwrap();
+        assert_eq!(report.integrity_messages, vec!["ok"]);
+        assert_eq!(report.foreign_key_violations.len(), 2);
+        assert!(
+            report
+                .foreign_key_violations
+                .iter()
+                .any(|issue| issue.contains("financial_transactions"))
+        );
+    }
 }

@@ -40,4 +40,15 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("The local database passed both checks.")).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("check_database_integrity");
   });
+
+  it("shows a diagnostic report when the database has broken references", async () => {
+    invoke.mockImplementation((command: string) => command === "get_user_preferences"
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7 })
+      : command === "list_subscriptions" ? Promise.resolve([])
+        : Promise.resolve({ integrity_messages: ["ok"], foreign_key_violations: ["account_entries row Some(3) references accounts (constraint 0)"] }));
+    render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Check local data" }));
+    expect(await screen.findByText(/Avoid editing affected records/)).toBeInTheDocument();
+    expect(screen.getByText(/references accounts/)).toBeInTheDocument();
+  });
 });
