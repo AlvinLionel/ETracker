@@ -106,7 +106,7 @@ Theme changes must apply consistently across all screens and visual components.
 
 ### 2.4.1 Current Implementation Note
 
-The application shell, dashboard, account-management, transaction and statement-import screens use warm neutral light surfaces, restrained purple selection states, and charcoal/navy dark surfaces through shared CSS tokens. Common surface, neutral text, border, and status color utilities inside the application shell resolve through those tokens, including legacy feature pages. Compact horizontal navigation is available in narrower windows, account and import workspace rows reflow on narrow layouts, transaction history scrolls horizontally when needed, and budget progress is exposed as an accessible progress indicator. Other feature layouts still need screen-by-screen refinement and desktop visual review without changing business behavior.
+The application shell, dashboard, account-management, transaction and statement-import screens use warm neutral light surfaces, restrained purple selection states, and charcoal/navy dark surfaces through shared CSS tokens. Common surface, neutral text, border, and status color utilities inside the application shell resolve through those tokens, including legacy feature pages. Compact horizontal navigation is available in narrower windows, account and import workspace rows reflow on narrow layouts, transaction history scrolls horizontally when needed, and budget progress is exposed as an accessible progress indicator. The core account/transaction desktop E2E scenario passes in Edge; broader workflows and manual visual review remain. Other feature layouts still need screen-by-screen refinement without changing business behavior.
 
 ### 2.5 Colour Semantics
 

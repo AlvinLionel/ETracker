@@ -11,6 +11,8 @@ const repositoryRoot = process.cwd();
 const toolsDirectory = resolve(repositoryRoot, "src-tauri/target/e2e-tools/bin");
 const appBinary = resolve(repositoryRoot, "src-tauri/target/debug/etracker.exe");
 const tauriDriverBinary = resolve(toolsDirectory, "tauri-driver.exe");
+const webDriverPort = 54231;
+const nativeDriverPort = 54232;
 let tauriDriver;
 let driver;
 
@@ -23,7 +25,11 @@ before(async () => {
     }
   }
 
-  tauriDriver = spawn(tauriDriverBinary, ["--native-driver", resolve(toolsDirectory, "msedgedriver.exe")], {
+  tauriDriver = spawn(tauriDriverBinary, [
+    "--port", String(webDriverPort),
+    "--native-port", String(nativeDriverPort),
+    "--native-driver", resolve(toolsDirectory, "msedgedriver.exe"),
+  ], {
     cwd: toolsDirectory,
     windowsHide: true,
     stdio: "inherit",
@@ -42,23 +48,27 @@ before(async () => {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     if (driverExit) throw new Error(`tauri-driver exited before becoming ready (${driverExit})`);
     try {
-      const response = await fetch("http://127.0.0.1:4444/status");
+      const response = await fetch(`http://127.0.0.1:${webDriverPort}/status`);
       const body = await response.text();
       lastStatus = `HTTP ${response.status}: ${body.slice(0, 500)}`;
       if (response.ok) { ready = true; break; }
     } catch (error) { lastStatus = error.message; /* Wait for tauri-driver to bind its local port. */ }
     await delay(500);
   }
-  assert.ok(ready, `tauri-driver did not become ready on port 4444 (${lastStatus}); check that the port is available and the Edge driver is installed`);
+  assert.ok(ready, `tauri-driver did not become ready on port ${webDriverPort} (${lastStatus}); check that the port is available and the Edge driver is installed`);
 
   const capabilities = new Capabilities();
   capabilities.set("tauri:options", { application: appBinary });
   capabilities.setBrowserName("wry");
   driver = await new Builder()
-    .usingServer("http://127.0.0.1:4444/")
+    .usingServer(`http://127.0.0.1:${webDriverPort}/`)
     .withCapabilities(capabilities)
     .build();
-  await driver.wait(until.elementLocated(By.xpath("//nav//button[normalize-space()='Dashboard']")), 60_000);
+  await driver.wait(async () => {
+    const buttons = await driver.findElements(By.xpath("//nav//button[normalize-space()='Dashboard']"));
+    for (const button of buttons) if (await button.isDisplayed()) return true;
+    return false;
+  }, 60_000);
 });
 
 after(async () => {
@@ -72,9 +82,22 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const savings = `E2E Savings ${suffix}`;
   const incomeDescription = `E2E income ${suffix}`;
 
+  async function navigateTo(page) {
+    const buttons = await driver.findElements(By.xpath(`//nav//button[normalize-space()='${page}']`));
+    for (const button of buttons) {
+      if (await button.isDisplayed()) {
+        await button.click();
+        return;
+      }
+    }
+    throw new Error(`No visible navigation control for ${page}.`);
+  }
+
   async function createAccount(name, type) {
-    await driver.findElement(By.xpath("//nav//button[normalize-space()='Accounts']")).click();
-    await driver.findElement(By.xpath("//button[normalize-space()='Add account']")).click();
+    await navigateTo("Accounts");
+    await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Your accounts']")), 15_000);
+    const addAccountButton = await driver.findElements(By.xpath("//button[contains(normalize-space(.), 'Add account')]"));
+    await addAccountButton[0].click();
     await driver.findElement(By.id("account-name")).sendKeys(name);
     await new Select(await driver.findElement(By.id("account-type"))).selectByValue(type);
     await driver.findElement(By.xpath("//div[@role='dialog']//button[normalize-space()='Create account']")).click();
@@ -84,7 +107,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await createAccount(checking, "bank");
   await createAccount(savings, "cash");
 
-  await driver.findElement(By.xpath("//nav//button[normalize-space()='Transactions']")).click();
+  await navigateTo("Transactions");
   const transactionForm = (await driver.findElements(By.css("main form")))[0];
   const transactionSelects = await transactionForm.findElements(By.css("select"));
   await new Select(transactionSelects[0]).selectByValue("income");
@@ -102,7 +125,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Transfer saved')]")), 15_000);
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='Transfer fee'] and .//td[normalize-space()='expense']]")), 15_000);
 
-  await driver.findElement(By.xpath("//nav//button[normalize-space()='Dashboard']")).click();
+  await navigateTo("Dashboard");
   const checkingCard = await driver.wait(until.elementLocated(By.xpath(`//section[.//h2[normalize-space()='Accounts']]//button[contains(.,'${checking}')]`)), 15_000);
   const savingsCard = await driver.findElement(By.xpath(`//section[.//h2[normalize-space()='Accounts']]//button[contains(.,'${savings}')]`));
   assert.match(await checkingCard.getText(), /73[.,]00/);
