@@ -27,6 +27,9 @@ describe("AnalyticsPage", () => {
   it("loads summaries with filters and exports reports", async () => {
     render(<AnalyticsPage />);
     expect(await screen.findByText("Income, expense and refund trends")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Monthly income, gross expenses and refunds chart" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: /Exact monthly values for the financial trend chart/ })).toHaveTextContent("2026-11");
+    expect(screen.getByRole("img", { name: "Expense category mix chart" })).toBeInTheDocument();
     expect(screen.getAllByText("Food").length).toBeGreaterThan(1);
     expect(screen.getByText("Internet")).toBeInTheDocument();
     expect(screen.getByText("Utility bill")).toBeInTheDocument();

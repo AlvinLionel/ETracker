@@ -120,6 +120,7 @@ describe("ImportsPage", () => {
       return Promise.resolve([]);
     });
     render(<ImportsPage />);
+    expect(await screen.findByText(/Start here to build your past spending history from account statements/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
     expect(screen.getByRole("navigation", { name: "Import workspace views" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Logs" }));

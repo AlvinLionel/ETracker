@@ -22,6 +22,8 @@ describe("BudgetingPage", () => {
 
   it("shows actual spending against the copied monthly plan", async () => {
     render(<BudgetingPage />);
+    expect(await screen.findByRole("heading", { name: "Monthly plan worksheet" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: /Monthly financial plan with posted actuals/ })).toBeInTheDocument();
     expect(await screen.findByText("Food", { selector: "td" })).toBeInTheDocument();
     expect(screen.getAllByText(/80\.00/)).toHaveLength(2);
     expect(screen.getByText(/170\.00/)).toBeInTheDocument();

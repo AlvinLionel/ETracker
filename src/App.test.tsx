@@ -28,6 +28,8 @@ describe("application navigation shell", () => {
     expect(await screen.findByText("Dashboard test content")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const compactNavigation = screen.getByRole("navigation", { name: "Compact navigation" });
+    const compactLabels = within(compactNavigation).getAllByRole("button").map((button) => button.textContent);
+    expect(compactLabels.indexOf("Imports")).toBeLessThan(compactLabels.indexOf("Transactions"));
     fireEvent.click(within(compactNavigation).getByRole("button", { name: "Accounts" }));
 
     expect(screen.getByRole("heading", { name: "Account management" })).toBeInTheDocument();

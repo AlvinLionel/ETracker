@@ -15,8 +15,8 @@ import { applyTheme, type ThemePreference } from "./features/settings/theme";
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
   { label: "Accounts", section: "Finance" },
-  { label: "Transactions", section: "Finance" },
   { label: "Imports", section: "Finance" },
+  { label: "Transactions", section: "Finance" },
   { label: "Budgeting", section: "Planning" },
   { label: "Savings", section: "Planning" },
   { label: "Subscriptions", section: "Planning" },

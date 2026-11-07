@@ -106,7 +106,7 @@ Theme changes must apply consistently across all screens and visual components.
 
 ### 2.4.1 Current Implementation Note
 
-The app shell and all feature screens share warm neutral light surfaces, restrained purple selection states, and charcoal/navy dark surfaces through shared CSS tokens. Common panel, neutral text, border, and status color utilities resolve through those tokens, including legacy feature pages. Dashboard, accounts, transactions and imports received focused layout refinements; planning, insights and Settings now share the same page-heading hierarchy. Compact navigation is available in narrower windows, transaction history scrolls horizontally when needed, and budget progress is an accessible progress indicator. Desktop E2E verifies account creation, transaction entry/edit/audit, transfer and fee, void, reversal, and CSV statement staging through finalization in Edge. Detailed layout, accessibility and installer/backup workflows still need desktop review; preserve existing business behavior during continued redesign.
+The app shell and all feature screens share warm neutral light surfaces, restrained purple selection states, and charcoal/navy dark surfaces through shared CSS tokens. The large app background uses a low-contrast 32px accounting grid in both themes; panels and controls retain clean solid surfaces. Statement imports lead the Finance navigation and explain that imported statements are the primary source for historical spending, with manual entry for cash or missing activity. Budgeting presents monthly plans in an editable, row-numbered finance worksheet. Analytics includes responsive SVG monthly grouped bars and an expense-category donut with exact accessible data tables. Common panel, neutral text, border, and status color utilities resolve through shared tokens, including legacy feature pages. Desktop E2E verifies account creation, transaction entry/edit/audit, transfer and fee, void, reversal, CSV statement staging through finalization, theme choice and encrypted backup/restore in Edge. Detailed layout, accessibility and installer/backup workflows still need desktop review; preserve existing business behavior during continued redesign.
 
 ### 2.5 Colour Semantics
 
@@ -401,7 +401,7 @@ The user must be able to distinguish:
 
 ### 7.1 Purpose
 
-The imports workspace manages statement uploads, extraction, validation, duplicate detection, reconciliation and finalization.
+The imports workspace is the primary way to build historical spending records from account statements. It manages statement uploads, extraction, validation, duplicate detection, reconciliation and finalization. Manual transaction entry remains available for cash activity and items missing from statements.
 
 The generic file-mapping flow supports CSV and XLSX workbooks. For XLSX, users choose a worksheet and header row before mapping date, amount and optional description columns. Formula-derived values in mapped date or amount cells require correction in staged review.
 
@@ -538,7 +538,7 @@ The workspace should identify unfinished batches and allow the user to resume or
 
 ## 8. Budgeting Screen
 
-The budgeting workspace supports reusable template editing, planned income/expense/savings lines, independent monthly snapshots, monthly instance editing, category actuals, and planned versus actual income, expenses, savings and unallocated funds.
+The budgeting workspace supports reusable template editing, planned income/expense/savings lines, independent monthly snapshots, monthly instance editing, category actuals, and planned versus actual income, expenses, savings and unallocated funds. The monthly plan is presented as a finance-focused worksheet with editable rows, row references, clear plan/actual/variance columns and formula-derived totals; importing statements populates actual history while planned amounts stay independent.
 
 The savings screen supports goals, target dates, manual contribution history, progress, completion/archive status, and optional account links. When a goal is linked to an account, the user can link a posted incoming transfer; the UI explains the transfer is already reflected in the account balance. Manual contributions never create ledger movements.
 
@@ -676,7 +676,7 @@ A projected subscription payment must not be counted as an actual expense.
 
 ### 11.1 Purpose
 
-The analytics screen presents historical financial patterns and comparisons. The implemented views show ordinary income, gross expenses and refunds as separate totals and monthly trends, plus net spending calculated as gross expenses less refunds. Monthly net cash flow includes refund inflows; budget actual expenses remain gross. Category breakdowns, account comparisons, repeated expense descriptions, review-only unusual-spending signals, budget performance, savings progress and CSV export are also available. Linked refunds inherit proportional category allocations from the original expense. A temporary what-if simulator changes assumed income/expenses for the selected period without writing financial records. Date, currency, account and category filters apply to report data. Internal transfers and voided or reversed activity are excluded.
+The analytics screen presents historical financial patterns and comparisons. The implemented views show ordinary income, gross expenses and refunds as separate totals and monthly trends, plus net spending calculated as gross expenses less refunds. Monthly net cash flow includes refund inflows; budget actual expenses remain gross. Trends use grouped monthly bars, and expense composition uses a donut chart; both provide exact underlying values accessibly. Category breakdowns, account comparisons, repeated expense descriptions, review-only unusual-spending signals, budget performance, savings progress and CSV export are also available. Linked refunds inherit proportional category allocations from the original expense. A temporary what-if simulator changes assumed income/expenses for the selected period without writing financial records. Date, currency, account and category filters apply to report data. Internal transfers and voided or reversed activity are excluded.
 
 ### 11.2 Analytical Views
 

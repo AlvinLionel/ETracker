@@ -298,8 +298,23 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const restorePassphrase = driver.findElement(By.css("input[aria-label='Restore passphrase']"));
   await restorePassphrase.clear();
   await restorePassphrase.sendKeys(backupPassphrase);
-  await driver.findElement(By.xpath("//button[normalize-space()='Replace current data']")).click();
-  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Database restored')]")), 15_000);
+  const replaceDataButton = driver.findElement(By.xpath("//button[normalize-space()='Replace current data']"));
+  await driver.wait(until.elementIsEnabled(replaceDataButton), 5_000);
+  await replaceDataButton.click();
+  const restoreOutcome = await driver.wait(async () => {
+    const success = await driver.findElements(By.xpath("//*[@role='status'][contains(.,'Database restored')]"));
+    if (success[0]) return { kind: "success", message: await success[0].getText() };
+    const errors = await driver.findElements(By.css("[role='alert']"));
+    for (const error of errors) {
+      const message = await error.getText();
+      if (message.includes("Restore failed")) return { kind: "failure", message };
+    }
+    return false;
+  }, 15_000).catch(async (error) => {
+    const visiblePage = await driver.findElement(By.css("main")).getText();
+    throw new Error(`${error.message}; settings screen: ${visiblePage}`);
+  });
+  assert.equal(restoreOutcome.kind, "success", restoreOutcome.message);
   assert.equal(await driver.findElements(By.xpath("//button[normalize-space()='Reload ETracker']")).then((items) => items.length > 0), true);
   await unlink(backupPath).catch(() => {});
 });
