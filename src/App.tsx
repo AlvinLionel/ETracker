@@ -1,6 +1,7 @@
 import AccountsPage from "./features/accounts/AccountsPage";
 import TransactionsPage from "./features/transactions/TransactionsPage";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import ImportsPage from "./features/imports/ImportsPage";
 import BudgetingPage from "./features/planning/BudgetingPage";
 import SavingsPage from "./features/planning/SavingsPage";
@@ -9,6 +10,7 @@ import AnalyticsPage from "./features/analytics/AnalyticsPage";
 import ForecastingPage from "./features/forecasting/ForecastingPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import SettingsPage from "./features/settings/SettingsPage";
+import { applyTheme, type ThemePreference } from "./features/settings/theme";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview" },
@@ -26,6 +28,19 @@ const navigationItems = [
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
   const availablePages=["Dashboard","Accounts","Transactions","Imports","Budgeting","Savings","Subscriptions","Analytics","Forecasting","Settings"];
+
+  useEffect(() => {
+    let active = true;
+    let theme: ThemePreference = "system";
+    applyTheme(theme);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const updateSystemTheme = () => { if (theme === "system") applyTheme(theme); };
+    media.addEventListener("change", updateSystemTheme);
+    invoke<{ theme: ThemePreference }>("get_user_preferences")
+      .then((preferences) => { if (active) { theme = preferences.theme; applyTheme(theme); } })
+      .catch(() => {});
+    return () => { active = false; media.removeEventListener("change", updateSystemTheme); };
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-[#f7f8f7] text-slate-900">
