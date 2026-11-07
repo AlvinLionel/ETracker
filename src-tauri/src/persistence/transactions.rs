@@ -40,7 +40,128 @@ pub struct TransactionAuditRecord {
     pub reason: Option<String>,
     pub created_at: String,
 }
+#[derive(serde::Serialize)]
+pub struct EligibleRefund {
+    pub transaction_id: String,
+    pub amount_minor: i64,
+    pub refundable_minor: i64,
+    pub occurred_at: String,
+    pub description: Option<String>,
+}
 impl SqliteTransactionRepository<'_> {
+    pub fn eligible_refunds(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<EligibleRefund>, TransactionRepositoryError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
+        let mut statement = connection.prepare("SELECT t.id,t.amount_minor,t.occurred_at,t.description,MAX(0,t.amount_minor-COALESCE((SELECT SUM(r.amount_minor) FROM refund_transactions rf JOIN financial_transactions r ON r.id=rf.transaction_id WHERE rf.original_expense_transaction_id=t.id AND r.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=r.id)),0)) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.transaction_type='expense' AND t.status='posted' AND e.account_id=?1 AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=t.id) ORDER BY datetime(t.occurred_at) DESC").map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        statement
+            .query_map([account_id], |r| {
+                Ok(EligibleRefund {
+                    transaction_id: r.get(0)?,
+                    amount_minor: r.get(1)?,
+                    occurred_at: r.get(2)?,
+                    description: r.get(3)?,
+                    refundable_minor: r.get(4)?,
+                })
+            })
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))
+    }
+
+    pub fn create_refund(
+        &self,
+        item: &NewTransaction,
+        original_id: Option<&str>,
+    ) -> Result<String, TransactionRepositoryError> {
+        if item.transaction_type != crate::domain::transactions::TransactionType::Income
+            || item.amount_minor <= 0
+        {
+            return Err(TransactionRepositoryError::InvalidCategory);
+        }
+        let mut connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        let account: Option<(String, Option<String>)> = tx
+            .query_row(
+                "SELECT currency_code,archived_at FROM accounts WHERE id=?1",
+                [&item.account_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        let Some((currency, archived)) = account else {
+            return Err(TransactionRepositoryError::AccountUnavailable);
+        };
+        if archived.is_some() {
+            return Err(TransactionRepositoryError::AccountUnavailable);
+        }
+        if currency != item.currency_code {
+            return Err(TransactionRepositoryError::CurrencyMismatch);
+        }
+        let mut allocations: Vec<(String, i64)> = Vec::new();
+        if let Some(original_id) = original_id {
+            let original: Option<(i64,String,String,String)> = tx.query_row("SELECT t.amount_minor,t.currency_code,e.account_id,t.transaction_type FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.id=?1 AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=t.id AND rv.status='posted')", [original_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+            let Some((original_amount, original_currency, original_account, kind)) = original
+            else {
+                return Err(TransactionRepositoryError::NotReversible);
+            };
+            if kind != "expense"
+                || original_account != item.account_id
+                || original_currency != item.currency_code
+            {
+                return Err(TransactionRepositoryError::NotReversible);
+            }
+            let refunded: i64 = tx.query_row("SELECT COALESCE(SUM(r.amount_minor),0) FROM refund_transactions rf JOIN financial_transactions r ON r.id=rf.transaction_id WHERE rf.original_expense_transaction_id=?1 AND r.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=r.id)", [original_id], |r| r.get(0)).map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+            if item.amount_minor > original_amount - refunded {
+                return Err(TransactionRepositoryError::RefundLimitExceeded);
+            }
+            let parts: Vec<(String, i64)> = {
+                let mut s=tx.prepare("SELECT category_id,amount_minor FROM category_allocations WHERE transaction_id=?1 ORDER BY id").map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+                s.query_map([original_id], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
+            };
+            let total: i64 = parts.iter().map(|p| p.1).sum();
+            if total > 0 {
+                let mut assigned = 0;
+                for (idx, (category, amount)) in parts.iter().enumerate() {
+                    let share = if idx + 1 == parts.len() {
+                        item.amount_minor - assigned
+                    } else {
+                        ((item.amount_minor as i128 * *amount as i128) / total as i128) as i64
+                    };
+                    assigned += share;
+                    if share > 0 {
+                        allocations.push((category.clone(), share));
+                    }
+                }
+            }
+        }
+        let id = Uuid::new_v4().to_string();
+        tx.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,description,notes,source_type) VALUES (?1,'income',?2,?3,?4,?5,?6,'manual')",params![id,item.amount_minor,item.currency_code,item.occurred_at,item.description,item.notes]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        tx.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES (?1,?2,?3,?4)",params![Uuid::new_v4().to_string(),id,item.account_id,item.amount_minor]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        tx.execute("INSERT INTO refund_transactions(transaction_id,original_expense_transaction_id) VALUES (?1,?2)",params![id,original_id]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        for (category, amount) in allocations {
+            tx.execute("INSERT INTO category_allocations(id,transaction_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)",params![Uuid::new_v4().to_string(),id,category,amount]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        }
+        tx.execute("INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'created',?3)",params![Uuid::new_v4().to_string(),id,serde_json::json!({"type":"refund","amount_minor":item.amount_minor,"original_expense_transaction_id":original_id}).to_string()]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        Ok(id)
+    }
+
     pub fn allocations(
         &self,
         transaction_id: &str,
@@ -122,7 +243,7 @@ impl SqliteTransactionRepository<'_> {
             .connection()
             .lock()
             .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
-        let mut statement=connection.prepare("SELECT t.id,e.account_id,t.transaction_type,t.amount_minor,e.amount_minor,t.currency_code,t.occurred_at,t.description,t.status FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE (?1 IS NULL OR e.account_id=?1) AND (?2 IS NULL OR date(t.occurred_at)>=date(?2)) AND (?3 IS NULL OR date(t.occurred_at)<=date(?3)) ORDER BY datetime(t.occurred_at) DESC,t.created_at DESC").map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        let mut statement=connection.prepare("SELECT t.id,e.account_id,CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END,t.amount_minor,e.amount_minor,t.currency_code,t.occurred_at,t.description,t.status FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE (?1 IS NULL OR e.account_id=?1) AND (?2 IS NULL OR date(t.occurred_at)>=date(?2)) AND (?3 IS NULL OR date(t.occurred_at)<=date(?3)) ORDER BY datetime(t.occurred_at) DESC,t.created_at DESC").map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
         statement
             .query_map(params![account_id, from, to], |r| {
                 Ok(TransactionRecord {
@@ -213,6 +334,10 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         else {
             return Err(TransactionRepositoryError::NotEditable);
         };
+        let has_refunds: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM refund_transactions rf JOIN financial_transactions r ON r.id=rf.transaction_id WHERE rf.original_expense_transaction_id=?1 AND r.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=r.id AND rv.status='posted'))", [id], |r| r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        if has_refunds {
+            return Err(TransactionRepositoryError::NotEditable);
+        }
         if source != "manual" || kind != item.transaction_type.as_str() {
             return Err(TransactionRepositoryError::NotEditable);
         }
@@ -300,6 +425,10 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         if source.as_deref() != Some("manual") {
             return Err(TransactionRepositoryError::NotEditable);
         }
+        let has_refunds: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM refund_transactions rf JOIN financial_transactions r ON r.id=rf.transaction_id WHERE rf.original_expense_transaction_id=?1 AND r.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=r.id AND rv.status='posted'))", [id], |r| r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        if has_refunds {
+            return Err(TransactionRepositoryError::NotEditable);
+        }
         let changed=tx.execute("UPDATE financial_transactions SET status='voided',voided_at=CURRENT_TIMESTAMP,void_reason=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND status='posted'",params![reason,id]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
         if changed != 1 {
             return Err(TransactionRepositoryError::NotEditable);
@@ -324,6 +453,10 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
             return Err(TransactionRepositoryError::NotReversible);
         };
         if !matches!(kind.as_str(), "income" | "expense" | "transfer") || source != "manual" {
+            return Err(TransactionRepositoryError::NotReversible);
+        }
+        let has_refunds: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM refund_transactions rf JOIN financial_transactions r ON r.id=rf.transaction_id WHERE rf.original_expense_transaction_id=?1 AND r.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=r.id AND rv.status='posted'))", [id], |r| r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        if has_refunds {
             return Err(TransactionRepositoryError::NotReversible);
         }
         let reversal_id = Uuid::new_v4().to_string();
@@ -745,5 +878,68 @@ mod tests {
         let fee:i64=c.query_row("SELECT amount_minor FROM account_entries WHERE account_id='a' AND transaction_id IN (SELECT id FROM financial_transactions WHERE description='Transfer fee')",[],|r|r.get(0)).unwrap();
         assert_eq!(movements, 0);
         assert_eq!(fee, -150);
+    }
+
+    #[test]
+    fn refunds_are_distinct_proportional_and_cannot_exceed_original() {
+        let db = db();
+        account(&db, "a");
+        db.connection().lock().unwrap().execute("INSERT INTO categories(id,name,category_type) VALUES ('food','Food','expense'),('home','Home','expense')",[]).unwrap();
+        let repository = SqliteTransactionRepository::new(&db);
+        let mut expense = input("a", TransactionType::Expense);
+        expense.allocations = vec![
+            Allocation {
+                category_id: "food".into(),
+                amount_minor: 700,
+            },
+            Allocation {
+                category_id: "home".into(),
+                amount_minor: 500,
+            },
+        ];
+        let original = repository.create(&expense).unwrap();
+        let mut refund = input("a", TransactionType::Income);
+        refund.amount_minor = 600;
+        let refund_id = repository.create_refund(&refund, Some(&original)).unwrap();
+        let listed = repository.list(Some("a"), None, None).unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .find(|record| record.id == refund_id)
+                .unwrap()
+                .transaction_type,
+            "refund"
+        );
+        let allocations = repository.allocations(&refund_id).unwrap();
+        assert_eq!(allocations.iter().map(|a| a.amount_minor).sum::<i64>(), 600);
+        assert!(matches!(
+            repository.create_refund(
+                &{
+                    let mut r = refund.clone();
+                    r.amount_minor = 601;
+                    r
+                },
+                Some(&original)
+            ),
+            Err(TransactionRepositoryError::RefundLimitExceeded)
+        ));
+        assert!(matches!(
+            repository.reverse(&original),
+            Err(TransactionRepositoryError::NotReversible)
+        ));
+        assert!(matches!(
+            repository.update(&original, &expense),
+            Err(TransactionRepositoryError::NotEditable)
+        ));
+        assert_eq!(
+            repository
+                .eligible_refunds("a")
+                .unwrap()
+                .iter()
+                .find(|r| r.transaction_id == original)
+                .unwrap()
+                .refundable_minor,
+            600
+        );
     }
 }

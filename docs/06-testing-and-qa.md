@@ -332,7 +332,7 @@ Scenario:
 **Expected result:**
 - The refund is recorded as a separate financial event.
 - It is not classified as ordinary income.
-- Reporting reflects the refund according to the approved net expenditure rules.
+- Reporting keeps the refund separate from ordinary income and gross expenses.
 - Account balance reflects the actual refund movement.
 
 ### QA-FIN-005 — Historical Transaction Correction
@@ -700,9 +700,9 @@ Verify that date and account filters return correct results.
 
 **QA-ANA-005 — Refund reporting**
 
-Verify that refunds follow the approved reporting conventions.
+Verify refunds appear separately from ordinary income and expenses, and linked split refunds follow the original category proportions.
 
-Analytics tests verify posted income/expense totals and monthly trends against the ledger, exclude internal transfers and voided or reversed activity, respect date/currency/account/category filters, report allocated values for split transactions, surface repeated descriptions and transactions at least twice the category's six-month average after three prior examples, compare stored budget plans to actuals, show savings-goal progress and export report data as CSV. The what-if scenario is temporary client state and does not write to the ledger or budget records. Refunds are not yet a distinct transaction type, so the QA-ANA-005 refund convention still needs its underlying transaction capability.
+Analytics tests verify posted ordinary income, gross expenses and separately reported refunds against the ledger, exclude internal transfers and voided or reversed activity, respect date/currency/account/category filters, report allocated values for split transactions, surface repeated descriptions and transactions at least twice the category's six-month average after three prior examples, compare stored budget plans to actuals, show savings-goal progress and export report data as CSV. Linked refunds inherit their original expense's category distribution; refund values are not netted against gross expenses or mixed into ordinary income. The what-if scenario is temporary client state and does not write to the ledger or budget records.
 
 Forecasting tests verify local generation, six-completed-month averaging, normalized active subscription costs, future budget context, independent snapshot preservation, assumption/limitation storage, evaluation only after a forecast month ends, duplicate-evaluation rejection and actual variance persistence. Forecast generation and evaluation do not create or modify ledger activity.
 

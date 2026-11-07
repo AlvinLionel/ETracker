@@ -9,6 +9,7 @@ pub enum TransactionRepositoryError {
     InvalidCategory,
     NotEditable,
     NotReversible,
+    RefundLimitExceeded,
 }
 pub trait TransactionRepository {
     fn create(&self, transaction: &NewTransaction) -> Result<String, TransactionRepositoryError>;

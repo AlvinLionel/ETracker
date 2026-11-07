@@ -74,6 +74,7 @@ pub fn run() {
             commands::transactions::list_active_categories,
             commands::transactions::get_transaction_audit_history,
             commands::transactions::get_transaction_allocations,
+            commands::transactions::list_eligible_refunds,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;

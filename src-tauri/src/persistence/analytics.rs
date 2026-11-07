@@ -14,6 +14,7 @@ pub struct AnalyticsPoint {
     pub period: String,
     pub income_minor: i64,
     pub expense_minor: i64,
+    pub refund_minor: i64,
 }
 
 #[derive(Serialize)]
@@ -30,6 +31,7 @@ pub struct AnalyticsAccount {
     pub name: String,
     pub income_minor: i64,
     pub expense_minor: i64,
+    pub refund_minor: i64,
 }
 
 #[derive(Serialize)]
@@ -73,6 +75,7 @@ pub struct AnalyticsSummary {
     pub categories: Vec<AnalyticsFilterOption>,
     pub total_income_minor: i64,
     pub total_expense_minor: i64,
+    pub total_refund_minor: i64,
     pub trends: Vec<AnalyticsPoint>,
     pub category_breakdown: Vec<AnalyticsCategory>,
     pub account_comparison: Vec<AnalyticsAccount>,
@@ -139,17 +142,17 @@ impl<'a> SqliteAnalyticsRepository<'a> {
         let filter = "t.status='posted' AND t.transaction_type IN ('income','expense') AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') AND (?1 IS NULL OR date(t.occurred_at)>=date(?1)) AND (?2 IS NULL OR date(t.occurred_at)<=date(?2)) AND (?3 IS NULL OR e.account_id=?3) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM category_allocations ca WHERE ca.transaction_id=t.id AND ca.category_id=?4)) AND (?5 IS NULL OR t.currency_code=?5)";
         let selected_amount = "CASE WHEN ?4 IS NULL THEN t.amount_minor ELSE COALESCE((SELECT SUM(selected.amount_minor) FROM category_allocations selected WHERE selected.transaction_id=t.id AND selected.category_id=?4),0) END";
         let totals_sql = format!(
-            "SELECT COALESCE(SUM(CASE WHEN t.transaction_type='income' THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END),0) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE {filter}"
+            "SELECT COALESCE(SUM(CASE WHEN t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),0) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE {filter}"
         );
-        let (total_income_minor, total_expense_minor) = connection
+        let (total_income_minor, total_expense_minor, total_refund_minor) = connection
             .query_row(
                 &totals_sql,
                 params![from, to, account_id, category_id, effective_currency],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .map_err(|e| e.to_string())?;
         let trends_sql = format!(
-            "SELECT strftime('%Y-%m',t.occurred_at),COALESCE(SUM(CASE WHEN t.transaction_type='income' THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END),0) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE {filter} GROUP BY strftime('%Y-%m',t.occurred_at) ORDER BY 1"
+            "SELECT strftime('%Y-%m',t.occurred_at),COALESCE(SUM(CASE WHEN t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),0) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE {filter} GROUP BY strftime('%Y-%m',t.occurred_at) ORDER BY 1"
         );
         let mut statement = connection.prepare(&trends_sql).map_err(|e| e.to_string())?;
         let trends = statement
@@ -160,6 +163,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
                         period: r.get(0)?,
                         income_minor: r.get(1)?,
                         expense_minor: r.get(2)?,
+                        refund_minor: r.get(3)?,
                     })
                 },
             )
@@ -167,7 +171,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())?;
         let breakdown_sql = format!(
-            "SELECT a.category_id,COALESCE(c.name,'Uncategorized'),t.transaction_type,SUM(COALESCE(a.amount_minor,t.amount_minor)) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id LEFT JOIN category_allocations a ON a.transaction_id=t.id AND (?4 IS NULL OR a.category_id=?4) LEFT JOIN categories c ON c.id=a.category_id WHERE {filter} GROUP BY a.category_id,t.transaction_type ORDER BY t.transaction_type,SUM(COALESCE(a.amount_minor,t.amount_minor)) DESC"
+            "SELECT a.category_id,COALESCE(c.name,'Uncategorized'),CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END,SUM(COALESCE(a.amount_minor,t.amount_minor)) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id LEFT JOIN category_allocations a ON a.transaction_id=t.id AND (?4 IS NULL OR a.category_id=?4) LEFT JOIN categories c ON c.id=a.category_id WHERE {filter} GROUP BY a.category_id,CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END ORDER BY 3,SUM(COALESCE(a.amount_minor,t.amount_minor)) DESC"
         );
         let mut statement = connection
             .prepare(&breakdown_sql)
@@ -188,7 +192,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())?;
         let accounts_sql = format!(
-            "SELECT e.account_id,a.name,SUM(CASE WHEN t.transaction_type='income' THEN {selected_amount} ELSE 0 END),SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN accounts a ON a.id=e.account_id WHERE {filter} GROUP BY e.account_id ORDER BY a.name COLLATE NOCASE"
+            "SELECT e.account_id,a.name,SUM(CASE WHEN t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END),SUM(CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN accounts a ON a.id=e.account_id WHERE {filter} GROUP BY e.account_id ORDER BY a.name COLLATE NOCASE"
         );
         let mut statement = connection
             .prepare(&accounts_sql)
@@ -202,6 +206,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
                         name: r.get(1)?,
                         income_minor: r.get(2)?,
                         expense_minor: r.get(3)?,
+                        refund_minor: r.get(4)?,
                     })
                 },
             )
@@ -253,7 +258,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             .map_err(|e| e.to_string())?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())?;
-        let budgets_sql = "SELECT bp.id,bp.name,bp.starts_on,bp.ends_on,COALESCE((SELECT SUM(i.amount_minor) FROM budget_period_items i WHERE i.budget_id=bp.id AND i.item_type='income' AND (?4 IS NULL OR i.category_id=?4)),0),COALESCE((SELECT SUM(i.amount_minor) FROM budget_period_items i WHERE i.budget_id=bp.id AND i.item_type='expense' AND (?4 IS NULL OR i.category_id=?4)),0),CASE WHEN ?4 IS NULL THEN COALESCE((SELECT SUM(i.amount_minor) FROM budget_period_items i WHERE i.budget_id=bp.id AND i.item_type='savings'),0) ELSE 0 END,COALESCE((SELECT SUM(CASE WHEN ?4 IS NULL THEN t.amount_minor ELSE COALESCE((SELECT SUM(ca.amount_minor) FROM category_allocations ca WHERE ca.transaction_id=t.id AND ca.category_id=?4),0) END) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.currency_code=bp.currency_code AND t.transaction_type='income' AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') AND date(t.occurred_at) BETWEEN max(date(bp.starts_on),COALESCE(date(?1),date(bp.starts_on))) AND min(date(bp.ends_on),COALESCE(date(?2),date(bp.ends_on))) AND (?3 IS NULL OR e.account_id=?3) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM category_allocations x WHERE x.transaction_id=t.id AND x.category_id=?4))),0),COALESCE((SELECT SUM(CASE WHEN ?4 IS NULL THEN t.amount_minor ELSE COALESCE((SELECT SUM(ca.amount_minor) FROM category_allocations ca WHERE ca.transaction_id=t.id AND ca.category_id=?4),0) END) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.currency_code=bp.currency_code AND t.transaction_type='expense' AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') AND date(t.occurred_at) BETWEEN max(date(bp.starts_on),COALESCE(date(?1),date(bp.starts_on))) AND min(date(bp.ends_on),COALESCE(date(?2),date(bp.ends_on))) AND (?3 IS NULL OR e.account_id=?3) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM category_allocations x WHERE x.transaction_id=t.id AND x.category_id=?4))),0),CASE WHEN ?4 IS NULL THEN COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id AND g.currency_code=bp.currency_code WHERE date(c.contribution_date) BETWEEN max(date(bp.starts_on),COALESCE(date(?1),date(bp.starts_on))) AND min(date(bp.ends_on),COALESCE(date(?2),date(bp.ends_on))) AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted'))) AND (?3 IS NULL OR (c.transaction_id IS NOT NULL AND EXISTS(SELECT 1 FROM account_entries e WHERE e.transaction_id=c.transaction_id AND e.account_id=?3)))),0) ELSE 0 END FROM budget_periods bp WHERE bp.currency_code=?5 AND (?1 IS NULL OR bp.ends_on>=?1) AND (?2 IS NULL OR bp.starts_on<=?2) ORDER BY bp.starts_on DESC";
+        let budgets_sql = "SELECT bp.id,bp.name,bp.starts_on,bp.ends_on,COALESCE((SELECT SUM(i.amount_minor) FROM budget_period_items i WHERE i.budget_id=bp.id AND i.item_type='income' AND (?4 IS NULL OR i.category_id=?4)),0),COALESCE((SELECT SUM(i.amount_minor) FROM budget_period_items i WHERE i.budget_id=bp.id AND i.item_type='expense' AND (?4 IS NULL OR i.category_id=?4)),0),CASE WHEN ?4 IS NULL THEN COALESCE((SELECT SUM(i.amount_minor) FROM budget_period_items i WHERE i.budget_id=bp.id AND i.item_type='savings'),0) ELSE 0 END,COALESCE((SELECT SUM(CASE WHEN ?4 IS NULL THEN t.amount_minor ELSE COALESCE((SELECT SUM(ca.amount_minor) FROM category_allocations ca WHERE ca.transaction_id=t.id AND ca.category_id=?4),0) END) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.currency_code=bp.currency_code AND t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') AND date(t.occurred_at) BETWEEN max(date(bp.starts_on),COALESCE(date(?1),date(bp.starts_on))) AND min(date(bp.ends_on),COALESCE(date(?2),date(bp.ends_on))) AND (?3 IS NULL OR e.account_id=?3) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM category_allocations x WHERE x.transaction_id=t.id AND x.category_id=?4))),0),COALESCE((SELECT SUM(CASE WHEN ?4 IS NULL THEN t.amount_minor ELSE COALESCE((SELECT SUM(ca.amount_minor) FROM category_allocations ca WHERE ca.transaction_id=t.id AND ca.category_id=?4),0) END) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE t.currency_code=bp.currency_code AND t.transaction_type='expense' AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') AND date(t.occurred_at) BETWEEN max(date(bp.starts_on),COALESCE(date(?1),date(bp.starts_on))) AND min(date(bp.ends_on),COALESCE(date(?2),date(bp.ends_on))) AND (?3 IS NULL OR e.account_id=?3) AND (?4 IS NULL OR EXISTS(SELECT 1 FROM category_allocations x WHERE x.transaction_id=t.id AND x.category_id=?4))),0),CASE WHEN ?4 IS NULL THEN COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id AND g.currency_code=bp.currency_code WHERE date(c.contribution_date) BETWEEN max(date(bp.starts_on),COALESCE(date(?1),date(bp.starts_on))) AND min(date(bp.ends_on),COALESCE(date(?2),date(bp.ends_on))) AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted'))) AND (?3 IS NULL OR (c.transaction_id IS NOT NULL AND EXISTS(SELECT 1 FROM account_entries e WHERE e.transaction_id=c.transaction_id AND e.account_id=?3)))),0) ELSE 0 END FROM budget_periods bp WHERE bp.currency_code=?5 AND (?1 IS NULL OR bp.ends_on>=?1) AND (?2 IS NULL OR bp.starts_on<=?2) ORDER BY bp.starts_on DESC";
         let mut statement = connection.prepare(budgets_sql).map_err(|e| e.to_string())?;
         let budget_performance = statement
             .query_map(
@@ -300,6 +305,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             categories,
             total_income_minor,
             total_expense_minor,
+            total_refund_minor,
             trends,
             category_breakdown,
             account_comparison,
@@ -315,6 +321,39 @@ impl<'a> SqliteAnalyticsRepository<'a> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn reports_refunds_separately_from_income_and_expenses() {
+        let db = Database::initialize(Path::new(":memory:")).unwrap();
+        let c = db.connection().lock().unwrap();
+        c.execute("INSERT INTO accounts(id,name,account_type,currency_code) VALUES ('cash','Cash','cash','KES')",[]).unwrap();
+        c.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('expense','expense',1000,'KES','2026-11-01T10:00:00Z','manual'),('refund','income',250,'KES','2026-11-02T10:00:00Z','manual'),('salary','income',5000,'KES','2026-11-03T10:00:00Z','manual')",[]).unwrap();
+        c.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES ('e1','expense','cash',-1000),('e2','refund','cash',250),('e3','salary','cash',5000)",[]).unwrap();
+        c.execute(
+            "INSERT INTO refund_transactions(transaction_id) VALUES ('refund')",
+            [],
+        )
+        .unwrap();
+        drop(c);
+        let summary = SqliteAnalyticsRepository::new(&db)
+            .summarize(None, None, None, None, Some("KES"))
+            .unwrap();
+        assert_eq!(
+            (
+                summary.total_income_minor,
+                summary.total_expense_minor,
+                summary.total_refund_minor
+            ),
+            (5000, 1000, 250)
+        );
+        assert_eq!(summary.trends[0].refund_minor, 250);
+        assert!(
+            summary
+                .category_breakdown
+                .iter()
+                .any(|item| item.transaction_type == "refund" && item.amount_minor == 250)
+        );
+    }
 
     #[test]
     fn filters_and_aggregates_posted_ledger_without_transfers_or_reversed_activity() {

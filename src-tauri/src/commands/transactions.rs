@@ -28,14 +28,35 @@ pub struct CreateTransactionRequest {
     pub notes: Option<String>,
     #[serde(default)]
     pub allocations: Vec<AllocationRequest>,
+    #[serde(default)]
+    pub refund_of_transaction_id: Option<String>,
 }
 #[tauri::command]
 pub fn create_transaction(
     state: State<'_, Database>,
     request: CreateTransactionRequest,
 ) -> Result<String, String> {
-    let transaction_type =
-        TransactionType::parse(&request.transaction_type).ok_or("Select income or expense.")?;
+    if request.transaction_type == "refund" {
+        let item = NewTransaction {
+            account_id: request.account_id,
+            transaction_type: TransactionType::Income,
+            amount_minor: request.amount_minor,
+            currency_code: request.currency_code,
+            occurred_at: request.occurred_at,
+            description: request.description,
+            notes: request.notes,
+            allocations: vec![],
+        };
+        item.validate().map_err(|e| match e {
+            TransactionValidationError::InvalidAmount => "Amount must be greater than zero.",
+            _ => "Enter valid refund details.",
+        })?;
+        return SqliteTransactionRepository::new(state.inner())
+            .create_refund(&item, request.refund_of_transaction_id.as_deref())
+            .map_err(map_repository_error);
+    }
+    let transaction_type = TransactionType::parse(&request.transaction_type)
+        .ok_or("Select income, expense, or refund.")?;
     let item = NewTransaction {
         account_id: request.account_id,
         transaction_type,
@@ -87,6 +108,15 @@ pub fn update_transaction(
     TransactionService::new(repository)
         .update(&id, &item)
         .map_err(map_error)
+}
+#[tauri::command]
+pub fn list_eligible_refunds(
+    state: State<'_, Database>,
+    account_id: String,
+) -> Result<Vec<crate::persistence::transactions::EligibleRefund>, String> {
+    SqliteTransactionRepository::new(state.inner())
+        .eligible_refunds(&account_id)
+        .map_err(|_| "Eligible refunds could not be loaded.".into())
 }
 #[tauri::command]
 pub fn void_transaction(
@@ -206,22 +236,26 @@ fn map_error(error: TransactionServiceError) -> String {
             }
         }
         .into(),
-        TransactionServiceError::Repository(e) => match e {
-            TransactionRepositoryError::AccountUnavailable => {
-                "The account is unavailable or archived."
-            }
-            TransactionRepositoryError::CurrencyMismatch => {
-                "Transaction currency must match the account currency."
-            }
-            TransactionRepositoryError::InvalidCategory => {
-                "Choose an active category that matches the transaction type."
-            }
-            TransactionRepositoryError::NotEditable => "This transaction cannot be edited.",
-            TransactionRepositoryError::NotReversible => {
-                "This transaction cannot be reversed or has already been reversed."
-            }
-            _ => "The transaction could not be saved.",
-        }
-        .into(),
+        TransactionServiceError::Repository(e) => map_repository_error(e),
     }
+}
+fn map_repository_error(e: TransactionRepositoryError) -> String {
+    match e {
+        TransactionRepositoryError::AccountUnavailable => "The account is unavailable or archived.",
+        TransactionRepositoryError::CurrencyMismatch => {
+            "Transaction currency must match the account currency."
+        }
+        TransactionRepositoryError::InvalidCategory => {
+            "Choose an active category that matches the transaction type."
+        }
+        TransactionRepositoryError::NotEditable => "This transaction cannot be edited.",
+        TransactionRepositoryError::NotReversible => {
+            "This transaction cannot be reversed or has already been reversed."
+        }
+        TransactionRepositoryError::RefundLimitExceeded => {
+            "Refund amount exceeds the remaining refundable amount."
+        }
+        _ => "The transaction could not be saved.",
+    }
+    .into()
 }

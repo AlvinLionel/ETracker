@@ -2,18 +2,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import TransactionsPage from "./TransactionsPage";
 
-const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),create:vi.fn(),list:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn()}));
+const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),eligibleRefunds:vi.fn(),create:vi.fn(),list:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn()}));
 vi.mock("../accounts/api/accounts",()=>({listActiveAccounts:mocks.accounts}));
-vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,listActiveCategories:mocks.categories,updateTransaction:mocks.update,getTransactionAllocations:mocks.allocations,getTransactionAuditHistory:mocks.audit,voidTransaction:mocks.void,reverseTransaction:mocks.reverse,createTransfer:mocks.transfer}));
+vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,listActiveCategories:mocks.categories,listEligibleRefunds:mocks.eligibleRefunds,updateTransaction:mocks.update,getTransactionAllocations:mocks.allocations,getTransactionAuditHistory:mocks.audit,voidTransaction:mocks.void,reverseTransaction:mocks.reverse,createTransfer:mocks.transfer}));
 
 describe("TransactionsPage",()=>{
- beforeEach(()=>{vi.clearAllMocks();vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);});
+ beforeEach(()=>{vi.clearAllMocks();vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.eligibleRefunds.mockResolvedValue([{transaction_id:"original",amount_minor:1000,refundable_minor:700,occurred_at:"2026-11-01T09:00:00Z",description:"Shop"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);});
  it("allows an uncategorized expense",async()=>{
   render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
   fireEvent.change(screen.getByLabelText("Amount",{selector:"input"}),{target:{value:"12.50"}});
   fireEvent.click(screen.getByRole("button",{name:"Save transaction"}));
   await waitFor(()=>expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({amount_minor:1250,allocations:[]})));
+ });
+ it("saves a distinct refund linked to the selected expense",async()=>{
+  render(<TransactionsPage/>);await screen.findByRole("option",{name:"Main (KES)"});
+  fireEvent.change(screen.getByLabelText("Type"),{target:{value:"refund"}});
+  fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
+  fireEvent.change(screen.getByLabelText("Amount",{selector:"input"}),{target:{value:"5.00"}});
+  fireEvent.change(await screen.findByLabelText("Refund for expense"),{target:{value:"original"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save transaction"}));
+  await waitFor(()=>expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({transaction_type:"refund",amount_minor:500,refund_of_transaction_id:"original",allocations:[]})));
  });
  it("requires split allocations to reconcile before submitting",async()=>{
   render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});

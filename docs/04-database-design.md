@@ -886,6 +886,10 @@ Generating a new forecast must not overwrite an earlier forecast.
 
 Migration `0010_forecasting.sql` implements this as `forecast_snapshots`, `forecast_periods` and `forecast_evaluations`. Each run stores its currency, horizon, six-month history window, calculation method, activity-coverage tier, serialized input assumptions and limitations. Period rows store predicted income, expenses, normalized subscription costs, savings, ending balance and any matching budget plan values. Evaluation rows preserve actual income, expense and savings totals, their variances and evaluation limitations; each forecast month can be evaluated once. Forecast generation uses the six completed months before the current month, excludes voided or reversed activity, separates linked subscription costs from the historical expense baseline and does not create or modify ledger records. Budget plans are stored as contextual comparison values and are not added to projected amounts.
 
+### 11.4 Refund Records
+
+Migration `0011_refund_records.sql` adds `refund_transactions`, linking a positive account inflow to an optional original expense. The underlying ledger movement remains an income entry for balance calculations; the relation gives transaction history and analytics an explicit refund identity. Linked refunds must match the original expense account and currency and cannot exceed its remaining unreversed amount. When the original expense has category allocations, the refund receives proportional minor-unit allocations with rounding remainder assigned deterministically. Unlinked refunds remain uncategorized. Analytics reports refunds separately from ordinary income and gross expenses.
+
 ---
 
 ## 12. Notification Data Architecture
@@ -1184,7 +1188,7 @@ As of 4 November 2026:
 | Local attachment storage | Approved direction |
 | Future synchronization readiness | Approved direction |
 | Physical database schema | Not finalized |
-| Migrations | Implemented through 0010 for foundation, imports, revisions, financial planning and forecast snapshots |
+| Migrations | Implemented through 0011 for foundation, imports, revisions, financial planning, forecasts and refund relations |
 | Database tests | Implemented for account, transaction, import, budget, savings, subscription, analytics and forecast workflows |
 
 ---

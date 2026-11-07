@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AllocationInput, Category, CreateTransactionInput, TransactionAuditRecord, TransactionRecord } from "../types";
+import type { AllocationInput, Category, CreateTransactionInput, EligibleRefund, TransactionAuditRecord, TransactionRecord } from "../types";
 export const createTransaction=(request:CreateTransactionInput)=>invoke<string>("create_transaction",{request});
 export const updateTransaction=(id:string,request:CreateTransactionInput)=>invoke<void>("update_transaction",{id,request});
 export const voidTransaction=(id:string,reason:string)=>invoke<void>("void_transaction",{id,reason});
@@ -9,3 +9,4 @@ export const listTransactions=(accountId:string,from:string,to:string)=>invoke<T
 export const listActiveCategories=(categoryType:"income"|"expense")=>invoke<Category[]>("list_active_categories",{categoryType});
 export const getTransactionAuditHistory=(id:string)=>invoke<TransactionAuditRecord[]>("get_transaction_audit_history",{id});
 export const getTransactionAllocations=(id:string)=>invoke<AllocationInput[]>("get_transaction_allocations",{id});
+export const listEligibleRefunds=(accountId:string)=>invoke<EligibleRefund[]>("list_eligible_refunds",{accountId});
