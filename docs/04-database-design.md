@@ -886,9 +886,11 @@ Generating a new forecast must not overwrite an earlier forecast.
 
 Migration `0010_forecasting.sql` implements this as `forecast_snapshots`, `forecast_periods` and `forecast_evaluations`. Each run stores its currency, horizon, six-month history window, calculation method, activity-coverage tier, serialized input assumptions and limitations. Period rows store predicted income, expenses, normalized subscription costs, savings, ending balance and any matching budget plan values. Evaluation rows preserve actual income, expense and savings totals, their variances and evaluation limitations; each forecast month can be evaluated once. Forecast generation uses the six completed months before the current month, excludes voided or reversed activity, separates linked subscription costs from the historical expense baseline and does not create or modify ledger records. Budget plans are stored as contextual comparison values and are not added to projected amounts.
 
+Migration `0012_forecast_schedule.sql` adds an opt-in singleton schedule with currency, horizon and enabled state. At application startup, an enabled schedule creates at most one tagged forecast snapshot for that calendar month. The partial unique index on `forecast_snapshots.scheduled_month` makes retries idempotent; manual snapshots remain independently repeatable.
+
 ### 11.4 Refund Records
 
-Migration `0011_refund_records.sql` adds `refund_transactions`, linking a positive account inflow to an optional original expense. The underlying ledger movement remains an income entry for balance calculations; the relation gives transaction history and analytics an explicit refund identity. Linked refunds must match the original expense account and currency and cannot exceed its remaining unreversed amount. When the original expense has category allocations, the refund receives proportional minor-unit allocations with rounding remainder assigned deterministically. Unlinked refunds remain uncategorized. Analytics reports refunds separately from ordinary income and gross expenses.
+Migration `0011_refund_records.sql` adds `refund_transactions`, linking a positive account inflow to an optional original expense. The underlying ledger movement remains an income entry for balance calculations; the relation gives transaction history and analytics an explicit refund identity. Linked refunds must match the original expense account and currency and cannot exceed its remaining unreversed amount. When the original expense has category allocations, the refund receives proportional minor-unit allocations with rounding remainder assigned deterministically. Unlinked refunds remain uncategorized. Analytics reports refunds separately from ordinary income and gross expenses. Forecast baselines exclude refunds from ordinary income and state that future refunds are not projected.
 
 ---
 
@@ -1188,7 +1190,7 @@ As of 4 November 2026:
 | Local attachment storage | Approved direction |
 | Future synchronization readiness | Approved direction |
 | Physical database schema | Not finalized |
-| Migrations | Implemented through 0011 for foundation, imports, revisions, financial planning, forecasts and refund relations |
+| Migrations | Implemented through 0012 for foundation, imports, revisions, financial planning, refunds, forecasts and monthly schedule |
 | Database tests | Implemented for account, transaction, import, budget, savings, subscription, analytics and forecast workflows |
 
 ---

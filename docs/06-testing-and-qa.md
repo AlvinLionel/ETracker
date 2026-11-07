@@ -704,7 +704,7 @@ Verify refunds appear separately from ordinary income and expenses, and linked s
 
 Analytics tests verify posted ordinary income, gross expenses and separately reported refunds against the ledger, exclude internal transfers and voided or reversed activity, respect date/currency/account/category filters, report allocated values for split transactions, surface repeated descriptions and transactions at least twice the category's six-month average after three prior examples, compare stored budget plans to actuals, show savings-goal progress and export report data as CSV. Linked refunds inherit their original expense's category distribution; refund values are not netted against gross expenses or mixed into ordinary income. The what-if scenario is temporary client state and does not write to the ledger or budget records.
 
-Forecasting tests verify local generation, six-completed-month averaging, normalized active subscription costs, future budget context, independent snapshot preservation, assumption/limitation storage, evaluation only after a forecast month ends, duplicate-evaluation rejection and actual variance persistence. Forecast generation and evaluation do not create or modify ledger activity.
+Forecasting tests verify local generation, six-completed-month averaging, normalized active subscription costs, future budget context, independent snapshot preservation, assumptions and limitations, opt-in monthly scheduling with once-per-month idempotence, evaluation after a forecast month ends, duplicate-evaluation rejection and actual variance persistence. Forecast generation and evaluation do not create or modify ledger activity.
 
 ### 9.2 Forecasting
 

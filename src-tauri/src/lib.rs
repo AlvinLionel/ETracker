@@ -16,6 +16,8 @@ pub fn run() {
             commands::forecasting::generate_forecast,
             commands::forecasting::list_forecasts,
             commands::forecasting::evaluate_forecast,
+            commands::forecasting::get_forecast_schedule,
+            commands::forecasting::set_forecast_schedule,
             commands::accounts::create_account,
             commands::accounts::get_account,
             commands::accounts::list_active_accounts,
@@ -83,6 +85,9 @@ pub fn run() {
 
             let database_path = app_data_dir.join("etracker.db");
             let database = Database::initialize(&database_path)?;
+
+            let _ = crate::persistence::forecasting::SqliteForecastRepository::new(&database)
+                .generate_scheduled_if_due();
 
             app.manage(database);
             Ok(())

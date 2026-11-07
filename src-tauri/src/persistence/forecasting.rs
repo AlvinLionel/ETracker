@@ -10,6 +10,13 @@ pub struct ForecastRequest {
     pub period_months: u32,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct ForecastSchedule {
+    pub enabled: bool,
+    pub currency_code: String,
+    pub period_months: u32,
+}
+
 #[derive(Serialize)]
 pub struct ForecastPeriod {
     pub month_start: String,
@@ -70,13 +77,105 @@ impl<'a> SqliteForecastRepository<'a> {
 
     pub fn generate(&self, request: &ForecastRequest) -> Result<String, String> {
         let today = chrono::DateTime::<Utc>::from(std::time::SystemTime::now()).date_naive();
-        self.generate_as_of(request, today)
+        self.generate_as_of(request, today, None)
+    }
+
+    pub fn get_schedule(&self) -> Result<ForecastSchedule, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        connection
+            .query_row(
+                "SELECT enabled,currency_code,period_months FROM forecast_schedule WHERE id=1",
+                [],
+                |r| {
+                    Ok(ForecastSchedule {
+                        enabled: r.get::<_, i64>(0)? != 0,
+                        currency_code: r.get(1)?,
+                        period_months: r.get(2)?,
+                    })
+                },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn set_schedule(&self, schedule: &ForecastSchedule) -> Result<bool, String> {
+        if schedule.currency_code.len() != 3
+            || !schedule
+                .currency_code
+                .chars()
+                .all(|c| c.is_ascii_uppercase())
+            || !(1..=12).contains(&schedule.period_months)
+        {
+            return Err(
+                "Choose a three-letter currency and a forecast between one and twelve months."
+                    .into(),
+            );
+        }
+        {
+            let connection = self
+                .database
+                .connection()
+                .lock()
+                .map_err(|_| "Database is unavailable")?;
+            connection.execute("UPDATE forecast_schedule SET enabled=?1,currency_code=?2,period_months=?3,updated_at=CURRENT_TIMESTAMP WHERE id=1",params![schedule.enabled as i64,schedule.currency_code,schedule.period_months]).map_err(|e|e.to_string())?;
+        }
+        if schedule.enabled {
+            self.generate_scheduled_if_due()
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn generate_scheduled_if_due(&self) -> Result<bool, String> {
+        let today = chrono::DateTime::<Utc>::from(std::time::SystemTime::now()).date_naive();
+        self.generate_scheduled_as_of(today)
+    }
+
+    fn generate_scheduled_as_of(&self, today: NaiveDate) -> Result<bool, String> {
+        let schedule = self.get_schedule()?;
+        if !schedule.enabled {
+            return Ok(false);
+        }
+        let scheduled_month = today
+            .with_day(1)
+            .ok_or("The current date is invalid.")?
+            .to_string();
+        {
+            let connection = self
+                .database
+                .connection()
+                .lock()
+                .map_err(|_| "Database is unavailable")?;
+            let already_generated: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM forecast_snapshots WHERE scheduled_month=?1)",
+                    [&scheduled_month],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if already_generated {
+                return Ok(false);
+            }
+        }
+        self.generate_as_of(
+            &ForecastRequest {
+                currency_code: schedule.currency_code,
+                period_months: schedule.period_months,
+            },
+            today,
+            Some(&scheduled_month),
+        )?;
+        Ok(true)
     }
 
     fn generate_as_of(
         &self,
         request: &ForecastRequest,
         today: NaiveDate,
+        scheduled_month: Option<&str>,
     ) -> Result<String, String> {
         if request.currency_code.len() != 3
             || !request
@@ -106,7 +205,7 @@ impl<'a> SqliteForecastRepository<'a> {
             .lock()
             .map_err(|_| "Database is unavailable")?;
         let (income_sum, expense_sum, savings_sum, active_months): (i64,i64,i64,i64) = connection.query_row(
-            "SELECT COALESCE(SUM(CASE WHEN t.transaction_type='income' THEN t.amount_minor ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' AND NOT EXISTS(SELECT 1 FROM subscription_payments p WHERE p.transaction_id=t.id) THEN t.amount_minor ELSE 0 END),0),COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id WHERE g.currency_code=?3 AND date(c.contribution_date) BETWEEN ?1 AND ?2 AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions linked WHERE linked.id=c.transaction_id AND linked.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=linked.id AND reversal.status='posted')))),0),COUNT(DISTINCT strftime('%Y-%m',t.occurred_at)) FROM financial_transactions t WHERE t.status='posted' AND t.currency_code=?3 AND date(t.occurred_at) BETWEEN ?1 AND ?2 AND t.transaction_type IN ('income','expense') AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted')",
+            "SELECT COALESCE(SUM(CASE WHEN t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN t.amount_minor ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' AND NOT EXISTS(SELECT 1 FROM subscription_payments p WHERE p.transaction_id=t.id) THEN t.amount_minor ELSE 0 END),0),COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id WHERE g.currency_code=?3 AND date(c.contribution_date) BETWEEN ?1 AND ?2 AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions linked WHERE linked.id=c.transaction_id AND linked.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=linked.id AND reversal.status='posted')))),0),COUNT(DISTINCT strftime('%Y-%m',t.occurred_at)) FROM financial_transactions t WHERE t.status='posted' AND t.currency_code=?3 AND date(t.occurred_at) BETWEEN ?1 AND ?2 AND t.transaction_type IN ('income','expense') AND NOT EXISTS(SELECT 1 FROM financial_transactions reversal WHERE reversal.reversal_of_transaction_id=t.id AND reversal.status='posted')",
             params![history_start.to_string(),history_end.to_string(),request.currency_code],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).map_err(|e|e.to_string())?;
         let average_income = income_sum / 6;
         let average_non_subscription_expense = expense_sum / 6;
@@ -141,6 +240,7 @@ impl<'a> SqliteForecastRepository<'a> {
         let limitations=vec![
             "Uses arithmetic averages across the six completed months before generation; seasonal changes and future events are not modeled.".to_string(),
             "Active subscription costs are normalized to monthly amounts and added separately from historical subscription payments. Link paid expenses to their subscriptions to keep the historical baseline from including those costs.".to_string(),
+            "Refunds are recorded separately and are not projected as ordinary income or future cash inflows.".to_string(),
             "Matching budget plans are shown as context and are not added to the projection, to avoid double-counting planned spending.".to_string(),
             "Coverage describes the number of months with posted activity; it is not a probability of forecast accuracy.".to_string(),
         ];
@@ -149,7 +249,7 @@ impl<'a> SqliteForecastRepository<'a> {
         let tx = connection
             .unchecked_transaction()
             .map_err(|e| e.to_string())?;
-        tx.execute("INSERT INTO forecast_snapshots(id,currency_code,period_months,history_months,method,confidence,inputs_json,limitations_json) VALUES (?1,?2,?3,6,?4,?5,?6,?7)",params![id,request.currency_code,request.period_months,"Six completed-month arithmetic average with separately normalized active subscriptions.",confidence,inputs.to_string(),serde_json::to_string(&limitations).map_err(|e|e.to_string())?]).map_err(|e|e.to_string())?;
+        tx.execute("INSERT INTO forecast_snapshots(id,currency_code,period_months,history_months,method,confidence,inputs_json,limitations_json,scheduled_month) VALUES (?1,?2,?3,6,?4,?5,?6,?7,?8)",params![id,request.currency_code,request.period_months,"Six completed-month arithmetic average with separately normalized active subscriptions.",confidence,inputs.to_string(),serde_json::to_string(&limitations).map_err(|e|e.to_string())?,scheduled_month]).map_err(|e|e.to_string())?;
         let mut balance = starting_balance;
         for index in 0..request.period_months {
             let month = first_forecast_month
@@ -283,7 +383,7 @@ impl<'a> SqliteForecastRepository<'a> {
             .lock()
             .map_err(|_| "Database is unavailable")?;
         let (currency,predicted_income,predicted_expense,predicted_savings):(String,i64,i64,i64)=connection.query_row("SELECT s.currency_code,p.predicted_income_minor,p.predicted_expense_minor,p.predicted_savings_minor FROM forecast_snapshots s JOIN forecast_periods p ON p.snapshot_id=s.id WHERE s.id=?1 AND p.month_start=?2",params![snapshot_id,month_start],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|e|e.to_string())?.ok_or("The forecast month no longer exists.")?;
-        let (actual_income,actual_expense,actual_savings):(i64,i64,i64)=connection.query_row("SELECT COALESCE(SUM(CASE WHEN t.transaction_type='income' THEN t.amount_minor ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN t.amount_minor ELSE 0 END),0),COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id AND g.currency_code=?3 WHERE date(c.contribution_date) BETWEEN ?1 AND ?2 AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions linked WHERE linked.id=c.transaction_id AND linked.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=linked.id AND r.status='posted')))),0) FROM financial_transactions t WHERE t.currency_code=?3 AND t.status='posted' AND date(t.occurred_at) BETWEEN ?1 AND ?2 AND t.transaction_type IN ('income','expense') AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')",params![month_start,last.to_string(),currency],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
+        let (actual_income,actual_expense,actual_savings):(i64,i64,i64)=connection.query_row("SELECT COALESCE(SUM(CASE WHEN t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN t.amount_minor ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN t.amount_minor ELSE 0 END),0),COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id AND g.currency_code=?3 WHERE date(c.contribution_date) BETWEEN ?1 AND ?2 AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions linked WHERE linked.id=c.transaction_id AND linked.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=linked.id AND r.status='posted')))),0) FROM financial_transactions t WHERE t.currency_code=?3 AND t.status='posted' AND date(t.occurred_at) BETWEEN ?1 AND ?2 AND t.transaction_type IN ('income','expense') AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')",params![month_start,last.to_string(),currency],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
         let limitations=serde_json::to_string(&vec!["Evaluation covers posted transactions and recorded savings contributions for the month; unrecorded activity is not included."]).map_err(|e|e.to_string())?;
         connection.execute("INSERT INTO forecast_evaluations(id,snapshot_id,month_start,actual_income_minor,actual_expense_minor,actual_savings_minor,income_variance_minor,expense_variance_minor,savings_variance_minor,limitations_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![Uuid::new_v4().to_string(),snapshot_id,month_start,actual_income,actual_expense,actual_savings,actual_income-predicted_income,actual_expense-predicted_expense,actual_savings-predicted_savings,limitations]).map_err(|e|if e.to_string().contains("UNIQUE") {"This forecast month has already been evaluated.".into()} else {e.to_string()})?;
         Ok(())
@@ -331,7 +431,8 @@ mod tests {
                     currency_code: "kes".into(),
                     period_months: 2
                 },
-                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap()
+                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
+                None
             )
             .is_err()
         );
@@ -341,15 +442,24 @@ mod tests {
                     currency_code: "KES".into(),
                     period_months: 13
                 },
-                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap()
+                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
+                None
             )
             .is_err()
         );
         let id = repo
-            .generate_as_of(&request, NaiveDate::from_ymd_opt(2026, 11, 7).unwrap())
+            .generate_as_of(
+                &request,
+                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
+                None,
+            )
             .unwrap();
         let second = repo
-            .generate_as_of(&request, NaiveDate::from_ymd_opt(2026, 11, 7).unwrap())
+            .generate_as_of(
+                &request,
+                NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
+                None,
+            )
             .unwrap();
         assert_ne!(id, second);
         let snapshots = repo.list().unwrap();
@@ -379,6 +489,7 @@ mod tests {
                     period_months: 1,
                 },
                 NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+                None,
             )
             .unwrap();
         {
@@ -409,5 +520,31 @@ mod tests {
             })
             .unwrap();
         assert_eq!(transactions, 7);
+    }
+
+    #[test]
+    fn scheduled_generation_is_opt_in_and_idempotent_per_month() {
+        let db = fixture();
+        let repo = SqliteForecastRepository::new(&db);
+        let november = NaiveDate::from_ymd_opt(2026, 11, 7).unwrap();
+        assert!(!repo.generate_scheduled_as_of(november).unwrap());
+        db.connection().lock().unwrap().execute("UPDATE forecast_schedule SET enabled=1,currency_code='KES',period_months=2 WHERE id=1",[]).unwrap();
+        assert!(repo.generate_scheduled_as_of(november).unwrap());
+        assert!(!repo.generate_scheduled_as_of(november).unwrap());
+        let count: i64 = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM forecast_snapshots WHERE scheduled_month='2026-11-01'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        assert!(
+            repo.generate_scheduled_as_of(NaiveDate::from_ymd_opt(2026, 12, 1).unwrap())
+                .unwrap()
+        );
     }
 }

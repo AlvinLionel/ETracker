@@ -1,6 +1,8 @@
 use crate::{
     infrastructure::database::Database,
-    persistence::forecasting::{ForecastRequest, ForecastSnapshot, SqliteForecastRepository},
+    persistence::forecasting::{
+        ForecastRequest, ForecastSchedule, ForecastSnapshot, SqliteForecastRepository,
+    },
 };
 use tauri::State;
 
@@ -24,4 +26,17 @@ pub fn evaluate_forecast(
     month_start: String,
 ) -> Result<(), String> {
     SqliteForecastRepository::new(state.inner()).evaluate(&snapshot_id, &month_start)
+}
+
+#[tauri::command]
+pub fn get_forecast_schedule(state: State<'_, Database>) -> Result<ForecastSchedule, String> {
+    SqliteForecastRepository::new(state.inner()).get_schedule()
+}
+
+#[tauri::command]
+pub fn set_forecast_schedule(
+    state: State<'_, Database>,
+    schedule: ForecastSchedule,
+) -> Result<bool, String> {
+    SqliteForecastRepository::new(state.inner()).set_schedule(&schedule)
 }
