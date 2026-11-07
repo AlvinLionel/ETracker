@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod analytics;
+pub mod backup;
 pub mod dashboard;
 pub mod forecasting;
 pub mod imports;

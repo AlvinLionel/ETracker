@@ -4,7 +4,7 @@
 
 ## 1. Project Status
 
-**Current phase:** Audit remediation / Analytics and Forecasting
+**Current phase:** Phase 6 — Application Completion
 
 The Tauri, React, Rust, SQLite and account-management foundation is implemented. Phases A — Transaction Management, B — generic Statement Imports, and C — Financial Planning are complete and verified. Phase D — Analytics and Forecasting is underway. Analytics reports ordinary income, gross expenses and refunds separately, plus net spending (gross expenses less refunds); monthly net cash flow includes refunds, while budgets retain gross actual expenses. Reports include date, account, category and currency filters, budget and savings views, CSV export with formula-prefix protection for untrusted text, and a temporary what-if simulator. Forecasts save independent local snapshots, explain assumptions and data coverage, include active KES subscriptions and budget context, support actual evaluation, and can generate one snapshot per UTC calendar month under an opt-in schedule.
 
@@ -101,6 +101,7 @@ The application has an operational Tauri/React/Rust/SQLite foundation and accoun
 - Data-integrity check: Settings runs SQLite `integrity_check` and `foreign_key_check`, presenting clean results or violating record references without modifying data. Healthy and failure paths are tested; the changes are committed in `0c6714f` and `26991a1`.
 - Windows release checkpoint: `npx tauri build` successfully produced x64 MSI (`ETracker_0.1.0_x64_en-US.msi`) and NSIS (`ETracker_0.1.0_x64-setup.exe`) installers after validating/download of WiX and NSIS tooling. Manual install/upgrade, supported Windows versions, signing and update strategy remain unverified.
 - Theme preferences: added persisted system/light/dark selection; system mode responds to operating-system theme changes and app views receive dark palette overrides. The preference repository test and all four Settings tests pass; `npm run build`, Rust format check and `git diff --check` pass. Commit pending.
+- Encrypted backup and restore: Settings exports a versioned SQLite snapshot encrypted with AES-256-GCM and PBKDF2-HMAC-SHA256 (600,000 iterations) using a user passphrase. Restore authenticates and validates the database in memory, applies supported forward migrations to the isolated copy, checks integrity and foreign keys, then replaces current data. The app never stores the passphrase; downloaded backups remain user-managed. Rust tests pass for authentication/tampering, successful restore, and rejection of an invalid backup or wrong passphrase without replacing existing data. Desktop workflow, interrupted replacement behavior, and large-database memory/IPC limits remain to verify. Decision recorded as `DB-030`.
 
 Phase A repository tests cover category filtering, archived-category preservation during edits, audited updates, void balance exclusion, reversals, transfer fees and rollback. Refund tests cover distinct display, proportional category allocations, remaining-amount limits and preventing edits/reversals that would invalidate linked active refunds. Phase B covers persistent statement staging, source retention, CSV/XLSX/PDF handling, correction/review, duplicate detection, reconciliation, revisions and atomic finalization. Phase C covers budgets, savings, subscriptions and linked actual payments. Phase D analytics tests cover transfer/reversal exclusion, filters, split allocations, monthly aggregation, unusual spending, budget/savings reports and distinct refund totals/trends/category breakdowns; frontend tests cover transaction-level refund entry plus report filters and CSV export. Forecasting tests cover six-month aggregation, subscriptions, budgets, independent snapshots, opt-in scheduled generation, closed-month evaluation and schedule controls in the UI.
 
@@ -108,7 +109,7 @@ Phase A repository tests cover category filtering, archived-category preservatio
 
 1. Obtain sanitized provider samples before implementing or claiming M-Pesa or institution-specific bank parsers.
 2. Decide a supported local OCR path for scanned PDFs.
-3. Continue Phase 6 — Application Completion: verified local backup and restoration, offline behavior, fuller diagnostics, and manual Windows installation/upgrade workflow verification.
+3. Continue Phase 6 — Application Completion: manually verify backup/restore and Windows install/upgrade workflows, then review offline behavior, diagnostics, local database protection and size limits.
 
 ## 6. Development Tracking
 

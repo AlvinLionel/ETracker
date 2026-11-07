@@ -60,4 +60,41 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "dark" } }));
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
+
+  it("creates a passphrase-encrypted backup only after confirmation", async () => {
+    invoke.mockImplementation((command: string) => command === "get_user_preferences"
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      : command === "list_subscriptions" ? Promise.resolve([])
+        : command === "export_encrypted_backup" ? Promise.resolve("YWJj") : Promise.resolve());
+    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:backup");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const { container } = render(<SettingsPage />);
+    await screen.findByRole("heading", { name: "Encrypted backup and restore" });
+    fireEvent.change(container.querySelector<HTMLInputElement>('input[aria-label="Backup passphrase"]')!, { target: { value: "a sufficiently long passphrase" } });
+    const download = screen.getByRole("button", { name: "Download encrypted backup" });
+    expect(download).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Confirm backup passphrase"), { target: { value: "a sufficiently long passphrase" } });
+    fireEvent.click(download);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("export_encrypted_backup", { passphrase: "a sufficiently long passphrase" }));
+    expect(create).toHaveBeenCalled(); expect(revoke).toHaveBeenCalledWith("blob:backup");
+    expect(await screen.findByText(/passphrase separately/)).toBeInTheDocument();
+  });
+
+  it("requires explicit restore confirmation and reloads after validation", async () => {
+    invoke.mockImplementation((command: string) => command === "get_user_preferences"
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      : command === "list_subscriptions" ? Promise.resolve([])
+        : command === "restore_encrypted_backup" ? Promise.resolve() : Promise.resolve());
+    const file = new File(["encrypted"], "backup.etracker-backup");
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new TextEncoder().encode("encrypted").buffer });
+    render(<SettingsPage />);
+    fireEvent.change(await screen.findByLabelText("Encrypted backup file"), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText("Restore passphrase"), { target: { value: "a sufficiently long passphrase" } });
+    const restore = screen.getByRole("button", { name: "Replace current data" });
+    expect(restore).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Restore confirmation"), { target: { value: "RESTORE" } });
+    fireEvent.click(restore);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("restore_encrypted_backup", { backupBase64: "ZW5jcnlwdGVk", passphrase: "a sufficiently long passphrase" }));
+    expect(await screen.findByRole("button", { name: "Reload ETracker" })).toBeInTheDocument();
+  });
 });

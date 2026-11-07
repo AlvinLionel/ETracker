@@ -12,6 +12,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            commands::backup::export_encrypted_backup,
+            commands::backup::restore_encrypted_backup,
             commands::analytics::get_analytics_summary,
             commands::dashboard::get_dashboard_summary,
             commands::preferences::get_user_preferences,

@@ -22,8 +22,12 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.41.1", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled", "backup", "serialize"] }
 uuid = { version = "1.29.0", features = ["v4"] }
+aes-gcm = "0.11.1"
+base64 = "0.23.1"
+getrandom = "0.4.3"
+pbkdf2 = { version = "0.13.0", features = ["sha2"] }
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 csv = "1.4.0"
 calamine = { version = "0.38.0", features = ["chrono"] }

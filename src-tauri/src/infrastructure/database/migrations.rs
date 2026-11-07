@@ -5,6 +5,8 @@ struct Migration {
     sql: &'static str,
 }
 
+pub(super) const LATEST_VERSION: i64 = 14;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,

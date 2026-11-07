@@ -700,6 +700,29 @@ Refunds are represented as tagged positive ledger inflows, and the initial relea
 
 ---
 
+## DB-030 — Encrypted local backup and restore
+
+**Status:** Approved
+**Date:** 7 November 2026
+**Related documents:** DOC-002, DOC-004, DOC-005, DOC-006, DOC-007
+
+### Context
+The application stores financial records and retained statement source files locally. Users need a portable recovery copy without exposing that data in an unprotected backup file.
+
+### Decision
+- Users explicitly create and download a complete SQLite backup; ETracker does not keep a separate backup archive or impose a retention period on downloaded files.
+- Encrypt backups with AES-256-GCM and derive the encryption key using PBKDF2-HMAC-SHA256 with 600,000 iterations, a random per-backup salt and nonce. Require a passphrase of at least 12 characters. Never save or transmit the passphrase; a forgotten passphrase cannot be recovered.
+- Restore only after authenticating and validating the database. Apply supported older migrations to an isolated in-memory copy, reject unsupported future schemas, run integrity and foreign-key checks, then replace the current database.
+- Backup files include all database contents, including statement source files still within their retention period. Users are responsible for storing and deleting downloaded backups safely.
+
+### Rationale and implications
+- Authenticated encryption protects downloaded copies against disclosure and tampering.
+- Isolated validation and migration ensure invalid files and unsupported schemas are rejected before replacement begins.
+- Backups and restores currently buffer the database in memory and pass base64 data over local IPC; large database behavior requires desktop validation and may need a streaming/size-limit design.
+- Local database encryption at rest and a guaranteed rollback after a low-level failure during SQLite page replacement are not provided by this workflow and require release review.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances
@@ -1048,9 +1071,6 @@ The following matters require additional research, technical validation or expli
 | PEND-022 | Installer format and distribution | Medium | DOC-007 |
 | PEND-023 | Code signing and integrity verification | Medium | DOC-007 |
 | PEND-024 | Application update distribution strategy | Medium | DOC-007 |
-| PEND-025 | Backup format and retention policy | High | DOC-007 |
-| PEND-026 | Backup encryption requirements | High | DOC-007 |
-| PEND-027 | Database migration and rollback policy | High | DOC-007 |
 | PEND-028 | Diagnostic and log retention | Medium | DOC-007 |
 | PEND-029 | Release branch, tagging and versioning policy | Medium | DOC-007 |
 | PEND-030 | Release cadence | Low | DOC-007 |
@@ -1128,7 +1148,7 @@ Routine implementation details do not need separate decision records unless they
 | Import libraries and institution-specific processing | Pending |
 | Final UI design and component libraries | Pending |
 | Testing toolchain | Pending |
-| Installer, backup, encryption and update policies | Pending |
+| Installer, backup, encryption and update policies | Partially approved; installer and update details pending |
 
 ---
 
