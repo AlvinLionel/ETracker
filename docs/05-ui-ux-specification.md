@@ -209,6 +209,8 @@ Actions that change financial records must provide appropriate confirmation and 
 
 The dashboard provides an overview of the user's financial position and recent activity.
 
+The primary header action should start a statement import so the user can bring past spending into the ledger quickly. Manual transactions remain a secondary workflow for cash activity or missing statement rows.
+
 It should help answer:
 
 - How much money do I currently have?

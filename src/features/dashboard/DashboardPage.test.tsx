@@ -22,6 +22,8 @@ describe("DashboardPage", () => {
     const navigate = vi.fn();
     render(<DashboardPage navigate={navigate} />);
     expect(await screen.findByText("Dashboard")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Import a statement" }));
+    expect(navigate).toHaveBeenCalledWith("Imports");
     expect(screen.getByText("Gross expenses")).toBeInTheDocument();
     expect(screen.getByText(/Refunds this month:/)).toHaveTextContent("Ksh");
     expect(screen.getByRole("progressbar", { name: "Groceries spending" })).toHaveAttribute("aria-valuenow", "100");

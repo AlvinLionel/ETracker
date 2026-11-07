@@ -67,9 +67,9 @@ function DashboardPage({ navigate }: { navigate: (page: string) => void }) {
           <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="workspace-muted mt-1 text-sm">Current balances and this month’s posted activity, in KES.</p>
         </div>
-        <span className="rounded-full border border-emerald-700/20 bg-emerald-700/5 px-3 py-1 text-xs font-medium text-emerald-800">
-          Updated from posted activity
-        </span>
+        <button type="button" onClick={() => navigate("Imports")} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+          Import a statement
+        </button>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
