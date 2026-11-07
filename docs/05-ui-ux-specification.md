@@ -403,7 +403,7 @@ The user must be able to distinguish:
 
 ### 7.1 Purpose
 
-The imports workspace is the primary way to build historical spending records from account statements. It manages statement uploads, extraction, validation, duplicate detection, reconciliation and finalization. Manual transaction entry remains available for cash activity and items missing from statements.
+The imports workspace is the primary way to build historical spending records from account statements. It manages statement uploads, extraction, validation, duplicate detection, correction, reconciliation and finalization. Desktop E2E now covers correction, opening/closing balance reconciliation and refusing to finalize an invalid row. Manual transaction entry remains available for cash activity and items missing from statements.
 
 The generic file-mapping flow supports CSV and XLSX workbooks. For XLSX, users choose a worksheet and header row before mapping date, amount and optional description columns. Formula-derived values in mapped date or amount cells require correction in staged review.
 

@@ -90,6 +90,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const savings = `E2E Savings ${suffix}`;
   const incomeDescription = `E2E income ${suffix}`;
   const importDescription = `E2E imported expense ${suffix}`;
+  const correctedImportDescription = `E2E corrected statement row ${suffix}`;
   const statementPath = join(tmpdir(), `etracker-${suffix}.csv`);
 
   async function navigateTo(page) {
@@ -194,9 +195,21 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
 
   const batchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-${suffix}.csv']]`)), 15_000);
   await batchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
-  const importedRow = await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}']]`)), 15_000);
-  await importedRow.findElement(By.xpath(".//button[normalize-space()='Confirm new']")).click();
-  await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}'] and .//td[normalize-space()='confirmed']]`)), 15_000);
+  let importedRow = await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${importDescription}']]`)), 15_000);
+  await importedRow.findElement(By.xpath(".//button[normalize-space()='Correct']")).click();
+  const correctionForm = await driver.wait(until.elementLocated(By.xpath("//form[.//h3[starts-with(normalize-space(), 'Correct row')]]")), 5_000);
+  const correctionDescription = correctionForm.findElement(By.xpath(".//label[normalize-space()='Description']/input"));
+  await correctionDescription.clear();
+  await correctionDescription.sendKeys(correctedImportDescription);
+  await correctionForm.findElement(By.xpath(".//button[normalize-space()='Save correction']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Staged record corrected')]")), 15_000);
+  importedRow = await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${correctedImportDescription}']]`)), 15_000);
+  const reconciliationForm = await driver.findElement(By.xpath("//form[.//h3[normalize-space()='Statement balance check']]"));
+  await reconciliationForm.findElement(By.css("input[aria-label='Opening balance']")).sendKeys("125.00");
+  await reconciliationForm.findElement(By.css("input[aria-label='Closing balance']")).sendKeys("117.00");
+  await reconciliationForm.findElement(By.xpath(".//button[normalize-space()='Check balances']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Outcome:') and contains(.,'reconciled')]")), 15_000);
+  assert.equal((await importedRow.findElements(By.xpath(".//td[normalize-space()='corrected']"))).length, 1);
   await batchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
   await driver.wait(until.alertIsPresent(), 5_000);
   await driver.switchTo().alert().accept();
@@ -204,7 +217,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await unlink(statementPath).catch(() => {});
 
   const revisedStatementPath = join(tmpdir(), `etracker-revised-${suffix}.csv`);
-  await writeFile(revisedStatementPath, `Date,Amount,Memo\n2026-11-01,9.00,${importDescription}\n`, "utf8");
+  await writeFile(revisedStatementPath, `Date,Amount,Memo\n2026-11-01,9.00,${correctedImportDescription}\n`, "utf8");
   const revisionOption = await driver.wait(until.elementLocated(By.xpath(`//main//option[contains(.,'etracker-${suffix}.csv')]`)), 15_000);
   await new Select(await revisionOption.findElement(By.xpath(".."))).selectByValue(await revisionOption.getAttribute("value"));
   await driver.findElement(By.css("input[type='file']")).sendKeys(revisedStatementPath);
@@ -236,11 +249,12 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
   await driver.wait(until.alertIsPresent(), 5_000);
   await driver.switchTo().alert().accept();
-  const importFailure = await driver.wait(async () => {
-    const alerts = await driver.findElements(By.css("[role='alert']"));
-    return alerts[0] ?? false;
-  }, 15_000);
-  assert.match(await importFailure.getText(), /resolve|valid|review|finaliz/i);
+  await driver.wait(async () => {
+    const batches = await driver.findElements(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]`));
+    if (!batches[0]) return false;
+    return (await batches[0].findElements(By.xpath(".//button[normalize-space()='Finalize']"))).length > 0;
+  }, 5_000);
+  assert.equal((await driver.findElements(By.xpath(`//tbody/tr[.//td[normalize-space()='uncertain']]`))).length, 1);
   await unlink(invalidStatementPath).catch(() => {});
 
   await navigateTo("Dashboard");
