@@ -121,6 +121,33 @@ pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
         .map_err(|_| "The file does not contain a readable CSV header row.".into())
 }
 #[tauri::command]
+pub fn csv_rows(contents: String) -> Result<Vec<Vec<String>>, String> {
+    if contents.len() > crate::application::imports::MAX_SOURCE_FILE_BYTES {
+        return Err("Budget files must be 25 MiB or smaller.".into());
+    }
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(contents.as_bytes());
+    let headers = reader
+        .headers()
+        .map_err(|_| "The CSV file does not contain a readable header row.".to_string())?
+        .iter()
+        .map(str::to_owned)
+        .collect();
+    let mut rows = vec![headers];
+    rows.extend(
+        reader
+            .records()
+            .map(|record| {
+                record
+                    .map(|row| row.iter().map(str::to_owned).collect())
+                    .map_err(|_| "The CSV file contains an unreadable row.".to_string())
+            })
+            .collect::<Result<Vec<Vec<String>>, String>>()?,
+    );
+    Ok(rows)
+}
+#[tauri::command]
 pub fn xlsx_sheet_names(
     state: State<'_, Database>,
     contents: Vec<u8>,
@@ -128,6 +155,7 @@ pub fn xlsx_sheet_names(
     SqliteImportRepository::new(state.inner())
         .xlsx_sheet_names(contents)
         .map_err(|error| match error {
+            ImportError::SourceFileTooLarge => "Budget files must be 25 MiB or smaller.".into(),
             ImportError::WorkbookTooLarge => {
                 "The workbook expands beyond the 100 MiB processing limit.".into()
             }
@@ -148,6 +176,23 @@ pub fn xlsx_headers(
                 "The workbook expands beyond the 100 MiB processing limit.".into()
             }
             _ => "The selected worksheet header row could not be read.".into(),
+        })
+}
+#[tauri::command]
+pub fn xlsx_rows(
+    state: State<'_, Database>,
+    contents: Vec<u8>,
+    sheet_name: String,
+    header_row: usize,
+) -> Result<Vec<Vec<String>>, String> {
+    SqliteImportRepository::new(state.inner())
+        .xlsx_rows(contents, &sheet_name, header_row)
+        .map_err(|error| match error {
+            ImportError::SourceFileTooLarge => "Budget files must be 25 MiB or smaller.".into(),
+            ImportError::WorkbookTooLarge => {
+                "The workbook expands beyond the 100 MiB processing limit.".into()
+            }
+            _ => "Rows could not be read from the selected worksheet.".into(),
         })
 }
 #[tauri::command]
@@ -320,21 +365,16 @@ pub fn stage_xlsx_import(
     }
 }
 #[tauri::command]
-pub fn stage_pdf_import(
+pub fn stage_pdf_extracted_text(
     state: State<'_, Database>,
     batch_id: String,
-    contents: Vec<u8>,
-    password: Option<String>,
+    pages: Vec<String>,
 ) -> Result<usize, String> {
     let repository = SqliteImportRepository::new(state.inner());
-    match repository.stage_pdf_text(&batch_id, contents, password.as_deref()) {
+    match repository.stage_pdf_pages(&batch_id, pages) {
         Ok(count) => Ok(count),
-        Err(ImportError::PdfPasswordRequired) => Err("PDF_PASSWORD_REQUIRED".into()),
-        Err(ImportError::PdfPasswordIncorrect) => {
-            Err("The PDF password is incorrect. Check it and try again.".into())
-        }
         Err(ImportError::PdfNoExtractableText) => {
-            let _ = ImportService::new(SqliteImportRepository::new(state.inner())).record_failure(
+            let _ = ImportService::new(repository).record_failure(
                 &batch_id,
                 None,
                 "parse",
@@ -343,15 +383,11 @@ pub fn stage_pdf_import(
             );
             Err("The PDF was unlocked, but no selectable transaction text could be extracted. The source file is still available for retry or download.".into())
         }
+        Err(ImportError::ExtractedTextTooLarge) => {
+            Err("The extracted PDF text exceeds the 100 MiB processing limit.".into())
+        }
         Err(_) => {
-            let _ = ImportService::new(repository).record_failure(
-                &batch_id,
-                None,
-                "parse",
-                "PDF text could not be extracted or contained no selectable text",
-                "Use a text-based PDF or CSV/XLSX export. Scanned PDF OCR is not available.",
-            );
-            Err("The PDF did not contain readable selectable text. Scanned PDF OCR is not available.".into())
+            Err("PDF text could not be staged. The original source file is still available.".into())
         }
     }
 }

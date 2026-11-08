@@ -27,6 +27,10 @@ export default function BudgetingPage() {
   const [periodDrafts, setPeriodDrafts] = useState<Draft[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [planFile, setPlanFile] = useState<File | null>(null);
+  const [planBytes, setPlanBytes] = useState<number[]>([]);
+  const [planSheets, setPlanSheets] = useState<string[]>([]);
+  const [planSheet, setPlanSheet] = useState("");
   const currency = periods.find((period) => period.id === selectedPeriod)?.currency_code ?? "KES";
   const totals = useMemo(() => lines.reduce((result, line) => { result[line.item_type] = (result[line.item_type] ?? 0) + line.planned_minor; if (line.item_type === "expense") result.actual = (result.actual ?? 0) + line.actual_minor; return result; }, {} as Record<string, number>), [lines]);
   const plannedRemaining = (totals.income ?? 0) - (totals.expense ?? 0) - (totals.savings ?? 0);
@@ -43,6 +47,54 @@ export default function BudgetingPage() {
   async function loadPeriod(id: string) { setSelectedPeriod(id); if (!id) { setLines([]); setPerformance(null); return; } const [nextLines, totals] = await Promise.all([invoke<Line[]>("get_budget_period_items", { budgetId: id }), invoke<Performance>("get_budget_period_totals", { budgetId: id })]); setLines(nextLines); setPerformance(totals); }
   useEffect(() => { Promise.all([listActiveCategories("income"), listActiveCategories("expense")]).then(([income, expense]) => setCategories([...income, ...expense])); refresh().catch(() => setError("Budget plans could not be loaded.")); }, []);
   useEffect(() => { if (selectedPeriod) Promise.all([invoke<Line[]>("get_budget_period_items", { budgetId: selectedPeriod }), invoke<Performance>("get_budget_period_totals", { budgetId: selectedPeriod })]).then(([nextLines, totals]) => { setLines(nextLines); setPerformance(totals); }).catch(() => setError("Budget details could not be loaded.")); }, [selectedPeriod]);
+
+  function applyImportedPlan(rows: string[][], fileName: string) {
+    if (rows.length < 2) throw new Error("The selected sheet needs a header row and at least one plan row.");
+    const headers = rows[0].map((value) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
+    const labelIndex = headers.findIndex((value) => /category|budget item|plan item|label|description|item name/.test(value));
+    const amountIndex = headers.findIndex((value) => /planned amount|budget amount|planned|target|amount/.test(value));
+    const typeIndex = headers.findIndex((value) => /item type|plan type|type/.test(value));
+    if (labelIndex < 0 || amountIndex < 0) throw new Error("Choose a budget spreadsheet with a category or item column and a planned amount column.");
+    const imported: Draft[] = [];
+    const invalidRows: number[] = [];
+    for (const [index, row] of rows.slice(1).entries()) {
+      const label = row[labelIndex]?.trim() ?? "";
+      const rawAmount = (row[amountIndex] ?? "").replace(/[,$\s]/g, "").replace(/^[A-Za-z]{3}/, "");
+      if (!label && !rawAmount) continue;
+      if (!label || !/^\d+(?:\.\d{1,2})?$/.test(rawAmount)) { invalidRows.push(index + 2); continue; }
+      const typeText = typeIndex >= 0 ? row[typeIndex]?.toLowerCase() ?? "" : "";
+      let item_type: Draft["item_type"] = /saving|goal/.test(typeText) ? "savings" : /income|revenue|earning/.test(typeText) ? "income" : "expense";
+      const category = categories.find((entry) => entry.name.trim().toLowerCase() === label.toLowerCase());
+      if (typeIndex < 0 && category?.category_type === "income") item_type = "income";
+      if (typeIndex < 0 && category?.category_type === "expense") item_type = "expense";
+      const [whole, fraction = ""] = rawAmount.split(".");
+      const minor = BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2));
+      if (minor <= 0n || minor > BigInt(Number.MAX_SAFE_INTEGER)) { invalidRows.push(index + 2); continue; }
+      imported.push({ item_type, category_id: item_type === "savings" || category?.category_type !== item_type ? "" : category.id, label, amount: `${whole}.${(fraction + "00").slice(0, 2)}` });
+    }
+    if (invalidRows.length) throw new Error(`Review invalid amount or item values on spreadsheet rows ${invalidRows.join(", ")}. Nothing was imported.`);
+    if (!imported.length) throw new Error("No usable planned items were found.");
+    setTemplateName(fileName.replace(/\.[^.]+$/, "")); setDrafts(imported); setEditingTemplate(false); setTemplateId("");
+    setMessage(`${imported.length} plan items loaded for review. Check categories and amounts, then save the template.`);
+  }
+  async function loadPlanFile(file: File | null) {
+    setPlanFile(file); setPlanBytes([]); setPlanSheets([]); setPlanSheet(""); setError("");
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) { setError("Budget files must be 25 MiB or smaller."); setPlanFile(null); return; }
+    try {
+      const extension = file.name.split(".").pop()?.toLowerCase();
+      if (extension === "csv") {
+        applyImportedPlan(await invoke<string[][]>("csv_rows", { contents: await file.text() }), file.name);
+      } else if (["xls", "xlsx"].includes(extension ?? "")) {
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer())); setPlanBytes(bytes);
+        const sheets = await invoke<string[]>("xlsx_sheet_names", { contents: bytes }); setPlanSheets(sheets); setPlanSheet(sheets[0] ?? "");
+      } else throw new Error("Choose a CSV or Excel budget plan (.xls or .xlsx).");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+  async function loadPlanSheet() {
+    try { if (!planFile) throw new Error("Choose a budget workbook first."); applyImportedPlan(await invoke<string[][]>("xlsx_rows", { contents: planBytes, sheetName: planSheet, headerRow: 1 }), planFile.name); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
 
   async function saveTemplate(event: React.FormEvent) {
     event.preventDefault(); setError(""); setMessage("");
@@ -98,6 +150,7 @@ export default function BudgetingPage() {
   return <section className="mx-auto max-w-6xl space-y-7">
     <header><p className="workspace-accent text-xs font-semibold uppercase tracking-[0.14em]">Planning</p><h1 className="mt-2 text-2xl font-semibold tracking-tight">Budgeting</h1><p className="workspace-muted mt-2 text-sm">Plan income, spending and savings, then compare category spending with posted transactions.</p></header>
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}{message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
+    <section className="workspace-panel rounded-xl p-5"><h2 className="font-semibold">Import a budget plan</h2><p className="mt-1 text-sm text-slate-500">Load a CSV or Excel plan into the template editor. Review every item, category and amount before saving.</p><label className="mt-3 block max-w-xl text-sm font-medium">Budget plan file<input aria-label="Budget plan file" type="file" accept=".csv,.xls,.xlsx" onChange={(event) => void loadPlanFile(event.target.files?.[0] ?? null)} className="mt-1 block w-full text-sm" /></label>{planSheets.length > 0 && <div className="mt-3 flex flex-wrap items-end gap-3"><label className="text-sm font-medium">Worksheet<select aria-label="Budget worksheet" value={planSheet} onChange={(event) => setPlanSheet(event.target.value)} className="mt-1 block min-w-64 rounded-md border border-slate-300 bg-white px-3 py-2">{planSheets.map((sheet) => <option key={sheet}>{sheet}</option>)}</select></label><button type="button" onClick={() => void loadPlanSheet()} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Load worksheet</button></div>}{planFile && <p className="mt-2 text-xs text-slate-500">{planFile.name} · imported rows stay local and are not added to account transactions.</p>}</section>
     <div className="grid gap-6 lg:grid-cols-2">
       <form onSubmit={saveTemplate} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">{editingTemplate ? "Edit reusable template" : "Create a reusable template"}</h2><p className="mt-1 text-sm text-slate-500">New months copy these values. Later changes stay separate.</p></div><button type="button" disabled={!templateId} onClick={() => beginTemplateEdit().catch(() => setError("The selected template could not be loaded for editing."))} className="rounded-md border border-slate-300 px-3 py-2 text-xs disabled:opacity-50">Edit selected template</button></div>

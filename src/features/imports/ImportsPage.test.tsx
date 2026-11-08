@@ -2,13 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ImportsPage from "./ImportsPage";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn(), pdfText: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../accounts/api/accounts", () => ({ listActiveAccounts: mocks.accounts }));
+vi.mock("./pdfText", () => ({ extractPdfTextPages: mocks.pdfText }));
 
 describe("ImportsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.pdfText.mockResolvedValue(["2026-11-01 Grocery shop 12.50"]);
     mocks.accounts.mockResolvedValue([{ id: "a", name: "Main", currency_code: "KES" }]);
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
@@ -103,7 +105,7 @@ describe("ImportsPage", () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "create_import_batch") return Promise.resolve("pdf-batch");
-      if (command === "stage_pdf_import") return Promise.resolve(4);
+      if (command === "stage_pdf_extracted_text") return Promise.resolve(1);
       return Promise.resolve([]);
     });
     render(<ImportsPage />);
@@ -112,25 +114,23 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
     expect(await screen.findByText(/Selectable PDF text is staged line by line as uncertain/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_import", expect.objectContaining({ batchId: "pdf-batch", contents: expect.any(Array) })));
-    expect(await screen.findByRole("status")).toHaveTextContent("4 PDF text lines for manual review");
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "pdf-batch", pages: ["2026-11-01 Grocery shop 12.50"] }));
+    expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });
 
   it("keeps an encrypted PDF import open until its password unlocks extraction", async () => {
-    let pdfAttempts = 0;
+    mocks.pdfText.mockRejectedValueOnce("password-required");
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "create_import_batch") return Promise.resolve("protected-batch");
-      if (command === "stage_pdf_import") {
-        pdfAttempts += 1;
-        return pdfAttempts === 1 ? Promise.reject("PDF_PASSWORD_REQUIRED") : Promise.resolve(1);
-      }
+      if (command === "stage_pdf_extracted_text") return Promise.resolve(1);
       return Promise.resolve([]);
     });
     render(<ImportsPage />);
     fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
     const file = new File(["%PDF-1.5 protected fixture"], "protected.pdf", { type: "application/pdf" });
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create import workspace" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
 
     expect(await screen.findByLabelText("PDF password")).toBeInTheDocument();
@@ -138,9 +138,8 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("PDF password"), { target: { value: "statement-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Unlock PDF and continue" }));
 
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_import", expect.objectContaining({
-      batchId: "protected-batch", password: "statement-secret", contents: expect.any(Array),
-    })));
+    await waitFor(() => expect(mocks.pdfText).toHaveBeenLastCalledWith(expect.any(Uint8Array), "statement-secret"));
+    expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "protected-batch", pages: ["2026-11-01 Grocery shop 12.50"] });
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "create_import_batch")).toHaveLength(1);
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });

@@ -94,6 +94,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const importDescription = `E2E imported expense ${suffix}`;
   const correctedImportDescription = `E2E corrected statement row ${suffix}`;
   const statementPath = join(tmpdir(), `etracker-${suffix}.csv`);
+  const budgetPlanPath = join(tmpdir(), `etracker-budget-${suffix}.csv`);
 
   async function navigateTo(page) {
     const buttons = await driver.findElements(By.xpath(`//nav//button[normalize-space()='${page}']`));
@@ -130,6 +131,16 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await createAccount(savings, "cash");
   await createExpenseCategory(foodCategory);
   await createExpenseCategory(travelCategory);
+
+  await writeFile(budgetPlanPath, `Category,Planned Amount,Type\n${foodCategory},25.00,expense\n`, "utf8");
+  await navigateTo("Budgeting");
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Budgeting']")), 15_000);
+  await driver.findElement(By.css("input[aria-label='Budget plan file']")).sendKeys(budgetPlanPath);
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'plan items loaded for review')]")), 15_000);
+  await new Select(await driver.findElement(By.css("select[aria-label='Category 1']"))).selectByVisibleText(foodCategory);
+  await driver.findElement(By.xpath("//button[normalize-space()='Save template']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Budget template saved')]")), 15_000);
+  await unlink(budgetPlanPath).catch(() => {});
 
   await navigateTo("Transactions");
   const transactionForm = (await driver.findElements(By.css("main form")))[0];
@@ -205,6 +216,25 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(async () => (await driver.findElement(By.css("main form")).findElements(By.css("select"))).length >= 6, 15_000);
   await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 staged rows')]")), 15_000);
+
+  const protectedPdfPath = resolve(repositoryRoot, "src/features/imports/fixtures/protected-statement.pdf");
+  await driver.findElement(By.css("input[type='file']")).sendKeys(protectedPdfPath);
+  const importSubmitButton = await driver.wait(until.elementLocated(By.xpath("//form//button[normalize-space()='Create import workspace']")), 15_000);
+  await driver.wait(async () => importSubmitButton.isEnabled(), 15_000);
+  await importSubmitButton.click();
+  await driver.wait(until.elementLocated(By.css("input[aria-label='PDF password']")), 15_000);
+  const pdfPassword = driver.findElement(By.css("input[aria-label='PDF password']"));
+  await pdfPassword.sendKeys("incorrect");
+  await driver.findElement(By.xpath("//form//button[normalize-space()='Unlock PDF and continue']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='alert'][contains(.,'password is incorrect')]")), 15_000);
+  const passwordRetry = driver.findElement(By.css("input[aria-label='PDF password']"));
+  await passwordRetry.clear();
+  await passwordRetry.sendKeys("ledger-secret");
+  await driver.findElement(By.xpath("//form//button[normalize-space()='Unlock PDF and continue']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 PDF text lines')]")), 20_000);
+  const protectedPdfBatch = await driver.wait(until.elementLocated(By.xpath("//li[.//span[normalize-space()='protected-statement.pdf']]")), 15_000);
+  await protectedPdfBatch.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[contains(.,'Market purchase')]]")), 15_000);
 
   const batchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-${suffix}.csv']]`)), 15_000);
   await batchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();

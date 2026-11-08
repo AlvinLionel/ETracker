@@ -1,7 +1,8 @@
 use crate::{
     application::imports::{
         CsvImportMapping, ImportError, ImportReconciliation, ImportRepository,
-        MAX_WORKBOOK_EXPANDED_BYTES, NewImportBatch, StagedCategoryAllocation,
+        MAX_SOURCE_FILE_BYTES, MAX_WORKBOOK_EXPANDED_BYTES, NewImportBatch,
+        StagedCategoryAllocation,
     },
     infrastructure::database::Database,
 };
@@ -31,6 +32,9 @@ fn check_workbook_expanded_size(
 }
 
 fn validate_workbook_expansion(contents: &[u8]) -> Result<(), ImportError> {
+    if contents.len() > MAX_SOURCE_FILE_BYTES {
+        return Err(ImportError::SourceFileTooLarge);
+    }
     if !contents.starts_with(b"PK\x03\x04") {
         return Ok(()); // Legacy .xls files use OLE containers, not ZIP archives.
     }
@@ -1278,53 +1282,18 @@ impl SqliteImportRepository<'_> {
         Ok(workbook.sheet_names().to_vec())
     }
 
-    pub fn stage_pdf_text(
+    pub fn stage_pdf_pages(
         &self,
         batch_id: &str,
-        contents: Vec<u8>,
-        password: Option<&str>,
+        pages: Vec<String>,
     ) -> Result<usize, ImportError> {
-        let mut document = lopdf::Document::load_mem(&contents)
-            .map_err(|error| ImportError::Database(error.to_string()))?;
-        let pages = if document.is_encrypted() {
-            let effective_password = match password {
-                Some(password) => password,
-                None => match document.decrypt("") {
-                    Ok(()) => "",
-                    Err(lopdf::Error::Decryption(
-                        lopdf::encryption::DecryptionError::IncorrectPassword,
-                    )) => return Err(ImportError::PdfPasswordRequired),
-                    Err(error) => return Err(ImportError::Database(error.to_string())),
-                },
-            };
-            if !effective_password.is_empty() {
-                document.decrypt(effective_password).map_err(|error| {
-                    if matches!(
-                        &error,
-                        lopdf::Error::Decryption(
-                            lopdf::encryption::DecryptionError::IncorrectPassword
-                        )
-                    ) {
-                        ImportError::PdfPasswordIncorrect
-                    } else {
-                        ImportError::Database(error.to_string())
-                    }
-                })?;
-            }
-            let page_count = document.get_pages().len();
-            let mut pages = Vec::with_capacity(page_count);
-            for page_number in 1..=page_count {
-                let mut page_text = String::new();
-                let mut output = pdf_extract::PlainTextOutput::new(&mut page_text);
-                pdf_extract::output_doc_page(&document, &mut output, page_number as u32)
-                    .map_err(|error| ImportError::Database(error.to_string()))?;
-                pages.push(page_text);
-            }
-            pages
-        } else {
-            pdf_extract::extract_text_from_mem_by_pages(&contents)
-                .map_err(|error| ImportError::Database(error.to_string()))?
-        };
+        let extracted_bytes = pages
+            .iter()
+            .try_fold(0usize, |total, page| total.checked_add(page.len()))
+            .ok_or(ImportError::ExtractedTextTooLarge)?;
+        if extracted_bytes as u64 > MAX_WORKBOOK_EXPANDED_BYTES {
+            return Err(ImportError::ExtractedTextTooLarge);
+        }
         let mut extracted_rows = Vec::new();
         for (page_index, page) in pages.iter().enumerate() {
             for (line_index, line) in page.lines().enumerate() {
@@ -1433,6 +1402,28 @@ impl SqliteImportRepository<'_> {
                     value.trim().to_string()
                 }
             })
+            .collect())
+    }
+
+    pub fn xlsx_rows(
+        &self,
+        contents: Vec<u8>,
+        sheet_name: &str,
+        header_row: usize,
+    ) -> Result<Vec<Vec<String>>, ImportError> {
+        validate_workbook_expansion(&contents)?;
+        if header_row == 0 {
+            return Err(ImportError::InvalidBatch);
+        }
+        let mut workbook = open_workbook_auto_from_rs(Cursor::new(contents))
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        let range = workbook
+            .worksheet_range(sheet_name)
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        Ok(range
+            .rows()
+            .skip(header_row - 1)
+            .map(|row| row.iter().map(cell_string).collect())
             .collect())
     }
 
@@ -1893,92 +1884,6 @@ mod tests {
             zip.write_all(contents.as_bytes()).unwrap();
         }
         zip.finish().unwrap().into_inner()
-    }
-    fn pdf_fixture(text: &str) -> Vec<u8> {
-        use lopdf::{
-            Document, Object, Stream,
-            content::{Content, Operation},
-            dictionary,
-        };
-        let mut document = Document::with_version("1.5");
-        let pages_id = document.new_object_id();
-        let catalog_id = document.new_object_id();
-        let font_id = document.add_object(dictionary! {
-            "Type" => "Font",
-            "Subtype" => "Type1",
-            "BaseFont" => "Helvetica",
-        });
-        let resources_id = document.add_object(dictionary! {
-            "Font" => dictionary! { "F1" => font_id },
-        });
-        let content = Content {
-            operations: vec![
-                Operation::new("BT", vec![]),
-                Operation::new("Tf", vec!["F1".into(), 12.into()]),
-                Operation::new("Td", vec![20.into(), 250.into()]),
-                Operation::new("Tj", vec![Object::string_literal(text)]),
-                Operation::new("ET", vec![]),
-            ],
-        };
-        let content_id =
-            document.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
-        let page_id = document.add_object(dictionary! {
-            "Type" => "Page",
-            "Parent" => pages_id,
-            "Contents" => content_id,
-            "Resources" => resources_id,
-            "MediaBox" => vec![0.into(), 0.into(), 300.into(), 300.into()],
-        });
-        document.objects.insert(
-            pages_id,
-            Object::Dictionary(dictionary! {
-                "Type" => "Pages",
-                "Kids" => vec![page_id.into()],
-                "Count" => 1,
-            }),
-        );
-        document.objects.insert(
-            catalog_id,
-            Object::Dictionary(dictionary! {
-                "Type" => "Catalog",
-                "Pages" => pages_id,
-            }),
-        );
-        document.trailer.set("Root", catalog_id);
-        let mut bytes = Vec::new();
-        document.save_to(&mut bytes).unwrap();
-        bytes
-    }
-    fn encrypted_pdf_fixture(text: &str, password: &str) -> Vec<u8> {
-        use lopdf::{
-            Document, Object, StringFormat,
-            encryption::{EncryptionState, EncryptionVersion, Permissions},
-        };
-        let mut document = Document::load_mem(&pdf_fixture(text)).unwrap();
-        assert_eq!(
-            document.get_pages().len(),
-            1,
-            "unencrypted fixture page tree"
-        );
-        let id = Object::String(
-            b"etracker-test-statement".to_vec(),
-            StringFormat::Hexadecimal,
-        );
-        document
-            .trailer
-            .set("ID", Object::Array(vec![id.clone(), id]));
-        let version = EncryptionVersion::V2 {
-            document: &document,
-            owner_password: "owner-password",
-            user_password: password,
-            key_length: 128,
-            permissions: Permissions::all(),
-        };
-        let state = EncryptionState::try_from(version).unwrap();
-        document.encrypt(&state).unwrap();
-        let mut bytes = Vec::new();
-        document.save_to(&mut bytes).unwrap();
-        bytes
     }
     fn account(db: &Database) {
         db.connection()
@@ -2863,7 +2768,7 @@ mod tests {
     }
 
     #[test]
-    fn stages_text_based_pdf_lines_as_uncertain_manual_review_records() {
+    fn stages_pdfjs_extracted_page_text_as_uncertain_review_rows() {
         let db = db();
         account(&db);
         let repository = SqliteImportRepository::new(&db);
@@ -2873,14 +2778,18 @@ mod tests {
                 source_file_name: "statement.pdf".into(),
                 source_format: "pdf".into(),
                 revision_of_batch_id: None,
-                source_file_contents: pdf_fixture("2026-11-06 Market purchase 12.50").to_vec(),
+                source_file_contents: b"retained PDF source".to_vec(),
             })
             .unwrap();
-        let bytes = pdf_fixture("2026-11-06 Market purchase 12.50");
-        assert_eq!(repository.stage_pdf_text(&batch, bytes, None).unwrap(), 1);
+        assert_eq!(
+            repository
+                .stage_pdf_pages(&batch, vec!["2026-11-06 Market purchase 12.50".into()])
+                .unwrap(),
+            1
+        );
         let records = repository.list_records(&batch).unwrap();
         assert_eq!(records.len(), 1);
-        assert!(records[0].source_row_reference.contains("Page 1, line"));
+        assert!(records[0].source_row_reference.contains("Page 1, line 1"));
         assert_eq!(records[0].validation_status, "uncertain");
         assert_eq!(
             records[0].normalized_date.as_deref(),
@@ -2896,42 +2805,13 @@ mod tests {
                 .contains("Market purchase")
         );
         assert!(matches!(
-            repository.stage_pdf_text(&batch, b"not a PDF".to_vec(), None),
-            Err(ImportError::Database(_)) | Err(ImportError::InvalidBatch)
-        ));
-    }
-
-    #[test]
-    fn requests_encrypted_pdf_password_and_rejects_incorrect_password_without_losing_batch() {
-        let db = db();
-        account(&db);
-        let repository = SqliteImportRepository::new(&db);
-        let encrypted = encrypted_pdf_fixture("2026-11-06 Market purchase 12.50", "ledger-secret");
-        let batch = repository
-            .create_batch(&NewImportBatch {
-                account_id: "a".into(),
-                source_file_name: "protected-statement.pdf".into(),
-                source_format: "pdf".into(),
-                revision_of_batch_id: None,
-                source_file_contents: encrypted.clone(),
-            })
-            .unwrap();
-
-        assert!(matches!(
-            repository.stage_pdf_text(&batch, encrypted.clone(), None),
-            Err(ImportError::PdfPasswordRequired)
-        ));
-        assert!(matches!(
-            repository.stage_pdf_text(&batch, encrypted.clone(), Some("wrong-password")),
-            Err(ImportError::PdfPasswordIncorrect)
-        ));
-        assert!(matches!(
-            repository.stage_pdf_text(&batch, encrypted.clone(), Some("ledger-secret")),
+            repository.stage_pdf_pages(&batch, vec![String::new()]),
             Err(ImportError::PdfNoExtractableText)
         ));
-        let records = repository.list_records(&batch).unwrap();
-        assert!(records.is_empty());
-        assert_eq!(repository.source_file_contents(&batch).unwrap(), encrypted);
+        assert_eq!(
+            repository.source_file_contents(&batch).unwrap(),
+            b"retained PDF source"
+        );
     }
 
     #[test]
@@ -2956,6 +2836,14 @@ mod tests {
         assert_eq!(
             repo.xlsx_headers(bytes.clone(), "Transactions", 1).unwrap(),
             vec!["Date", "Amount", "Memo"]
+        );
+        assert_eq!(
+            repo.xlsx_rows(bytes.clone(), "Transactions", 1).unwrap(),
+            vec![
+                vec!["Date", "Amount", "Memo"],
+                vec!["2026-11-05", "12.5", "Market"],
+                vec!["2026-11-06", "12.5", "Calculated total"],
+            ]
         );
         let mapping = CsvImportMapping {
             date_column: "Date".into(),

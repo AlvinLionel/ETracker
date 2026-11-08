@@ -8,7 +8,7 @@ Built with a local-first approach, ETracker is designed to keep core financial f
 
 ## Project Status
 
-Account management and the first manual transaction workflows are implemented. The application supports local SQLite persistence, income and expense entry, transaction history and account/date filtering. Transfers, transaction correction workflows, statement imports and planning features remain under development.
+ETracker is a local-first personal finance workspace. It supports accounts, transaction entry and audit history, transfers, statement imports with review and reconciliation, editable monthly budget plans, savings and subscriptions, analytics, forecasts, encrypted backup and recovery, and light/dark themes. CSV, Excel and selectable-text PDF statements can be staged locally; password-protected PDFs can be unlocked in the import workspace. Imported rows remain under review until corrected and confirmed. Scanned-PDF OCR and institution-specific statement parsers are not available yet.
 
 ## Technology Stack
 
@@ -39,7 +39,7 @@ git clone https://github.com/AlvinLionel/ETracker.git
 cd ETracker
 ```
 
-Install frontend dependencies:
+Install frontend dependencies (including the locally bundled PDF reader):
 
 ```bash
 npm install
@@ -57,6 +57,15 @@ Build the frontend:
 npm run build
 ```
 
+Run the Rust and frontend test suites:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run test:run
+```
+
+The optional Windows desktop end-to-end workflow uses Edge WebDriver. Install the matching driver with `npm run setup:e2e`, then run `npm run test:e2e`.
+
 ## Project Structure
 
 ```text
@@ -65,7 +74,7 @@ ETracker/
 ├── public/         # Static frontend assets
 ├── src/            # React and TypeScript frontend
 ├── src-tauri/      # Tauri and Rust backend
-├── tests/          # Cross-component tests (as development progresses)
+├── e2e/            # Windows desktop end-to-end workflow
 ├── package.json
 ├── vite.config.ts
 └── README.md

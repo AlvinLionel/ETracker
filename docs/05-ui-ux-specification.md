@@ -397,13 +397,13 @@ The imports workspace is the primary way to build historical spending records fr
 
 Accepted statement files are CSV, Excel workbooks (.xls and .xlsx), and selectable-text PDF. The UI recognizes common date, amount, and description header names and preselects likely fields; users can change the mapping. Excel users choose a worksheet and header row. Formula-derived values in mapped date or amount cells require correction in staged review. Each uploaded file is saved as its own named workspace, preserving the source filename.
 
-Spreadsheet headings that look like a budget plan or account list are identified and blocked from the transaction workflow so planned amounts or account balances cannot be posted as spending. Dedicated spreadsheet import flows for budget plans and account lists are not implemented yet. Bank and mobile-money statements use generic field mapping; institution-specific normalization still depends on verified sample files.
+Spreadsheet headings that look like a budget plan or account list are identified and blocked from the transaction workflow so planned amounts or account balances cannot be posted as spending. Budget plans can be loaded from CSV or Excel into the budget-template editor for review and correction before saving; account-list imports are not implemented. Bank and mobile-money statements use generic field mapping; institution-specific normalization still depends on verified sample files.
 
 Each saved workspace provides access to its original uploaded file for 90 days after the latest workspace activity. The application removes expired source bytes at startup while retaining the financial records and import history.
 
 When creating an import, the user may select a finalized statement from the same account as the prior version. The workspace displays row-by-row comparison and requires an explicit action for every changed or uncertain match: keep the original, use the revised row, or merge compatible descriptive details. Choosing revised values for a manually edited imported transaction is an explicit instruction to reverse the old posted entry and apply the revised record; the comparison flags this case before finalization. Identical rows are retained from the prior version and excluded from new postings.
 
-Selectable PDF text appears as uncertain page-and-line records for correction and review. If a PDF is password-protected, the user can enter its password in the current workspace and continue extraction; the password is not saved. Scanned PDFs receive an extraction error because local OCR is not implemented.
+Selectable PDF text is extracted locally with the bundled PDF.js library and appears as uncertain page-and-line records for correction and review. If a PDF is password-protected, the user can enter its password in the current workspace and continue extraction; the password is not sent to the backend or saved. Scanned PDFs receive an extraction error because local OCR is not implemented.
 
 It is a critical financial workflow and must provide transparency throughout processing.
 

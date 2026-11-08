@@ -16,6 +16,7 @@ describe("BudgetingPage", () => {
       if (command === "get_budget_period_items") return [{ id: "line", item_type: "expense", category_id: "food", label: "Food", planned_minor: 25000, actual_minor: 8000 }];
       if (command === "get_budget_period_totals") return { actual_income_minor: 30000, actual_expense_minor: 8000, actual_savings_minor: 5000, unallocated_minor: 9999 };
       if (command === "list_budget_template_items") return [{ item_type: "expense", category_id: "food", label: "Food", amount_minor: 25000 }];
+      if (command === "csv_rows") return [["Category", "Planned Amount", "Type"], ["Food", "250.00", "expense"]];
       return "created";
     });
   });
@@ -56,5 +57,17 @@ describe("BudgetingPage", () => {
     fireEvent.change(await screen.findByLabelText("Template name"), { target: { value: "Updated household" } });
     fireEvent.click(screen.getByRole("button", { name: "Save template changes" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("update_budget_template", { templateId: "template", name: "Updated household", items: [{ item_type: "expense", category_id: "food", label: "Food", amount_minor: 25000 }] }));
+  });
+
+  it("loads CSV budget rows into the template editor for review before saving", async () => {
+    render(<BudgetingPage />);
+    const file = new File(["Category,Planned Amount,Type\nFood,250.00,expense"], "November plan.csv", { type: "text/csv" });
+    fireEvent.change(await screen.findByLabelText("Budget plan file"), { target: { files: [file] } });
+    expect(await screen.findByRole("status")).toHaveTextContent("1 plan items loaded for review");
+    expect(screen.getByLabelText("Template name")).toHaveValue("November plan");
+    expect(screen.getByLabelText("Item label 1")).toHaveValue("Food");
+    fireEvent.change(screen.getByLabelText("Category 1"), { target: { value: "food" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save template" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("create_budget_template", { request: { name: "November plan", currency_code: "KES", items: [{ item_type: "expense", category_id: "food", label: "Food", amount_minor: 25000 }] } }));
   });
 });

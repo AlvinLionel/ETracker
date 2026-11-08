@@ -42,8 +42,7 @@ pub enum ImportError {
     InvalidBatch,
     SourceFileTooLarge,
     WorkbookTooLarge,
-    PdfPasswordRequired,
-    PdfPasswordIncorrect,
+    ExtractedTextTooLarge,
     PdfNoExtractableText,
 }
 pub trait ImportRepository {
