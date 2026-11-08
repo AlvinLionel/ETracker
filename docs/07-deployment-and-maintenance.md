@@ -594,9 +594,9 @@ Builds should be identifiable by:
 
 ### 12.2 Continuous Integration
 
-A CI pipeline should eventually automate relevant checks.
+A Windows CI workflow at `.github/workflows/ci.yml` automates checks on pushes and pull requests.
 
-Proposed checks:
+Configured checks:
 1. Dependency installation.
 2. Formatting verification.
 3. Static analysis.
@@ -604,7 +604,7 @@ Proposed checks:
 5. Rust tests.
 6. Database integration tests.
 7. Build verification.
-8. Relevant security checks.
+8. Relevant security checks (not yet included in the workflow).
 
 ### 12.3 Build Artifacts
 
@@ -813,7 +813,7 @@ As of 7 November 2026:
 | x64 MSI and NSIS installer packages | Built; manual install/upgrade verification pending |
 | Database migrations | Implemented and tested |
 | Encrypted backup and restoration | Implemented and automated tests pass; manual desktop verification pending |
-| CI pipeline | Not implemented |
+| CI pipeline | Implemented for Windows: formatting, frontend tests/build and Rust tests; first hosted run pending |
 | Stable release | Not produced |
 
 ---

@@ -1108,10 +1108,10 @@ The following matters require additional research, technical validation or expli
 
 ## 8.3 Testing and quality assurance
 
+`PEND-017` and `PEND-018` were resolved on 8 November 2026. The repository uses Vitest and React Testing Library, Rust's test framework and rustfmt, with Selenium WebDriver, tauri-driver and Microsoft Edge for Windows desktop E2E. `.github/workflows/ci.yml` runs formatting, frontend tests/build and Rust tests on Windows for pushes and pull requests. The workflow is configured but its first hosted GitHub run has not yet been observed; installer, native desktop and accessibility checks remain outside CI.
+
 | ID | Pending decision | Priority | Related document |
 |---|---|---|---|
-| PEND-017 | Final testing toolchain | High | DOC-006 |
-| PEND-018 | CI checks and automation configuration | Medium | DOC-006 |
 | PEND-019 | Test coverage expectations and release gates | Medium | DOC-006 |
 | PEND-020 | Acceptance criteria refinement where required | Medium | DOC-002, DOC-006 |
 

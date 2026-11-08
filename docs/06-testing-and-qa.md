@@ -958,9 +958,7 @@ Manual testing remains important for:
 - Realistic import review workflows.
 - Acceptance testing.
 
-### 15.2 Proposed Testing Tools
-
-The following are candidate tools based on the provisional application stack.
+### 15.2 Selected Testing Tools
 
 | Area | Candidate tool | Purpose |
 |---|---|---|
@@ -968,18 +966,16 @@ The following are candidate tools based on the provisional application stack.
 | Rust integration tests | Rust test framework | Database and service integration |
 | Frontend unit tests | Vitest | TypeScript and React logic |
 | UI component tests | React Testing Library | Component behaviour |
-| Desktop end-to-end tests | Playwright with suitable Tauri integration | Complete application workflows |
+| Desktop end-to-end tests | Selenium WebDriver, tauri-driver and Microsoft Edge WebDriver | Complete Windows application workflows |
 | Database verification | SQLite tooling and test fixtures | Schema and integrity checks |
-| Static analysis | Rust Clippy and TypeScript tooling | Code quality |
-| Formatting | rustfmt and Prettier | Consistent source formatting |
+| Static analysis | TypeScript compiler and Rust compiler | Type checking and compilation |
+| Formatting | rustfmt | Consistent Rust source formatting |
 
-These tools are proposed, not yet selected or installed.
-
-Final choices must be evaluated against the actual project structure and framework versions.
+Vitest and React Testing Library run the frontend suite. Selenium desktop tests are available through `npm run test:e2e`; they require the matching Edge WebDriver installed with `npm run setup:e2e`.
 
 ### 15.3 Continuous Integration
 
-A CI pipeline should eventually run relevant automated checks when code is pushed or a pull request is opened.
+A Windows CI workflow at `.github/workflows/ci.yml` runs on pushes and pull requests. It installs locked npm dependencies and checks Rust formatting, frontend tests, the production frontend build and locked Rust tests.
 
 Candidate checks:
 1. Dependency installation.
@@ -991,7 +987,7 @@ Candidate checks:
 7. Build verification.
 8. Relevant regression tests.
 
-CI must not report success when mandatory checks have failed or been skipped without explanation.
+The desktop E2E workflow, installer builds, install/upgrade, native file saving, offline use and accessibility checks remain outside CI and require separate verification. CI must not report success when a configured check fails.
 
 ---
 
@@ -1156,22 +1152,22 @@ Automated test code and fixtures should remain alongside the relevant source cod
 
 | ID | Topic | Status |
 |---|---|---|
-| QA-001 | Final automated testing framework selection | Pending technology evaluation |
-| QA-002 | Desktop end-to-end testing approach | Pending implementation evaluation |
+| QA-001 | Final automated testing framework selection | Selected: Vitest, React Testing Library, Rust test framework and rustfmt |
+| QA-002 | Desktop end-to-end testing approach | Implemented: Selenium WebDriver with tauri-driver and Edge |
 | QA-003 | Performance benchmarks and targets | Pending representative benchmarks |
 | QA-004 | Test coverage targets | Pending implementation planning |
 | QA-005 | Test dataset structure | Pending implementation planning |
-| QA-006 | CI pipeline configuration | Pending repository and tool setup |
+| QA-006 | CI pipeline configuration | Implemented in `.github/workflows/ci.yml`; first hosted run still needs observation |
 | QA-007 | Defect tracking method | Pending workflow selection |
 | QA-008 | Accessibility testing tools | Pending evaluation |
 | QA-009 | Release acceptance thresholds | Defined conceptually; detailed thresholds pending |
-| QA-010 | Regression suite organization | Pending implementation planning |
+| QA-010 | Regression suite organization | Implemented across feature-scoped frontend tests and Rust application/persistence tests |
 
 ---
 
 ## 23. Current QA Status
 
-As of 4 November 2026:
+As of 8 November 2026:
 
 | Area | Status |
 |---|---|
@@ -1184,11 +1180,11 @@ As of 4 November 2026:
 | Forecast scenarios | Defined |
 | Offline and privacy scenarios | Defined |
 | Database and recovery scenarios | Defined |
-| Proposed testing tools | Identified, not finalized |
-| Automated test suite | Not implemented |
-| Test fixtures | Not created |
-| CI pipeline | Not implemented |
-| Test execution records | Not available |
+| Test tools | Vitest, React Testing Library, Rust test framework, rustfmt and Selenium/tauri-driver/Edge |
+| Automated tests | 69 frontend and 73 Rust tests pass locally |
+| Test fixtures | Encrypted PDF fixture and scoped inline CSV/workbook fixtures |
+| CI pipeline | Windows workflow configured; first hosted run pending |
+| Test execution records | Local results recorded in implementation progress |
 | Acceptance testing | Not performed |
 
 ---

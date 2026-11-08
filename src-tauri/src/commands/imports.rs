@@ -123,7 +123,7 @@ pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn csv_rows(contents: String) -> Result<Vec<Vec<String>>, String> {
     if contents.len() > crate::application::imports::MAX_SOURCE_FILE_BYTES {
-        return Err("Budget files must be 25 MiB or smaller.".into());
+        return Err("CSV and spreadsheet files must be 25 MiB or smaller.".into());
     }
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
@@ -155,7 +155,9 @@ pub fn xlsx_sheet_names(
     SqliteImportRepository::new(state.inner())
         .xlsx_sheet_names(contents)
         .map_err(|error| match error {
-            ImportError::SourceFileTooLarge => "Budget files must be 25 MiB or smaller.".into(),
+            ImportError::SourceFileTooLarge => {
+                "CSV and spreadsheet files must be 25 MiB or smaller.".into()
+            }
             ImportError::WorkbookTooLarge => {
                 "The workbook expands beyond the 100 MiB processing limit.".into()
             }
@@ -188,7 +190,9 @@ pub fn xlsx_rows(
     SqliteImportRepository::new(state.inner())
         .xlsx_rows(contents, &sheet_name, header_row)
         .map_err(|error| match error {
-            ImportError::SourceFileTooLarge => "Budget files must be 25 MiB or smaller.".into(),
+            ImportError::SourceFileTooLarge => {
+                "CSV and spreadsheet files must be 25 MiB or smaller.".into()
+            }
             ImportError::WorkbookTooLarge => {
                 "The workbook expands beyond the 100 MiB processing limit.".into()
             }

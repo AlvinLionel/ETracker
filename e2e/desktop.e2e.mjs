@@ -95,6 +95,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const correctedImportDescription = `E2E corrected statement row ${suffix}`;
   const statementPath = join(tmpdir(), `etracker-${suffix}.csv`);
   const budgetPlanPath = join(tmpdir(), `etracker-budget-${suffix}.csv`);
+  const accountListPath = join(tmpdir(), `etracker-accounts-${suffix}.csv`);
 
   async function navigateTo(page) {
     const buttons = await driver.findElements(By.xpath(`//nav//button[normalize-space()='${page}']`));
@@ -129,6 +130,16 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
 
   await createAccount(checking, "bank");
   await createAccount(savings, "cash");
+  const importedAccount = `E2E Imported Wallet ${suffix}`;
+  await writeFile(accountListPath, `Account Name,Account Number,Type,Institution,Opening Balance,Opening Date,Currency\n${checking},123456789012,bank,,,,KES\n${importedAccount},987654321098,mobile money,M-Pesa,12.50,2026-11-01,KES\n`, "utf8");
+  await navigateTo("Accounts");
+  await driver.findElement(By.css("input[aria-label='Account list file']")).sendKeys(accountListPath);
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'2 account rows loaded')]")), 15_000);
+  await driver.wait(until.elementLocated(By.xpath("//tr[.//td[contains(.,'already exists or appears earlier')]]")), 5_000);
+  await driver.findElement(By.xpath("//button[normalize-space()='Create selected accounts']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'1 account imported')]")), 15_000);
+  await driver.wait(until.elementLocated(By.xpath(`//h4[normalize-space()='${importedAccount}']`)), 15_000);
+  await unlink(accountListPath).catch(() => {});
   await createExpenseCategory(foodCategory);
   await createExpenseCategory(travelCategory);
 

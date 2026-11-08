@@ -77,6 +77,31 @@ describe("ImportsPage", () => {
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
   });
 
+  it("recognizes account lists that include a dated balance without misclassifying statements", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Account Name", "Account Type", "Institution", "Opening Balance", "Opening Date", "Currency"]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage navigate={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["account list"], "accounts.csv", { type: "text/csv" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/select the file there to review and import/i);
+    expect(screen.getByRole("button", { name: "Open Accounts" })).toBeInTheDocument();
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("keeps dated transaction statements with an account name in statement flow", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Account Name", "Date", "Amount", "Memo"]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["statement"], "statement.csv", { type: "text/csv" })] } });
+    expect(await screen.findByLabelText("Date column")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("selects an XLSX worksheet and stages mapped rows", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
