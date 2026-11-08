@@ -131,7 +131,7 @@ function App() {
         </nav>
 
         <main className="flex-1 px-5 py-8 sm:px-8 lg:px-10">
-          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
+          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage navigate={setActivePage} /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
         </main>
       </div>
     </div>

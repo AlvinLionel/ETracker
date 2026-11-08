@@ -688,7 +688,7 @@ Compare a newly staged statement with the finalized same-account batch selected 
 The requirements support text-based PDF statements while keeping import processing local. Generic PDFs do not provide a consistent row layout, so inferred dates and amounts cannot safely be posted without format-specific parsing.
 
 ### Decision
-Use the Rust `pdf-extract` crate for page-level selectable text extraction. Stage each non-empty text line as an uncertain record with its page and line reference. Do not infer or post date, amount, direction, category or transaction reference from generic PDF text. Users must correct each transaction line or skip non-transaction content. If a PDF contains no extractable text, return a recoverable failure and retain the workspace/source file. Scanned-PDF OCR and institution-specific PDF parsers remain separate work.
+Use the Rust `pdf-extract` crate for page-level selectable text extraction. If a PDF requires a password, prompt within the current import and retry extraction on the existing workspace; never persist or log the password. Stage each non-empty text line as an uncertain record with its page and line reference. Do not infer or post date, amount, direction, category or transaction reference from generic PDF text. Users must correct each transaction line or skip non-transaction content. If a PDF contains no extractable text, return a recoverable failure and retain the workspace/source file. Scanned-PDF OCR and institution-specific PDF parsers remain separate work.
 
 ### Rationale and implications
 - PDF statements remain usable for manual correction without claiming a provider parser.
@@ -768,12 +768,12 @@ This offers useful first-line support details while limiting sensitive data expo
 Statement source files are read into memory, passed to the local desktop backend, and retained in the database for up to 90 days. Unbounded inputs can cause high memory and storage use.
 
 ### Decision
-Limit each imported statement source file to 25 MiB. Reject larger files in the interface before reading them and enforce the same limit in the application service before saving a batch. Users can divide larger statements into smaller files.
+Limit each imported statement source file to 25 MiB. Reject larger files in the interface before reading them and enforce the same limit in the application service before saving a batch. For ZIP-based Excel workbooks, cap the total uncompressed entry size at 100 MiB before parsing; legacy OLE `.xls` files remain protected by the compressed source limit and parser validation. Users can divide larger statements into smaller files.
 
 ### Rationale and implications
 - Bound routine memory, IPC and retained database use for local statement imports.
 - Keep the limit consistent between user interface and backend validation.
-- The limit applies to the original uploaded file; decompressed workbook and PDF extraction resource limits remain subject to separate review.
+- The workbook cap bounds declared uncompressed entry sizes without extracting archive contents to disk. PDF parser memory behavior remains subject to separate review.
 
 ---
 

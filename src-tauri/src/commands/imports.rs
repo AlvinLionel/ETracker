@@ -127,7 +127,12 @@ pub fn xlsx_sheet_names(
 ) -> Result<Vec<String>, String> {
     SqliteImportRepository::new(state.inner())
         .xlsx_sheet_names(contents)
-        .map_err(|_| "The workbook could not be read. Choose an unencrypted XLSX workbook.".into())
+        .map_err(|error| match error {
+            ImportError::WorkbookTooLarge => {
+                "The workbook expands beyond the 100 MiB processing limit.".into()
+            }
+            _ => "The workbook could not be read. Choose an unencrypted XLSX workbook.".into(),
+        })
 }
 #[tauri::command]
 pub fn xlsx_headers(
@@ -138,7 +143,12 @@ pub fn xlsx_headers(
 ) -> Result<Vec<String>, String> {
     SqliteImportRepository::new(state.inner())
         .xlsx_headers(contents, &sheet_name, header_row)
-        .map_err(|_| "The selected worksheet header row could not be read.".into())
+        .map_err(|error| match error {
+            ImportError::WorkbookTooLarge => {
+                "The workbook expands beyond the 100 MiB processing limit.".into()
+            }
+            _ => "The selected worksheet header row could not be read.".into(),
+        })
 }
 #[tauri::command]
 pub fn create_import_batch(
@@ -155,9 +165,7 @@ pub fn create_import_batch(
             source_file_contents: request.source_file_contents,
         })
         .map_err(|error| match error {
-            ImportError::SourceFileTooLarge => {
-                "Statement files must be 25 MiB or smaller.".into()
-            }
+            ImportError::SourceFileTooLarge => "Statement files must be 25 MiB or smaller.".into(),
             _ => "Import batch could not be created. Check the account and file details.".into(),
         })
 }
@@ -293,6 +301,9 @@ pub fn stage_xlsx_import(
         &mapping,
     ) {
         Ok(count) => Ok(count),
+        Err(ImportError::WorkbookTooLarge) => {
+            Err("The workbook expands beyond the 100 MiB processing limit.".into())
+        }
         Err(_) => {
             let _ = ImportService::new(repository).record_failure(
                 &request.batch_id,
@@ -313,10 +324,25 @@ pub fn stage_pdf_import(
     state: State<'_, Database>,
     batch_id: String,
     contents: Vec<u8>,
+    password: Option<String>,
 ) -> Result<usize, String> {
     let repository = SqliteImportRepository::new(state.inner());
-    match repository.stage_pdf_text(&batch_id, contents) {
+    match repository.stage_pdf_text(&batch_id, contents, password.as_deref()) {
         Ok(count) => Ok(count),
+        Err(ImportError::PdfPasswordRequired) => Err("PDF_PASSWORD_REQUIRED".into()),
+        Err(ImportError::PdfPasswordIncorrect) => {
+            Err("The PDF password is incorrect. Check it and try again.".into())
+        }
+        Err(ImportError::PdfNoExtractableText) => {
+            let _ = ImportService::new(SqliteImportRepository::new(state.inner())).record_failure(
+                &batch_id,
+                None,
+                "parse",
+                "PDF was unlocked but no selectable text could be extracted",
+                "Try another PDF export or download the retained source file. Scanned-PDF OCR is not available.",
+            );
+            Err("The PDF was unlocked, but no selectable transaction text could be extracted. The source file is still available for retry or download.".into())
+        }
         Err(_) => {
             let _ = ImportService::new(repository).record_failure(
                 &batch_id,

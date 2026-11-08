@@ -29,6 +29,8 @@ describe("ImportsPage", () => {
     const file = new File(["Date,Amount,Memo\n2026-11-01,10.00,Shop"], "statement.csv", { type: "text/csv" });
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
     await screen.findByLabelText("Date column");
+    expect(screen.getByLabelText("Date column")).toHaveValue("Date");
+    expect(screen.getByLabelText("Amount column")).toHaveValue("Amount");
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_csv_import", expect.objectContaining({
       request: expect.objectContaining({ batch_id: "batch-1", date_column: "Date", amount_column: "Amount" }),
@@ -44,6 +46,32 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
     expect(await screen.findByRole("alert")).toHaveTextContent(/25 MiB or smaller/);
     expect(mocks.invoke).not.toHaveBeenCalledWith("csv_headers", expect.anything());
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("detects a budget-plan spreadsheet and prevents it entering transaction history", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Category", "Planned Amount", "Budget Month"]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["Category,Planned Amount"], "monthly-budget.csv", { type: "text/csv" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/look like a budget plan/i);
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("detects an account list and prevents it entering transaction history", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Account Name", "Account Number", "Current Balance"]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["Account Name,Account Number"], "accounts.csv", { type: "text/csv" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/look like an account list/i);
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
   });
 
@@ -86,6 +114,35 @@ describe("ImportsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_import", expect.objectContaining({ batchId: "pdf-batch", contents: expect.any(Array) })));
     expect(await screen.findByRole("status")).toHaveTextContent("4 PDF text lines for manual review");
+  });
+
+  it("keeps an encrypted PDF import open until its password unlocks extraction", async () => {
+    let pdfAttempts = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "create_import_batch") return Promise.resolve("protected-batch");
+      if (command === "stage_pdf_import") {
+        pdfAttempts += 1;
+        return pdfAttempts === 1 ? Promise.reject("PDF_PASSWORD_REQUIRED") : Promise.resolve(1);
+      }
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    const file = new File(["%PDF-1.5 protected fixture"], "protected.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+
+    expect(await screen.findByLabelText("PDF password")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent(/Enter its password below to continue extraction/);
+    fireEvent.change(screen.getByLabelText("PDF password"), { target: { value: "statement-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock PDF and continue" }));
+
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_import", expect.objectContaining({
+      batchId: "protected-batch", password: "statement-secret", contents: expect.any(Array),
+    })));
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "create_import_batch")).toHaveLength(1);
+    expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });
 
   it("compares a revised import with a selected finalized batch", async () => {

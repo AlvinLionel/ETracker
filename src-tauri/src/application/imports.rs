@@ -1,4 +1,5 @@
 pub const MAX_SOURCE_FILE_BYTES: usize = 25 * 1024 * 1024;
+pub const MAX_WORKBOOK_EXPANDED_BYTES: u64 = 100 * 1024 * 1024;
 
 fn source_file_is_too_large(size: usize) -> bool {
     size > MAX_SOURCE_FILE_BYTES
@@ -40,6 +41,10 @@ pub enum ImportError {
     ConnectionPoisoned,
     InvalidBatch,
     SourceFileTooLarge,
+    WorkbookTooLarge,
+    PdfPasswordRequired,
+    PdfPasswordIncorrect,
+    PdfNoExtractableText,
 }
 pub trait ImportRepository {
     fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError>;
