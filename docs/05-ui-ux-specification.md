@@ -387,6 +387,10 @@ The user must be able to distinguish:
 - Record creation date.
 - Import date where applicable.
 
+### 6.8 Receipt and Document Attachments
+
+Each transaction’s Documents action opens a compact attachment panel. Users can attach PDF, JPEG or PNG evidence (10 MiB maximum per file and 25 MiB per transaction), open a saved file with its default desktop application, or remove it. Missing or integrity-failing files are called out beside their names. Attachments remain associated when transactions are edited or voided. Files remain until the user removes them; the UI does not imply OCR or automatic receipt extraction.
+
 ---
 
 ## 7. Imports Workspace

@@ -812,7 +812,7 @@ As of 8 November 2026:
 | Database migrations | Implemented and tested |
 | Encrypted backup and restoration | Implemented and automated tests pass; manual desktop verification pending |
 | CI pipeline | Implemented for Windows: formatting, frontend tests/build and Rust tests; first hosted run pending |
-| First preview packages | Rebuilt locally on 8 November 2026 with native backup save support and bundled offline English OCR: MSI 10.96 MiB, NSIS 9.88 MiB; hashes are in `RELEASE_NOTES.md`; not committed to source control |
+| First preview packages | OCR-era packages rebuilt locally on 8 November 2026: MSI 10.96 MiB, NSIS 9.88 MiB. They predate transaction attachments and are not current for distribution; hashes are in `RELEASE_NOTES.md`; artifacts are not committed |
 | Installer workflow | Configured to retain unsigned MSI and NSIS artifacts for 30 days; first hosted run pending |
 | Installation on this development profile | Not attempted because this machine already has data under the production app identifier; avoid replacing the existing local profile |
 | Stable release | Not produced; manual install/upgrade, native file prompts, OS matrix, signing and offline smoke checks remain |

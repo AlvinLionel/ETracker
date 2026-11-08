@@ -936,36 +936,34 @@ Import reminders must be based on the last successfully reconciled statement per
 
 ### 13.1 Attachments
 
-**Proposed table:** `attachments`
+**Implemented table:** `transaction_attachments` (migration `0017_transaction_attachments.sql`)
 
 Stores metadata for files associated with transactions and other application records.
 
-Proposed fields:
+Implemented fields:
 
 | Field | Purpose |
 |---|---|
 | id | Unique attachment identifier |
-| file_name | Original file name |
-| storage_path | Managed storage location |
-| mime_type | File type |
-| file_size | File size |
-| file_hash | Integrity reference |
+| transaction_id | Associated financial transaction |
+| stored_name | UUID-based, application-managed file name |
+| original_name | Display name selected by the user |
+| media_type | Validated PDF, JPEG or PNG media type |
+| size_bytes | File size (1 byte to 10 MiB) |
+| sha256 | Integrity reference |
 | created_at | Creation timestamp |
 
 ### 13.2 Attachment Relationships
 
-An attachment may be associated with:
-- Financial transactions.
-- Imported statements.
-- Relevant supporting records.
+The current implementation associates files with financial transactions. Statement source files continue to use the separate import-source retention workflow; they are not copied into this table.
 
-The final relationship design should support multiple attachments without storing large file contents directly inside ordinary transaction records.
+Multiple files can be associated with each transaction, with a 25 MiB total limit. File contents are stored under the app-data `attachments` directory, not in transaction rows. Edits and voids retain the relationship; removal is explicit and has no automatic expiry.
 
 ### 13.3 Attachment Integrity
 
 The application must detect missing or inaccessible attachments.
 
-Backup and recovery must account for attachment files and their database references together.
+Backup and recovery include attachment bytes and database references together inside the authenticated encrypted backup bundle. Restore validates names, sizes, content types and SHA-256 values before replacing the stored files. Legacy database-only backups remain supported and restore without attachments.
 
 ---
 

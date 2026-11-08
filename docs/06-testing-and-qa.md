@@ -838,6 +838,8 @@ Verify:
 - Backup generation consistency.
 - Recovery from a known-good backup.
 
+The current automated suite verifies transaction attachment validation, SHA-256 integrity, missing-file reporting, attachment persistence through backup/restore, and transaction history UI controls. Manually verify the native attachment picker and opening PDF/image files through the operating system.
+
 ### 12.4 Recovery Tests
 
 Simulate:

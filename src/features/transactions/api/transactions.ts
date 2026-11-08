@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AllocationInput, Category, CreateTransactionInput, EligibleRefund, TransactionAuditRecord, TransactionRecord } from "../types";
+import type { AllocationInput, Category, CreateTransactionInput, EligibleRefund, TransactionAttachment, TransactionAuditRecord, TransactionRecord } from "../types";
 export const createTransaction=(request:CreateTransactionInput)=>invoke<string>("create_transaction",{request});
 export const updateTransaction=(id:string,request:CreateTransactionInput)=>invoke<void>("update_transaction",{id,request});
 export const voidTransaction=(id:string,reason:string)=>invoke<void>("void_transaction",{id,reason});
@@ -10,3 +10,7 @@ export const listActiveCategories=(categoryType:"income"|"expense")=>invoke<Cate
 export const getTransactionAuditHistory=(id:string)=>invoke<TransactionAuditRecord[]>("get_transaction_audit_history",{id});
 export const getTransactionAllocations=(id:string)=>invoke<AllocationInput[]>("get_transaction_allocations",{id});
 export const listEligibleRefunds=(accountId:string)=>invoke<EligibleRefund[]>("list_eligible_refunds",{accountId});
+export const listTransactionAttachments=(transactionId:string)=>invoke<TransactionAttachment[]>("list_transaction_attachments",{transactionId});
+export const addTransactionAttachment=(transactionId:string)=>invoke<TransactionAttachment|null>("add_transaction_attachment",{transactionId});
+export const openTransactionAttachment=(attachmentId:string)=>invoke<void>("open_transaction_attachment",{attachmentId});
+export const removeTransactionAttachment=(attachmentId:string)=>invoke<void>("remove_transaction_attachment",{attachmentId});

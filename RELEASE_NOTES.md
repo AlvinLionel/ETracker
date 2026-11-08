@@ -9,9 +9,9 @@ This first usable preview provides local accounts, transaction history and audit
 
 Both packages are unsigned. Keep encrypted backups outside the application data folder. See [`docs/first-use-guide.md`](docs/first-use-guide.md) before using real financial data.
 
-## Locally built artifact checksums
+## Previously built artifact checksums
 
-SHA-256 (verified on 8 November 2026; installers include bundled offline English OCR):
+These checksums identify the OCR milestone installers built on 8 November 2026. They predate transaction attachments and do not represent the current repository source. Rebuild both packages before distributing this source revision.
 
 - MSI (10.96 MiB): `4AD236B0E168585DB0AC19A43DDAB899DDE3F18C951C7A3239585F2CF2A71658`
 - NSIS (9.88 MiB): `124E5D57E3C00991707E3EA0DA73F0006F39531D22FBB27F0E918B912C86F366`

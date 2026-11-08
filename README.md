@@ -8,7 +8,7 @@ Built with a local-first approach, ETracker is designed to keep core financial f
 
 ## Project Status
 
-ETracker is a local-first personal finance workspace. It supports accounts, transaction entry and audit history, transfers, statement imports with review and reconciliation, editable monthly budget plans, savings and subscriptions, analytics, forecasts, encrypted backup and recovery, and light/dark themes. CSV, Excel and PDF statements can be staged locally; password-protected PDFs can be unlocked in the import workspace, and image-only pages use bundled offline English OCR. Imported PDF rows remain uncertain until reviewed. Institution-specific statement parsers are not available yet.
+ETracker is a local-first personal finance workspace. It supports accounts, transaction entry and audit history, receipt/document attachments, transfers, statement imports with review and reconciliation, editable monthly budget plans, savings and subscriptions, analytics, forecasts, encrypted backup and recovery, and light/dark themes. CSV, Excel and PDF statements can be staged locally; password-protected PDFs can be unlocked in the import workspace, and image-only pages use bundled offline English OCR. Imported PDF rows remain uncertain until reviewed. Institution-specific statement parsers are not available yet.
 
 ## Technology Stack
 
