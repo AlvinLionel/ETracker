@@ -174,17 +174,11 @@ mod tests {
 
     #[test]
     fn normalizes_opening_balance_timestamp_to_utc() {
-        let balance = OpeningBalance::new(
-            150_000,
-            "2026-11-05T10:00:00+03:00".to_string(),
-        )
-        .unwrap();
+        let balance =
+            OpeningBalance::new(150_000, "2026-11-05T10:00:00+03:00".to_string()).unwrap();
 
         assert_eq!(balance.amount_minor, 150_000);
-        assert_eq!(
-            balance.occurred_at,
-            "2026-11-05T07:00:00.000Z"
-        );
+        assert_eq!(balance.occurred_at, "2026-11-05T07:00:00.000Z");
     }
 
     #[test]
@@ -199,10 +193,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_opening_balance_date() {
-        let result = OpeningBalance::new(
-            150_000,
-            "not-a-date".to_string(),
-        );
+        let result = OpeningBalance::new(150_000, "not-a-date".to_string());
 
         assert_eq!(
             result.unwrap_err(),
@@ -212,10 +203,7 @@ mod tests {
 
     #[test]
     fn rejects_date_without_timezone() {
-        let result = OpeningBalance::new(
-            150_000,
-            "2026-11-05T10:00:00".to_string(),
-        );
+        let result = OpeningBalance::new(150_000, "2026-11-05T10:00:00".to_string());
 
         assert_eq!(
             result.unwrap_err(),

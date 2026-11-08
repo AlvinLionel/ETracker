@@ -536,7 +536,7 @@ mod tests {
         assert!(!updated.is_archived());
 
         let archived = repository
-            .archive(&created.id,0)
+            .archive(&created.id, 0)
             .expect("Archiving failed")
             .expect("Account should exist");
 
@@ -582,7 +582,7 @@ mod tests {
             )
             .expect("Second account creation failed");
 
-        repository.archive(&first.id,0).expect("Archiving failed");
+        repository.archive(&first.id, 0).expect("Archiving failed");
 
         let archived = repository
             .list_archived()
