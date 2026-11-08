@@ -64,7 +64,17 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run test:run
 ```
 
-The optional Windows desktop end-to-end workflow uses Edge WebDriver. Install the matching driver with `npm run setup:e2e`, then run `npm run test:e2e`.
+The Windows desktop end-to-end workflow uses Edge WebDriver. Install the matching driver with `npm run setup:e2e`, then run `npm run test:e2e`.
+
+### Build Windows installers
+
+On a Windows build machine with the Rust and Node prerequisites above, run:
+
+```powershell
+.\node_modules\.bin\tauri.cmd build --bundles msi,nsis
+```
+
+The x64 MSI and NSIS installers are written under `src-tauri/target/release/bundle/`. They are currently unsigned. Read the [first-use guide](docs/first-use-guide.md) before importing personal financial data or restoring a backup.
 
 ## Project Structure
 
@@ -84,7 +94,9 @@ The frontend follows a feature-oriented organization, while the Rust backend fol
 
 ## Documentation
 
-Detailed project documentation is maintained in [`docs/`](docs/)
+Detailed project documentation is maintained in [`docs/`](docs/). Start with the [first-use guide](docs/first-use-guide.md) for the current desktop product.
+
+The current preview build details and package checksums are in [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 ## Development Philosophy
 

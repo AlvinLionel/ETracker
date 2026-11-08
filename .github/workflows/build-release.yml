@@ -1,0 +1,43 @@
+name: Build Windows installers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-installers:
+    name: Build Windows x64 packages
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build MSI and NSIS installers
+        run: .\node_modules\.bin\tauri.cmd build --bundles msi,nsis
+
+      - name: Upload unsigned installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: etracker-windows-x64-installers
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30

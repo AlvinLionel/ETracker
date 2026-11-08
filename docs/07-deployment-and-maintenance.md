@@ -1,9 +1,9 @@
 # ETracker — Deployment and Maintenance
 
 **Document ID:** DOC-007  
-**Version:** 0.2  
-**Status:** Revised Draft — Pre-Implementation  
-**Last Updated:** 4 November 2026
+**Version:** 0.3
+**Status:** Implemented baseline — preview release verification in progress
+**Last Updated:** 8 November 2026
 
 ---
 
@@ -153,9 +153,7 @@ Build configuration must prevent accidental use of test settings in production r
 
 ### 4.1 Packaging
 
-The application should eventually be packaged using the selected desktop framework's supported Windows packaging process.
-
-The final installer format remains subject to evaluation.
+Tauri builds unsigned Windows x64 MSI and NSIS setup packages. For the 0.1.x preview, MSI is the primary managed-install option and NSIS is an alternative. A tag or manual workflow run builds both and retains the artifacts for 30 days; the workflow does not publish public releases (`DB-036`).
 
 ### 4.2 Installation Requirements
 
@@ -331,7 +329,7 @@ A complete backup should account for:
 
 ### 7.3 Backup Creation
 
-Settings supports user-initiated encrypted backups and restore. Backups are downloaded through the desktop file download flow; automatic scheduling and app-managed generations are not implemented.
+Settings supports user-initiated encrypted backups and restore. Backups are downloaded through the desktop file download flow; automatic scheduling and app-managed generations are not implemented. Native Windows save/open prompts have not yet been verified.
 
 The SQLite backup API creates a consistent database snapshot. Current managed statement source files are included because they are stored in the database.
 
@@ -774,23 +772,23 @@ The exact synchronization architecture must be designed and approved separately 
 
 | ID | Topic | Status |
 |---|---|---|
-| DM-001 | Supported Windows versions | Pending evaluation |
-| DM-002 | Installer format | Pending evaluation |
+| DM-001 | Supported Windows versions | Pending evaluation against a Windows version matrix |
+| DM-002 | Installer format | Approved: unsigned x64 MSI (primary) and NSIS (alternative) for 0.1.x preview (`DB-036`) |
 | DM-003 | Code signing and installer trust | Pending evaluation |
-| DM-004 | Update and distribution mechanism | Pending evaluation |
+| DM-004 | Update and distribution mechanism | Approved: manual versioned updates; no automatic or public release publishing for preview (`DB-036`) |
 | DM-005 | Backup format and retention | Approved: manual encrypted exports, user-managed retention (`DB-030`) |
 | DM-006 | Backup encryption | Approved: passphrase-based authenticated encryption (`DB-030`) |
 | DM-007 | Database migration framework | Implemented with versioned SQLite migrations; rollback after page-copy failure remains unguaranteed |
 | DM-008 | Log retention and diagnostic export | Redacted local export implemented (`DB-031`); persistent logging/retention pending |
-| DM-009 | Release branch and tagging policy | Pending workflow finalization |
-| DM-010 | Stable release cadence | Pending |
+| DM-009 | Release branch and tagging policy | Approved: SemVer, `vMAJOR.MINOR.PATCH`, 0.x preview (`DB-036`) |
+| DM-010 | Stable release cadence | No fixed cadence for 0.x preview; release only at verified milestones (`DB-036`) |
 | DM-011 | External AI credential handling | Pending security design |
 
 ---
 
 ## 18. Current Deployment and Maintenance Status
 
-As of 7 November 2026:
+As of 8 November 2026:
 
 | Area | Status |
 |---|---|
@@ -805,7 +803,7 @@ As of 7 November 2026:
 | Logging and diagnostics requirements | Defined |
 | Security maintenance requirements | Defined |
 | Release management approach | Defined |
-| Semantic versioning | Proposed |
+| Semantic versioning | Approved for 0.x preview tags (`DB-036`) |
 | CI strategy | Defined conceptually |
 | Maintenance categories | Defined |
 | Linux compatibility direction | Approved for future consideration |
@@ -814,7 +812,10 @@ As of 7 November 2026:
 | Database migrations | Implemented and tested |
 | Encrypted backup and restoration | Implemented and automated tests pass; manual desktop verification pending |
 | CI pipeline | Implemented for Windows: formatting, frontend tests/build and Rust tests; first hosted run pending |
-| Stable release | Not produced |
+| First preview packages | Built locally: MSI 4.24 MiB, NSIS 3.21 MiB; not committed to source control |
+| Installer workflow | Configured to retain unsigned MSI and NSIS artifacts for 30 days; first hosted run pending |
+| Installation on this development profile | Not attempted because this machine already has data under the production app identifier; avoid replacing the existing local profile |
+| Stable release | Not produced; manual install/upgrade, native file prompts, OS matrix, signing and offline smoke checks remain |
 
 ---
 

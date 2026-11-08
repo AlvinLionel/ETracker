@@ -755,6 +755,18 @@ Use exact account, date, transaction type and amount as a candidate signal only.
 ### Rationale and implications
 False positives can hide legitimate repeated purchases, while false negatives can create duplicate ledger entries. The current review-first workflow favors transparency and explicit user choice. The candidate signal is a baseline, not a claim that the row is a duplicate.
 
+## DB-036 — First Windows preview distribution
+
+**Status:** Approved
+**Date:** 8 November 2026
+**Related documents:** DOC-006, DOC-007
+
+### Decision
+For the 0.1.x preview, produce unsigned Windows x64 MSI and NSIS installers. Treat MSI as the primary managed-install option and NSIS as an alternate setup package. Use SemVer with `vMAJOR.MINOR.PATCH` source tags; keep preview releases in `0.x`. Updates are manual and versioned. CI may build and retain installer artifacts for 30 days, but must not publish a public release automatically. Do not claim stable status until install/upgrade, backup file selection, OS support and the other release checks are verified.
+
+### Rationale and implications
+This makes the first product build installable while avoiding reliance on an unconfigured signing identity or release service. Unsigned packages may show a Windows publisher warning. A separate later decision is needed before public distribution or automatic updates.
+
 ---
 
 ## DB-030 — Encrypted local backup and restore
@@ -1154,12 +1166,8 @@ The following matters require additional research, technical validation or expli
 | ID | Pending decision | Priority | Related document |
 |---|---|---|---|
 | PEND-021 | Supported Windows versions | High | DOC-007 |
-| PEND-022 | Installer format and distribution | Medium | DOC-007 |
 | PEND-023 | Code signing and integrity verification | Medium | DOC-007 |
-| PEND-024 | Application update distribution strategy | Medium | DOC-007 |
 | PEND-028 | Persistent diagnostic logging and retention policy | Medium | DOC-007 |
-| PEND-029 | Release branch, tagging and versioning policy | Medium | DOC-007 |
-| PEND-030 | Release cadence | Low | DOC-007 |
 | PEND-031 | Secure storage and handling of optional AI credentials | High | DOC-003, DOC-007 |
 
 ---
