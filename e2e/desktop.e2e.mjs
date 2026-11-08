@@ -346,6 +346,14 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
     return (await batches[0].findElements(By.xpath(".//button[normalize-space()='Finalize']"))).length > 0;
   }, 5_000);
   assert.equal((await driver.findElements(By.xpath(`//tbody/tr[.//td[normalize-space()='uncertain']]`))).length, 1);
+  await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Discard']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]//span[normalize-space()='discarded']`)), 10_000);
+  assert.equal((await invalidBatchItem.findElements(By.xpath(".//button[normalize-space()='Finalize']"))).length, 0);
+  assert.equal((await invalidBatchItem.findElements(By.xpath(".//button[normalize-space()='Download source']"))).length, 1);
+  await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[contains(.,'was discarded and is read-only')]")), 10_000);
   await unlink(invalidStatementPath).catch(() => {});
 
   await navigateTo("Dashboard");

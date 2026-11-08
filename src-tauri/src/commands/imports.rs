@@ -234,6 +234,12 @@ pub fn list_import_batches(state: State<'_, Database>) -> Result<Vec<ImportBatch
         .map_err(|_| "Import batches could not be loaded.".into())
 }
 #[tauri::command]
+pub fn discard_import_batch(state: State<'_, Database>, batch_id: String) -> Result<(), String> {
+    SqliteImportRepository::new(state.inner())
+        .discard_batch(&batch_id)
+        .map_err(|_| "Only an unfinished import workspace can be discarded.".into())
+}
+#[tauri::command]
 pub fn compare_import_revision(
     state: State<'_, Database>,
     batch_id: String,

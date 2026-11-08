@@ -41,6 +41,7 @@ pub fn run() {
             commands::imports::create_import_batch,
             commands::imports::get_import_source_file,
             commands::imports::list_import_batches,
+            commands::imports::discard_import_batch,
             commands::imports::compare_import_revision,
             commands::imports::list_import_revision_changes,
             commands::imports::set_import_revision_resolution,

@@ -731,6 +731,18 @@ Every linked refund keeps its own audit history and also records a corresponding
 ### Rationale and implications
 Users can trace a refund from the expense it relates to while preserving an independent history for the refund transaction. Migration 0015 adds the lifecycle action names while preserving earlier audit records.
 
+## DB-034 — Discard unfinished statement workspaces
+
+**Status:** Approved
+**Date:** 8 November 2026
+**Related documents:** DOC-002, DOC-004, DOC-006
+
+### Decision
+Users may discard an unfinished statement workspace. Discarding makes the workspace read-only and prevents staged-record changes or finalization; it does not delete its history or source file. Retain its source bytes under the existing 90-day retention policy, then remove them during normal expiry cleanup. Finalized workspaces cannot be discarded.
+
+### Rationale and implications
+This supports safe recovery from mistaken or abandoned imports without erasing an audit trail or changing the approved source-file retention period. Migration 0016 records discard time and database triggers enforce read-only state.
+
 ---
 
 ## DB-030 — Encrypted local backup and restore
@@ -1103,7 +1115,6 @@ The following matters require additional research, technical validation or expli
 | PEND-002 | Institution-specific statement normalization | High | DOC-004 |
 | PEND-003 | Duplicate confidence thresholds and matching rules | High | DOC-004 |
 | PEND-004 | Treatment of pending transactions in reconciliation | High | DOC-004 |
-| PEND-006 | Import batch cancellation and discard behavior (source-file retention resolved in DB-026) | Medium | DOC-004 |
 | PEND-007 | Exact savings-goal, contribution and ledger relationship | Medium | DOC-004 |
 | PEND-008 | Local OCR library for scanned statement files (text-based PDF extraction resolved in DB-028) | High | DOC-003, DOC-004 |
 

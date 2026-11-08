@@ -1564,7 +1564,7 @@ impl SqliteImportRepository<'_> {
             .connection()
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
-        let mut s=c.prepare("SELECT id,account_id,source_file_name,source_format,status,reconciliation_status,created_at,revision_of_batch_id FROM import_batches ORDER BY created_at DESC").map_err(|e|ImportError::Database(e.to_string()))?;
+        let mut s=c.prepare("SELECT id,account_id,source_file_name,source_format,CASE WHEN discarded_at IS NOT NULL THEN 'discarded' ELSE status END,reconciliation_status,created_at,revision_of_batch_id FROM import_batches ORDER BY created_at DESC").map_err(|e|ImportError::Database(e.to_string()))?;
         s.query_map([], |r| {
             Ok(ImportBatchRecord {
                 id: r.get(0)?,
@@ -1580,6 +1580,33 @@ impl SqliteImportRepository<'_> {
         .map_err(|e| ImportError::Database(e.to_string()))?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| ImportError::Database(e.to_string()))
+    }
+
+    pub fn discard_batch(&self, batch_id: &str) -> Result<(), ImportError> {
+        let mut connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = connection
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let changed = tx
+            .execute(
+                "UPDATE import_batches SET discarded_at=CURRENT_TIMESTAMP WHERE id=?1 AND status='review' AND discarded_at IS NULL",
+                [batch_id],
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if changed != 1 {
+            return Err(ImportError::InvalidBatch);
+        }
+        tx.execute(
+            "INSERT INTO import_logs(id,batch_id,stage,severity,message,corrective_action) VALUES (?1,?2,'review','INFO','Import workspace discarded','The workspace is read-only; its source file remains available during the retention period.')",
+            params![Uuid::new_v4().to_string(), batch_id],
+        )
+        .map_err(|e| ImportError::Database(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))
     }
 }
 fn calculate_reconciliation(
@@ -1935,6 +1962,37 @@ mod tests {
             stored_hash,
             format!("{:x}", Sha256::digest(b"statement fixture"))
         );
+    }
+
+    #[test]
+    fn discarding_workspace_makes_it_read_only_and_retains_source_for_cleanup_period() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let id = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+
+        repository.discard_batch(&id).unwrap();
+        assert_eq!(repository.list_batches().unwrap()[0].status, "discarded");
+        assert_eq!(
+            repository.source_file_contents(&id).unwrap(),
+            b"statement fixture"
+        );
+        assert!(repository.discard_batch(&id).is_err());
+
+        let connection = db.connection().lock().unwrap();
+        let blocked = connection.execute(
+            "INSERT INTO imported_records(id,batch_id,source_row_reference,original_date,original_description,original_amount,currency_code,validation_status) VALUES ('discarded-row',?1,'2','2026-11-01','Lunch','10.00','KES','uncertain')",
+            [&id],
+        );
+        assert!(blocked.is_err());
     }
 
     #[test]

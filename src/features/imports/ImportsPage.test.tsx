@@ -271,6 +271,20 @@ describe("ImportsPage", () => {
     vi.unstubAllGlobals();
   });
 
+  it("requires confirmation before discarding an unfinished workspace", async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("discard_import_batch", { batchId: "batch-1" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("90-day retention period"));
+    vi.unstubAllGlobals();
+  });
+
   it("submits statement balances for reconciliation", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
