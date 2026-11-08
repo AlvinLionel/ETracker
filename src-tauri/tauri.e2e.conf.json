@@ -1,5 +1,8 @@
 {
   "identifier": "com.etracker.app.e2e",
+  "build": {
+    "beforeBuildCommand": "npm run build:e2e:frontend"
+  },
   "app": {
     "appDirectoriesOverride": "./etracker-e2e-data"
   }

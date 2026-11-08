@@ -96,6 +96,8 @@ The frontend follows a feature-oriented organization, while the Rust backend fol
 
 Detailed project documentation is maintained in [`docs/`](docs/). Start with the [first-use guide](docs/first-use-guide.md) for the current desktop product.
 
+Proposed ideas that are outside the preview scope are tracked in [Future Enhancements](docs/09-future-enhancements.md).
+
 The current preview build details and package checksums are in [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 ## Development Philosophy

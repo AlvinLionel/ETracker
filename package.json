@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:e2e": "tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json",
+    "build:e2e:frontend": "tsc && vite build --mode e2e",
     "test:e2e": "npm run build:e2e && node --test e2e/desktop.e2e.mjs",
     "setup:e2e": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-e2e.ps1",
     "test": "vitest",
@@ -17,6 +18,8 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.4",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-fs": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "pdfjs-dist": "^6.5.438",
     "react": "^19.1.0",

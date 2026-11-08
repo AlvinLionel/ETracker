@@ -329,7 +329,7 @@ A complete backup should account for:
 
 ### 7.3 Backup Creation
 
-Settings supports user-initiated encrypted backups and restore. Backups are downloaded through the desktop file download flow; automatic scheduling and app-managed generations are not implemented. Native Windows save/open prompts have not yet been verified.
+Settings supports user-initiated encrypted backups and restore. Backup creation opens a native save dialog with the ETracker backup extension and writes encrypted bytes to the selected path. Restore uses a user-selected file. Automatic scheduling and app-managed generations are not implemented. Native Windows dialogs still need manual verification.
 
 The SQLite backup API creates a consistent database snapshot. Current managed statement source files are included because they are stored in the database.
 
@@ -812,7 +812,7 @@ As of 8 November 2026:
 | Database migrations | Implemented and tested |
 | Encrypted backup and restoration | Implemented and automated tests pass; manual desktop verification pending |
 | CI pipeline | Implemented for Windows: formatting, frontend tests/build and Rust tests; first hosted run pending |
-| First preview packages | Built locally: MSI 4.24 MiB, NSIS 3.21 MiB; not committed to source control |
+| First preview packages | Rebuilt locally on 8 November 2026 after native backup save support: MSI 4.45 MiB, NSIS 3.35 MiB; not committed to source control |
 | Installer workflow | Configured to retain unsigned MSI and NSIS artifacts for 30 days; first hosted run pending |
 | Installation on this development profile | Not attempted because this machine already has data under the production app identifier; avoid replacing the existing local profile |
 | Stable release | Not produced; manual install/upgrade, native file prompts, OS matrix, signing and offline smoke checks remain |

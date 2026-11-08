@@ -2,15 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ImportsPage from "./ImportsPage";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn(), pdfText: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn(), pdfText: vi.fn(), confirmAction: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../accounts/api/accounts", () => ({ listActiveAccounts: mocks.accounts }));
 vi.mock("./pdfText", () => ({ extractPdfTextPages: mocks.pdfText }));
+vi.mock("../../shared/confirmAction", () => ({ confirmAction: mocks.confirmAction }));
 
 describe("ImportsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.pdfText.mockResolvedValue(["2026-11-01 Grocery shop 12.50"]);
+    mocks.confirmAction.mockResolvedValue(true);
     mocks.accounts.mockResolvedValue([{ id: "a", name: "Main", currency_code: "KES" }]);
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
@@ -273,8 +275,6 @@ describe("ImportsPage", () => {
   });
 
   it("requires confirmation before discarding an unfinished workspace", async () => {
-    const confirm = vi.fn(() => true);
-    vi.stubGlobal("confirm", confirm);
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
       return Promise.resolve([]);
@@ -282,8 +282,18 @@ describe("ImportsPage", () => {
     render(<ImportsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("discard_import_batch", { batchId: "batch-1" }));
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("90-day retention period"));
-    vi.unstubAllGlobals();
+    expect(mocks.confirmAction).toHaveBeenCalledWith(expect.stringContaining("90-day retention period"));
+  });
+
+  it("keeps an unfinished workspace when discard is declined", async () => {
+    mocks.confirmAction.mockResolvedValue(false);
+    mocks.invoke.mockImplementation((command: string) => command === "list_import_batches"
+      ? Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }])
+      : Promise.resolve([]));
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(mocks.confirmAction).toHaveBeenCalled());
+    expect(mocks.invoke).not.toHaveBeenCalledWith("discard_import_batch", expect.anything());
   });
 
   it("submits statement balances for reconciliation", async () => {

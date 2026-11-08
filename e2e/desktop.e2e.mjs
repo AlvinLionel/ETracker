@@ -221,15 +221,11 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
 
   const refundRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${refundDescription}'] and .//td[normalize-space()='refund']]`));
   await refundRow.findElement(By.xpath(".//button[normalize-space()='Reverse']")).click();
-  await driver.wait(until.alertIsPresent(), 5_000);
-  await driver.switchTo().alert().accept();
   await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${refundDescription}'] and .//td[normalize-space()='reversal']]`)), 15_000);
 
   await expenseRow.findElement(By.xpath(".//button[normalize-space()='Void']")).click();
   await driver.wait(until.alertIsPresent(), 5_000);
   await driver.switchTo().alert().sendKeys("E2E void regression");
-  await driver.switchTo().alert().accept();
-  await driver.wait(until.alertIsPresent(), 5_000);
   await driver.switchTo().alert().accept();
   await driver.wait(async () => {
     const currentRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${editedExpenseDescription}']]`));
@@ -238,8 +234,6 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
 
   const transferFeeRow = await driver.findElement(By.xpath("//tbody/tr[.//td[normalize-space()='Transfer fee'] and .//td[normalize-space()='expense']]"));
   await transferFeeRow.findElement(By.xpath(".//button[normalize-space()='Reverse']")).click();
-  await driver.wait(until.alertIsPresent(), 5_000);
-  await driver.switchTo().alert().accept();
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='reversal']]")), 15_000);
 
   await writeFile(statementPath, `Date,Amount,Memo\n2026-11-01,8.00,${importDescription}\n`, "utf8");
@@ -302,8 +296,6 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Outcome:') and contains(.,'reconciled')]")), 15_000);
   assert.equal((await importedRow.findElements(By.xpath(".//td[normalize-space()='corrected']"))).length, 1);
   await batchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
-  await driver.wait(until.alertIsPresent(), 5_000);
-  await driver.switchTo().alert().accept();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized 1 transactions')]")), 15_000);
   await unlink(statementPath).catch(() => {});
 
@@ -323,8 +315,6 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await new Select(revisedDecision).selectByValue("use_revised");
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Statement change decision saved')]")), 15_000);
   await revisedBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
-  await driver.wait(until.alertIsPresent(), 5_000);
-  await driver.switchTo().alert().accept();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized')]")), 15_000);
   await unlink(revisedStatementPath).catch(() => {});
 
@@ -338,8 +328,6 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='uncertain']]")), 15_000);
   await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
-  await driver.wait(until.alertIsPresent(), 5_000);
-  await driver.switchTo().alert().accept();
   await driver.wait(async () => {
     const batches = await driver.findElements(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]`));
     if (!batches[0]) return false;
@@ -347,8 +335,6 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   }, 5_000);
   assert.equal((await driver.findElements(By.xpath(`//tbody/tr[.//td[normalize-space()='uncertain']]`))).length, 1);
   await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Discard']")).click();
-  await driver.wait(until.alertIsPresent(), 5_000);
-  await driver.switchTo().alert().accept();
   await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]//span[normalize-space()='discarded']`)), 10_000);
   assert.equal((await invalidBatchItem.findElements(By.xpath(".//button[normalize-space()='Finalize']"))).length, 0);
   assert.equal((await invalidBatchItem.findElements(By.xpath(".//button[normalize-space()='Download source']"))).length, 1);

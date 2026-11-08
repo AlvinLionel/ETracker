@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import TransactionsPage from "./TransactionsPage";
 
-const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),eligibleRefunds:vi.fn(),create:vi.fn(),list:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn()}));
+const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),eligibleRefunds:vi.fn(),create:vi.fn(),list:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn(),confirmAction:vi.fn()}));
 vi.mock("../accounts/api/accounts",()=>({listActiveAccounts:mocks.accounts}));
 vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,listActiveCategories:mocks.categories,listEligibleRefunds:mocks.eligibleRefunds,updateTransaction:mocks.update,getTransactionAllocations:mocks.allocations,getTransactionAuditHistory:mocks.audit,voidTransaction:mocks.void,reverseTransaction:mocks.reverse,createTransfer:mocks.transfer}));
+vi.mock("../../shared/confirmAction",()=>({confirmAction:mocks.confirmAction}));
 
 describe("TransactionsPage",()=>{
- beforeEach(()=>{vi.clearAllMocks();vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.eligibleRefunds.mockResolvedValue([{transaction_id:"original",amount_minor:1000,refundable_minor:700,occurred_at:"2026-11-01T09:00:00Z",description:"Shop"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);});
+ beforeEach(()=>{vi.clearAllMocks();mocks.confirmAction.mockResolvedValue(true);vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.eligibleRefunds.mockResolvedValue([{transaction_id:"original",amount_minor:1000,refundable_minor:700,occurred_at:"2026-11-01T09:00:00Z",description:"Shop"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);});
  it("allows an uncategorized expense",async()=>{
   render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
@@ -53,7 +54,7 @@ describe("TransactionsPage",()=>{
  });
  it("requires a reason and confirmation before voiding",async()=>{
   mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);
-  vi.spyOn(window,"prompt").mockReturnValue("Duplicate entry"); vi.spyOn(window,"confirm").mockReturnValue(true);
+  vi.spyOn(window,"prompt").mockReturnValue("Duplicate entry");
   render(<TransactionsPage/>); fireEvent.click(await screen.findByRole("button",{name:"Void"}));
   await waitFor(()=>expect(mocks.void).toHaveBeenCalledWith("tx","Duplicate entry"));
  });
@@ -62,6 +63,13 @@ describe("TransactionsPage",()=>{
   vi.spyOn(window,"confirm").mockReturnValue(true);
   render(<TransactionsPage/>); fireEvent.click(await screen.findByRole("button",{name:"Reverse"}));
   await waitFor(()=>expect(mocks.reverse).toHaveBeenCalledWith("tx"));
+ });
+ it("does not reverse a transaction when the user declines",async()=>{
+  mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);
+  mocks.confirmAction.mockResolvedValue(false);
+  render(<TransactionsPage/>); fireEvent.click(await screen.findByRole("button",{name:"Reverse"}));
+  await waitFor(()=>expect(mocks.confirmAction).toHaveBeenCalled());
+  expect(mocks.reverse).not.toHaveBeenCalled();
  });
  it("records an inter-account transfer and its optional fee",async()=>{
   render(<TransactionsPage/>);

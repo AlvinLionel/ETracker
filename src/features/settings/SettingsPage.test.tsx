@@ -3,12 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsPage from "./SettingsPage";
 
 const invoke = vi.fn();
+const fileDialog = vi.hoisted(() => ({ save: vi.fn(), writeFile: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ save: fileDialog.save }));
+vi.mock("@tauri-apps/plugin-fs", () => ({ writeFile: fileDialog.writeFile }));
 const dateInDays = (days: number) => { const date = new Date(); date.setDate(date.getDate() + days); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
 
 describe("SettingsPage", () => {
   beforeEach(() => {
     invoke.mockReset();
+    fileDialog.save.mockReset().mockResolvedValue("C:\\Users\\Test\\ETracker_backup.etracker-backup");
+    fileDialog.writeFile.mockReset().mockResolvedValue(undefined);
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
       ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
       : command === "list_subscriptions" ? Promise.resolve([
@@ -61,23 +66,38 @@ describe("SettingsPage", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("creates a passphrase-encrypted backup only after confirmation", async () => {
+  it("saves a passphrase-encrypted backup to a user-selected file only after confirmation", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
       ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : command === "export_encrypted_backup" ? Promise.resolve("YWJj") : Promise.resolve());
-    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:backup");
-    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { container } = render(<SettingsPage />);
     await screen.findByRole("heading", { name: "Encrypted backup and restore" });
     fireEvent.change(container.querySelector<HTMLInputElement>('input[aria-label="Backup passphrase"]')!, { target: { value: "a sufficiently long passphrase" } });
-    const download = screen.getByRole("button", { name: "Download encrypted backup" });
+    const download = screen.getByRole("button", { name: "Save encrypted backup" });
     expect(download).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Confirm backup passphrase"), { target: { value: "a sufficiently long passphrase" } });
     fireEvent.click(download);
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("export_encrypted_backup", { passphrase: "a sufficiently long passphrase" }));
-    expect(create).toHaveBeenCalled(); expect(revoke).toHaveBeenCalledWith("blob:backup");
+    await waitFor(() => expect(fileDialog.save).toHaveBeenCalledWith(expect.objectContaining({ filters: [{ name: "ETracker encrypted backup", extensions: ["etracker-backup"] }] })));
+    expect(fileDialog.writeFile).toHaveBeenCalledWith("C:\\Users\\Test\\ETracker_backup.etracker-backup", new Uint8Array([97, 98, 99]));
     expect(await screen.findByText(/passphrase separately/)).toBeInTheDocument();
+  });
+
+  it("does not write a backup when the native save dialog is cancelled", async () => {
+    fileDialog.save.mockResolvedValue(null);
+    invoke.mockImplementation((command: string) => command === "get_user_preferences"
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      : command === "list_subscriptions" ? Promise.resolve([])
+        : command === "export_encrypted_backup" ? Promise.resolve("YWJj") : Promise.resolve());
+    const { container } = render(<SettingsPage />);
+    await screen.findByRole("heading", { name: "Encrypted backup and restore" });
+    fireEvent.change(container.querySelector<HTMLInputElement>('input[aria-label="Backup passphrase"]')!, { target: { value: "a sufficiently long passphrase" } });
+    fireEvent.change(container.querySelector<HTMLInputElement>('input[aria-label="Confirm backup passphrase"]')!, { target: { value: "a sufficiently long passphrase" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save encrypted backup" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Backup save cancelled; no file was written.");
+    expect(fileDialog.writeFile).not.toHaveBeenCalled();
+    expect(container).toBeInTheDocument();
   });
 
   it("requires explicit restore confirmation and reloads after validation", async () => {

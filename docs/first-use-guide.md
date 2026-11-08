@@ -12,7 +12,7 @@ ETracker is a Windows x64 desktop finance workspace. Accounts, statements and pl
 
 ## Keep your data recoverable
 
-Create an encrypted backup from **Settings** and keep it somewhere separate from this computer. Use a unique passphrase of at least 12 characters; ETracker cannot recover a forgotten passphrase. Restoring a backup replaces the current database, so export a fresh backup first if the current data may be needed.
+Create an encrypted backup from **Settings**, choose a save location separate from this computer, and keep the file and passphrase separately. Use a unique passphrase of at least 12 characters; ETracker cannot recover a forgotten passphrase. Restoring a backup replaces the current database, so export a fresh backup first if the current data may be needed.
 
 On Windows, ETracker stores its database under the current user's roaming application-data directory for `com.etracker.app`. Keep this folder intact when updating or uninstalling if you want to preserve the local profile.
 

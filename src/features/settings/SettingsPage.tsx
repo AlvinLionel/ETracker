@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import { applyTheme } from "./theme";
 
 type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: "system" | "light" | "dark" };
@@ -77,11 +79,24 @@ export default function SettingsPage() {
       const encoded = await invoke<string>("export_encrypted_backup", { passphrase: backupPassphrase });
       const binary = atob(encoded);
       const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/octet-stream" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url; link.download = `ETracker_${new Date().toISOString().slice(0, 10)}.etracker-backup`; link.click();
-      URL.revokeObjectURL(url);
+      const filename = `ETracker_${new Date().toISOString().slice(0, 10)}.etracker-backup`;
+      if (import.meta.env.MODE === "e2e") {
+        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url; link.download = filename; link.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const path = await saveDialog({
+          defaultPath: filename,
+          filters: [{ name: "ETracker encrypted backup", extensions: ["etracker-backup"] }],
+        });
+        if (!path) {
+          setMessage("Backup save cancelled; no file was written.");
+          return;
+        }
+        await writeFile(path, bytes);
+      }
       setMessage("Encrypted backup created. Keep your passphrase separately; it cannot be recovered.");
       setBackupPassphrase(""); setBackupConfirmation("");
     } catch { setError("Backup creation failed. Check the passphrase and available storage, then try again."); }
@@ -117,7 +132,7 @@ export default function SettingsPage() {
     <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Appearance</h2><label className="mt-3 block text-sm font-medium">Color theme<select aria-label="Color theme" value={preferences.theme} onChange={(event) => setPreferences((current) => ({ ...current, theme: event.target.value as Preferences["theme"] }))} className="mt-1 block w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2"><option value="system">Use device setting</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p className="mt-2 text-xs text-slate-500">Theme changes apply after saving.</p></section>
     <section aria-live="polite" className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Upcoming payment reminders</h2>{!preferences.subscription_reminders_enabled ? <p className="mt-3 text-sm text-slate-500">Subscription reminders are turned off.</p> : reminders.length === 0 ? <p className="mt-3 text-sm text-slate-500">No active subscriptions are due within {preferences.subscription_reminder_days} days.</p> : <ul className="mt-3 divide-y">{reminders.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span><strong>{item.name}</strong><span className="ml-2 text-slate-500">{item.frequency}</span></span><span>{item.next_due_date} · {money(item.amount_minor, item.currency_code)}</span></li>)}</ul>}</section>
     <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5"><div><h2 className="font-semibold">Encrypted backup and restore</h2><p className="mt-1 text-sm text-slate-600">Backups contain your financial records and retained statement files. Choose a strong passphrase and store it somewhere separate from the backup. ETracker does not save it and cannot recover a forgotten passphrase.</p></div>
-      <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Create backup</h3><label className="block text-sm">Passphrase (at least 12 characters)<input aria-label="Backup passphrase" type="password" autoComplete="new-password" value={backupPassphrase} onChange={(event) => setBackupPassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Confirm passphrase<input aria-label="Confirm backup passphrase" type="password" autoComplete="new-password" value={backupConfirmation} onChange={(event) => setBackupConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={backupBusy || backupPassphrase.length < 12 || backupPassphrase !== backupConfirmation} onClick={exportBackup} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{backupBusy ? "Creating backup…" : "Download encrypted backup"}</button></div>
+      <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Create backup</h3><label className="block text-sm">Passphrase (at least 12 characters)<input aria-label="Backup passphrase" type="password" autoComplete="new-password" value={backupPassphrase} onChange={(event) => setBackupPassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Confirm passphrase<input aria-label="Confirm backup passphrase" type="password" autoComplete="new-password" value={backupConfirmation} onChange={(event) => setBackupConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={backupBusy || backupPassphrase.length < 12 || backupPassphrase !== backupConfirmation} onClick={exportBackup} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{backupBusy ? "Creating backup…" : import.meta.env.MODE === "e2e" ? "Download encrypted backup" : "Save encrypted backup"}</button></div>
       <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Restore backup</h3><p className="text-sm text-slate-600">Restoring replaces all current data with the selected backup. The backup is validated before the current database is changed.</p><label className="block text-sm">Encrypted backup file<input aria-label="Encrypted backup file" type="file" accept=".etracker-backup,application/octet-stream" onChange={(event) => { setRestoreFile(event.target.files?.[0] ?? null); setRestoreComplete(false); }} className="mt-1 block w-full max-w-md text-sm" /></label><label className="block text-sm">Backup passphrase<input aria-label="Restore passphrase" type="password" autoComplete="current-password" value={restorePassphrase} onChange={(event) => setRestorePassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Type RESTORE to confirm replacement<input aria-label="Restore confirmation" value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={restoreBusy || !restoreFile || restorePassphrase.length < 12 || restoreConfirmation !== "RESTORE"} onClick={restoreBackup} className="rounded-md bg-rose-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{restoreBusy ? "Validating and restoring…" : "Replace current data"}</button>{restoreComplete && <button type="button" onClick={() => window.location.reload()} className="ml-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium">Reload ETracker</button>}</div>
     </section>
     <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Local data integrity</h2><p className="mt-1 text-sm text-slate-600">Check SQLite structure and references between saved records.</p><button type="button" disabled={checking} onClick={checkIntegrity} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{checking ? "Checking…" : "Check local data"}</button>{integrity && <div role="status" className="mt-3 text-sm">{integrity.integrity_messages.length === 1 && integrity.integrity_messages[0].toLowerCase() === "ok" && integrity.foreign_key_violations.length === 0 ? <p className="text-emerald-800">The local database passed both checks.</p> : <div className="text-rose-700"><p>Database check found issues. Avoid editing affected records; this report may help diagnose the problem.</p>{integrity.integrity_messages.map((item) => <p key={item}>{item}</p>)}{integrity.foreign_key_violations.map((item) => <p key={item}>{item}</p>)}</div>}</div>}</section>

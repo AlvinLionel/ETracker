@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { confirmAction } from "../../shared/confirmAction";
 
 type Category = { id: string; name: string; category_type: "income" | "expense"; is_system: boolean };
 
@@ -39,7 +40,7 @@ export default function CategoriesPage() {
   }
 
   async function archiveCategory(category: Category) {
-    if (category.is_system || !window.confirm(`Archive ${category.name}? Existing history keeps its category; future records can no longer use it.`)) return;
+    if (category.is_system || !(await confirmAction(`Archive ${category.name}? Existing history keeps its category; future records can no longer use it.`))) return;
     setError("");
     setMessage("");
     try {
