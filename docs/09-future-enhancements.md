@@ -6,7 +6,7 @@
 
 **Scope:** This document is for planning and traceability. An entry here does not automatically become an approved feature, a release requirement, or authorization to implement it.
 
-This backlog supplements the project requirements and design documents; it does not replace or redefine them. FE-001 proposes a receipt-image workflow related to FR-043 (optional attachments) and extends OCR from FR-058 (scanned statement PDFs) to receipt recognition. English OCR for image-only statement PDF pages is already available in the preview; receipt capture and evidence attachments are not. The receipt proposal remains outside preview scope, creates no delivery commitment, and does not change the [software requirements specification](02-software-requirements-specification.md).
+This backlog supplements the project requirements and design documents; it does not replace or redefine them. FE-001 proposes receipt recognition as an extension of the transaction-attachment requirements FR-043 and FR-205–208. Offline English OCR for scanned statement PDFs (FR-058) is available in the preview; transaction attachments and receipt extraction are not. FE-001 remains outside preview scope and creates no delivery commitment. See the [software requirements specification](02-software-requirements-specification.md).
 
 ---
 
@@ -138,8 +138,8 @@ These phases are indicative only. They do not establish delivery dates or author
 #### Open questions for a future specification
 
 - Which image formats, maximum file sizes, and image resolutions should be supported?
-- Which OCR engine provides the best balance of offline capability, accuracy, maintenance, and licensing?
-- Should receipt evidence be stored inside the application database, in managed application storage, or through another approach?
+- Is the existing offline OCR suitable for receipt layout and field extraction, or is additional technology needed?
+- How should managed receipt files be organized, protected and backed up together with their database references?
 - What receipt-retention and deletion controls should users have?
 - How should the system handle receipts paid partly by cash and partly by another account?
 - How should discounts, tips, taxes, deposits, refunds, and multiple currencies be represented?
