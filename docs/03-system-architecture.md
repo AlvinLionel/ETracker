@@ -1148,7 +1148,7 @@ Technology selection must consider:
 
 ### 15.2 Specialist Libraries
 
-Libraries for PDF extraction, OCR and spreadsheet processing must be evaluated separately.
+PDF.js handles local text extraction and rendering. Tesseract.js and its bundled English trained data support offline OCR in the frontend worker. The import workflow stages text as uncertain page/line records; provider-specific field normalization remains separate and requires verified samples.
 
 Selection should use representative real-world financial documents.
 

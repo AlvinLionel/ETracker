@@ -431,7 +431,7 @@ The generic text-based PDF path currently extracts selectable page text into unc
 
 Verify OCR processing and identification of uncertain extracted values.
 
-Scanned-PDF OCR remains unsupported; the application must report a recoverable extraction failure and preserve the saved workspace/source file.
+Scanned PDF pages are processed locally with the bundled English OCR model. Verify that image-only rows are staged as uncertain with page/line references, OCR progress appears, no transaction is auto-posted, and the workspace/source remains available after OCR errors. Test English statement samples across 200 pages or fewer. Other languages and low-quality scans require manual accuracy review.
 
 **QA-IMP-003 — Extraction errors**
 

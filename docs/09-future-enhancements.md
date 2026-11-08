@@ -6,7 +6,7 @@
 
 **Scope:** This document is for planning and traceability. An entry here does not automatically become an approved feature, a release requirement, or authorization to implement it.
 
-This backlog supplements the project requirements and design documents; it does not replace or redefine them. FE-001 expands on receipt attachment and scanned-document OCR requirements FR-043 and FR-058 in the [software requirements specification](02-software-requirements-specification.md). Neither capability is implemented in the 0.1.0 preview, and this proposal does not set a delivery commitment or change those requirements.
+This backlog supplements the project requirements and design documents; it does not replace or redefine them. FE-001 proposes a receipt-image workflow related to FR-043 (optional attachments) and extends OCR from FR-058 (scanned statement PDFs) to receipt recognition. English OCR for image-only statement PDF pages is already available in the preview; receipt capture and evidence attachments are not. The receipt proposal remains outside preview scope, creates no delivery commitment, and does not change the [software requirements specification](02-software-requirements-specification.md).
 
 ---
 

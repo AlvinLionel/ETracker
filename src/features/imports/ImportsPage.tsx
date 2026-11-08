@@ -36,6 +36,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   const [accounts,setAccounts]=useState<Account[]>([]); const [batches,setBatches]=useState<Batch[]>([]);
   const [accountId,setAccountId]=useState(""); const [file,setFile]=useState<File|null>(null); const [contents,setContents]=useState("");
   const [isFileLoading,setIsFileLoading]=useState(false);
+  const [pdfProgress,setPdfProgress]=useState("");
   const [spreadsheetKind,setSpreadsheetKind]=useState<SpreadsheetKind>("unrecognized");
   const [pendingPdfBatchId,setPendingPdfBatchId]=useState(""); const [pdfPassword,setPdfPassword]=useState(""); const [needsPdfPassword,setNeedsPdfPassword]=useState(false);
   const [revisionBase,setRevisionBase]=useState(""); const [revisionChanges,setRevisionChanges]=useState<RevisionChange[]>([]);
@@ -59,7 +60,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   async function viewRecords(id:string){setSelectedBatch(id);setWorkspaceTab("records");try{const batch=batches.find(item=>item.id===id);const [staged,activity,result,changes]=await Promise.all([invoke<StagedRecord[]>("list_staged_import_records",{batchId:id}),invoke<ImportLog[]>("list_import_logs",{batchId:id}),invoke<Reconciliation>("get_import_reconciliation",{batchId:id}),batch?.revision_of_batch_id?invoke<RevisionChange[]>("list_import_revision_changes",{batchId:id}):Promise.resolve([])]);setRecords(staged);setLogs(activity);setReconciliation(result);setRevisionChanges(changes);setOpeningBalance(result.opening_balance_minor===null?"":(result.opening_balance_minor/100).toFixed(2));setClosingBalance(result.closing_balance_minor===null?"":(result.closing_balance_minor/100).toFixed(2));}catch{setError("Import workspace could not be loaded.");}}
   useEffect(()=>{listActiveAccounts().then(setAccounts).catch(()=>setError("Accounts could not be loaded."));Promise.all([listActiveCategories("income"),listActiveCategories("expense")]).then(([income,expense])=>setCategories([...income,...expense])).catch(()=>setError("Categories could not be loaded."));refresh().catch(()=>setError("Import batches could not be loaded."));},[]);
   async function selectFile(selected:File|null){
-    setHeaders([]);setSpreadsheetKind("unrecognized");setContents("");setSourceBytes([]);setXlsxBytes([]);setSheetNames([]);setSheetName("");setError("");setMessage("");setPendingPdfBatchId("");setPdfPassword("");setNeedsPdfPassword(false);setIsFileLoading(false);
+    setHeaders([]);setSpreadsheetKind("unrecognized");setContents("");setSourceBytes([]);setXlsxBytes([]);setSheetNames([]);setSheetName("");setError("");setMessage("");setPdfProgress("");setPendingPdfBatchId("");setPdfPassword("");setNeedsPdfPassword(false);setIsFileLoading(false);
     if(!selected){setFile(null);return;}
     if(selected.size>MAX_SOURCE_FILE_BYTES){setFile(null);setError("Statement files must be 25 MiB or smaller. Split a larger statement into smaller files and import them separately.");return;}
     setFile(selected);
@@ -78,7 +79,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   }
   async function changeSheet(name:string){setSheetName(name);try{const columns=await invoke<string[]>("xlsx_headers",{contents:xlsxBytes,sheetName:name,headerRow:Number(headerRow)});applySpreadsheetHeaders(columns);}catch(e){setError(typeof e==="string"?e:"Worksheet headers could not be read.");}}
   async function submit(e:FormEvent){
-    e.preventDefault();setError("");setMessage("");
+    e.preventDefault();setError("");setMessage("");setPdfProgress("");
     if(!accountId||!file){setError("Choose an account and statement file.");return;}
     const ext=file.name.split(".").pop()?.toLowerCase()??"unknown";
     const format=["csv","xls","xlsx","pdf"].includes(ext)?ext:"unknown";
@@ -88,6 +89,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
       return;
     }
     let id=pendingPdfBatchId;
+    setIsFileLoading(true);
     try{
       if(!id) id=await invoke<string>("create_import_batch",{request:{account_id:accountId,source_file_name:file.name,source_format:sourceFormat,revision_of_batch_id:revisionBase||null,source_file_contents:sourceBytes}});
       if(format==="csv"||format==="xlsx"||format==="xls"){
@@ -99,15 +101,22 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
       }else if(format==="pdf"){
         setPendingPdfBatchId(id);
         let pages: string[];
-        try { const { extractPdfTextPages }=await import("./pdfText"); pages=await extractPdfTextPages(new Uint8Array(sourceBytes),pdfPassword||undefined); }
+        let ocrPageNumbers: number[];
+        try {
+          const { extractPdfTextPages }=await import("./pdfText");
+          const extraction=await extractPdfTextPages(new Uint8Array(sourceBytes),pdfPassword||undefined,(progress)=>setPdfProgress(progress.ocr?`Running local OCR on scanned page ${progress.page} of ${progress.totalPages}${progress.ocrProgress===undefined?"":` (${Math.round(progress.ocrProgress*100)}%)`}…`:`Reading PDF page ${progress.page} of ${progress.totalPages}…`));
+          pages=extraction.pages;ocrPageNumbers=extraction.ocrPageNumbers;
+        }
         catch(reason) {
           if(reason==="password-required") throw "PDF_PASSWORD_REQUIRED";
           if(reason==="password-incorrect") throw "The PDF password is incorrect. Check it and try again.";
           if(reason==="extracted-text-too-large") throw "The extracted PDF text exceeds the 100 MiB processing limit.";
+          if(reason==="pdf-page-limit-exceeded") throw "This PDF has more than 200 pages. Split it into smaller files and import each part separately.";
+          if(reason==="ocr-failed") throw "Local OCR could not read one of the scanned pages. The workspace remains available so you can retry or use another statement file.";
           throw "The PDF could not be opened. Check that the file is a readable PDF.";
         }
         const count=await invoke<number>("stage_pdf_extracted_text",{batchId:id,pages});
-        setMessage(`Created workspace with ${count} PDF text lines for manual review.`);
+        setMessage(`Created workspace with ${count} PDF text lines for manual review${ocrPageNumbers.length?`; local OCR processed ${ocrPageNumbers.length} scanned ${ocrPageNumbers.length===1?"page":"pages"}`:""}.`);
       }else setMessage("Workspace created. This file type cannot be parsed yet.");
       setPendingPdfBatchId("");setPdfPassword("");setNeedsPdfPassword(false);
       setFile(null);setContents("");setSourceBytes([]);setXlsxBytes([]);setHeaders([]);await refresh();
@@ -119,7 +128,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
       setError(typeof e==="string"&&e!=="PDF_PASSWORD_REQUIRED"?e:"");
       if(e==="PDF_PASSWORD_REQUIRED")setError("");
       if(typeof e!=="string")setError("Import could not be staged.");
-    }
+    }finally{setIsFileLoading(false);setPdfProgress("");}
   }
   function startCorrection(row:StagedRecord){setSelectedRecord(row);setCorrectDate(row.normalized_date??"");setCorrectAmount(row.normalized_amount_minor===null?"":(row.normalized_amount_minor/100).toFixed(2));setCorrectType(row.transaction_type??"expense");setCorrectDescription(row.normalized_description??row.original_description??"");}
   async function saveCorrection(e:FormEvent){e.preventDefault();if(!selectedRecord)return;const datePart=correctDate.slice(0,10);const minor=Math.round(Number(correctAmount)*100);if(!Number.isSafeInteger(minor)||minor<=0||!datePart){setError("Enter a valid date and positive amount.");return;}try{await invoke("correct_import_record",{request:{record_id:selectedRecord.id,normalized_date:`${datePart}T00:00:00Z`,amount_minor:minor,transaction_type:correctType,description:correctDescription||null}});setSelectedRecord(null);if(batches.find(batch=>batch.id===selectedBatch)?.revision_of_batch_id)await invoke("compare_import_revision",{batchId:selectedBatch});setMessage("Staged record corrected.");await viewRecords(selectedBatch);}catch(e){setError(typeof e==="string"?e:"Correction could not be saved.");}}
@@ -136,12 +145,13 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
     <form onSubmit={submit} className="workspace-panel grid gap-4 rounded-xl p-5 sm:p-6 md:grid-cols-3">
       <h2 className="text-lg font-semibold md:col-span-3">Start a new import</h2>
       <label className="text-sm font-medium">Account<select value={accountId} onChange={e=>setAccountId(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2"><option value="">Choose account</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-      <label className="text-sm font-medium md:col-span-2">Statement file<input type="file" accept=".csv,.xls,.xlsx,.pdf" disabled={Boolean(pendingPdfBatchId)} onChange={e=>void selectFile(e.target.files?.[0]??null)} className="mt-1 block w-full text-sm disabled:opacity-60"/></label>
-      <p className="text-sm text-slate-600 md:col-span-3">Accepted statement files: CSV; Excel workbooks (.xls, .xlsx); and selectable-text PDFs, including password-protected PDFs that can be unlocked here. Use this page for bank and mobile-money transaction histories. Budget plans and account lists are different data and should not be loaded as spending statements.</p>
+      <label className="text-sm font-medium md:col-span-2">Statement file<input type="file" accept=".csv,.xls,.xlsx,.pdf" disabled={Boolean(pendingPdfBatchId)||isFileLoading} onChange={e=>void selectFile(e.target.files?.[0]??null)} className="mt-1 block w-full text-sm disabled:opacity-60"/></label>
+      <p className="text-sm text-slate-600 md:col-span-3">Accepted statement files: CSV; Excel workbooks (.xls, .xlsx); and PDFs, including password-protected or scanned documents. Selectable text is extracted locally; scanned pages use the bundled English OCR model and still require review. Use this page for bank and mobile-money transaction histories. Budget plans and account lists are different data and should not be loaded as spending statements.</p>
       {spreadsheetKind==="budget-plan"&&<div role="alert" className="md:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">The column names look like a budget plan, so this file is blocked from transaction import. Open Budgeting and select the file there to load its rows into a reviewable plan template.{navigate&&<button type="button" onClick={()=>navigate("Budgeting")} className="ml-2 font-semibold underline">Open Budgeting</button>}</div>}
       {spreadsheetKind==="account-list"&&<div role="alert" className="md:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">The column names look like an account list, so this file is blocked from transaction import. Open Accounts and select the file there to review and import it; account numbers are not retained.{navigate&&<button type="button" onClick={()=>navigate("Accounts")} className="ml-2 font-semibold underline">Open Accounts</button>}</div>}
       {spreadsheetKind==="unrecognized"&&headers.length>0&&<p className="md:col-span-3 text-sm text-slate-600">Standard statement fields were not recognized. Choose the date and amount columns below; imported records will remain staged for review.</p>}
-      {file?.name.toLowerCase().endsWith(".pdf")&&<p className="text-sm text-amber-800 md:col-span-3">Selectable PDF text is staged line by line as uncertain. Review each line and correct transaction details; scanned PDF OCR is not available.</p>}
+      {file?.name.toLowerCase().endsWith(".pdf")&&<p className="text-sm text-amber-800 md:col-span-3">Selectable text is extracted directly. Scanned pages use the bundled local English OCR model, then remain uncertain records for review; OCR never posts transactions automatically. Password-protected PDFs can be unlocked here.</p>}
+      {pdfProgress&&<p role="status" aria-live="polite" className="md:col-span-3 text-sm text-slate-600">{pdfProgress}</p>}
       {needsPdfPassword&&<label className="text-sm font-medium md:col-span-3">PDF password<input aria-label="PDF password" type="password" autoComplete="current-password" value={pdfPassword} onChange={e=>setPdfPassword(e.target.value)} className="mt-1 block w-full max-w-md rounded border px-3 py-2"/><span className="mt-1 block text-xs font-normal text-slate-500">The password is used only to unlock this file for extraction and is not saved.</span></label>}
       {batches.some(b=>b.status==="finalized")&&<label className="text-sm font-medium md:col-span-3">Compare with a previous statement<select value={revisionBase} onChange={e=>setRevisionBase(e.target.value)} disabled={!accountId} className="mt-1 block w-full rounded border p-2"><option value="">New statement</option>{batches.filter(b=>b.account_id===accountId&&b.status==="finalized").map(b=><option key={b.id} value={b.id}>{b.source_file_name} · {new Date(b.created_at).toLocaleDateString()}</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">Revised imports are compared only with the finalized statement you select.</span></label>}
       {sheetNames.length>0&&<><label className="text-sm font-medium">Worksheet<select value={sheetName} onChange={e=>void changeSheet(e.target.value)} className="mt-1 block w-full rounded border p-2">{sheetNames.map(s=><option key={s}>{s}</option>)}</select></label><label className="text-sm font-medium">Header row<input type="number" min="1" value={headerRow} onChange={e=>setHeaderRow(e.target.value)} onBlur={()=>sheetName&&void changeSheet(sheetName)} className="mt-1 block w-full rounded border p-2"/></label></>}

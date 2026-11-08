@@ -385,7 +385,7 @@ Technology decisions should prioritize:
 - Suitable ecosystem support.
 - Long-term extensibility.
 
-Specialist libraries for PDF extraction, OCR and spreadsheet processing will be evaluated against representative source documents before selection.
+PDF.js is used for local text extraction and rendering; Tesseract.js with the bundled English model is used for offline OCR on image-only PDF pages. OCR output remains uncertain and requires user review. Spreadsheet parsers are selected for CSV and Excel imports; provider-specific statement normalization remains deferred until representative sanitized files are available.
 
 ## 12. Development Approach
 

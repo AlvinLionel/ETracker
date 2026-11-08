@@ -11,13 +11,13 @@ Both packages are unsigned. Keep encrypted backups outside the application data 
 
 ## Locally built artifact checksums
 
-SHA-256 (verified on 8 November 2026):
+SHA-256 (verified on 8 November 2026; installers include bundled offline English OCR):
 
-- MSI: `2725F9E4C1A044B0196181409D90EE9D4BB37CBAA6A670323D969792D6456F66`
-- NSIS: `677EBC29DA887DD69C10E64C04346123C3284BF447473DA219CF5C4358459E81`
+- MSI (10.96 MiB): `4AD236B0E168585DB0AC19A43DDAB899DDE3F18C951C7A3239585F2CF2A71658`
+- NSIS (9.88 MiB): `124E5D57E3C00991707E3EA0DA73F0006F39531D22FBB27F0E918B912C86F366`
 
 Build artifacts are in `src-tauri/target/release/bundle/` and are intentionally excluded from source control.
 
 ## Known limits
 
-Provider-specific statement parsing, scanned-PDF OCR, database-at-rest encryption, signed installers, automated updates and verified install/upgrade behavior are not included. Windows support beyond the tested Windows x64 build environment and native backup file dialogs still need verification. Current release verification details are tracked in [`docs/development/known-issues.md`](docs/development/known-issues.md).
+Provider-specific statement parsing, database-at-rest encryption, signed installers, automated updates and verified install/upgrade behavior are not included. Scanned PDFs use bundled offline English OCR, and every extracted line still requires review. Windows support beyond the tested Windows x64 build environment and native backup file dialogs still need verification. Current release verification details are tracked in [`docs/development/known-issues.md`](docs/development/known-issues.md).

@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "npm run prepare:ocr-assets",
     "build": "tsc && vite build",
+    "prebuild": "npm run prepare:ocr-assets",
+    "prepare:ocr-assets": "node scripts/prepare-ocr-assets.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:e2e": "tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json",
-    "build:e2e:frontend": "tsc && vite build --mode e2e",
+    "build:e2e:frontend": "npm run prepare:ocr-assets && tsc && vite build --mode e2e",
     "test:e2e": "npm run build:e2e && node --test e2e/desktop.e2e.mjs",
     "setup:e2e": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-e2e.ps1",
     "test": "vitest",
@@ -21,10 +24,12 @@
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-fs": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@tesseract.js-data/eng": "^1.0.0",
     "pdfjs-dist": "^6.5.438",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "tailwindcss": "^4.3.4"
+    "tailwindcss": "^4.3.4",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

@@ -11,7 +11,7 @@ vi.mock("../../shared/confirmAction", () => ({ confirmAction: mocks.confirmActio
 describe("ImportsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.pdfText.mockResolvedValue(["2026-11-01 Grocery shop 12.50"]);
+    mocks.pdfText.mockResolvedValue({ pages: ["2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
     mocks.confirmAction.mockResolvedValue(true);
     mocks.accounts.mockResolvedValue([{ id: "a", name: "Main", currency_code: "KES" }]);
     mocks.invoke.mockImplementation((command: string) => {
@@ -153,14 +153,14 @@ describe("ImportsPage", () => {
     fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
     const file = new File(["%PDF-1.5 fixture"], "statement.pdf", { type: "application/pdf" });
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
-    expect(await screen.findByText(/Selectable PDF text is staged line by line as uncertain/)).toBeInTheDocument();
+    expect(await screen.findByText(/Selectable text is extracted directly/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "pdf-batch", pages: ["2026-11-01 Grocery shop 12.50"] }));
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });
 
   it("keeps an encrypted PDF import open until its password unlocks extraction", async () => {
-    mocks.pdfText.mockRejectedValueOnce("password-required");
+    mocks.pdfText.mockRejectedValueOnce("password-required").mockResolvedValueOnce({ pages: ["2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "create_import_batch") return Promise.resolve("protected-batch");
@@ -179,7 +179,7 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("PDF password"), { target: { value: "statement-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Unlock PDF and continue" }));
 
-    await waitFor(() => expect(mocks.pdfText).toHaveBeenLastCalledWith(expect.any(Uint8Array), "statement-secret"));
+    await waitFor(() => expect(mocks.pdfText.mock.calls[mocks.pdfText.mock.calls.length - 1]?.slice(0, 2)).toEqual([expect.any(Uint8Array), "statement-secret"]));
     expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "protected-batch", pages: ["2026-11-01 Grocery shop 12.50"] });
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "create_import_batch")).toHaveLength(1);
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");

@@ -688,13 +688,13 @@ Compare a newly staged statement with the finalized same-account batch selected 
 The requirements support text-based PDF statements while keeping import processing local. Generic PDFs do not provide a consistent row layout, so inferred dates and amounts cannot safely be posted without format-specific parsing.
 
 ### Decision
-Use locally bundled PDF.js in the app frontend for page-level selectable text extraction, including password-protected files. Prompt in the current import and retry on the existing workspace; never send, persist or log the password. Send only extracted page text to the Rust backend. Stage each non-empty text line as an uncertain record with its page and line reference. Do not infer or post date, amount, direction, category or transaction reference from generic PDF text. Users must correct each transaction line or skip non-transaction content. If a PDF contains no extractable text, return a recoverable failure and retain the workspace/source file. Cap extracted text at 100 MiB. Scanned-PDF OCR and institution-specific PDF parsers remain separate work.
+Use locally bundled PDF.js in the app frontend for page-level selectable text extraction, including password-protected files. Prompt in the current import and retry on the existing workspace; never send, persist or log the password. Send only extracted page text to the Rust backend. Stage each non-empty text line as an uncertain record with its page and line reference. Do not infer or post date, amount, direction, category or transaction reference from generic PDF text. Users must correct each transaction line or skip non-transaction content. If a PDF contains no extractable text, retain the workspace and pass image-only pages to the local OCR workflow in `DB-037`. Cap extracted text at 100 MiB. Institution-specific PDF parsers remain separate work.
 
 ### Rationale and implications
 - PDF statements remain usable for manual correction without claiming a provider parser.
 - Headings, balances and summaries cannot silently become ledger entries.
 - Selectable line text is retained in the staged description for traceability.
-- OCR library selection is pending until the supported Windows deployment and privacy requirements can be validated.
+- Scanned-PDF OCR library selection is resolved by `DB-037`; bundled English-model accuracy still requires manual review.
 
 ---
 
@@ -822,6 +822,23 @@ Limit each imported statement source file to 25 MiB. Reject larger files in the 
 - Bound routine memory, IPC and retained database use for local statement imports.
 - Keep the limit consistent between user interface and backend validation.
 - The workbook cap bounds declared uncompressed entry sizes without extracting archive contents to disk. PDF parser memory behavior remains subject to separate review.
+
+## DB-037 — Offline OCR for scanned statement PDFs
+
+**Status:** Approved and implemented
+
+**Date:** 8 November 2026
+
+**Related documents:** DOC-001, DOC-003, DOC-004, DOC-005, DOC-006
+
+### Decision
+Use PDF.js to render image-only PDF pages and Tesseract.js with its bundled English `best_int` trained data to recognize text locally in the frontend. Bundle the worker, WebAssembly core variants and model with the application; OCR must not fetch code or trained data from a network service. Reuse one OCR worker per PDF, report page-level progress, and terminate it after extraction. Selectable text continues through PDF.js. Stage both paths as uncertain page/line review text; do not infer dates, amounts, types, categories or references from OCR output and never auto-post OCR results. Limit each PDF to 200 pages and combined extracted text to 100 MiB. Scanned text in languages other than English is unsupported or may be inaccurate.
+
+### Rationale and implications
+- Local processing preserves the import privacy and offline requirements.
+- A real Edge desktop workflow verified OCR of a generated scanned statement fixture and staging as uncertain text.
+- Recognition quality varies with scan resolution, orientation, contrast and language; users must inspect every result. Provider-specific field extraction remains separate work.
+- Bundled worker/model assets increase installer size and must be regenerated from locked npm dependencies during development and release builds.
 
 ---
 
@@ -1139,7 +1156,6 @@ The following matters require additional research, technical validation or expli
 | PEND-002 | Institution-specific statement normalization | High | DOC-004 |
 | PEND-004 | Treatment of pending transactions in reconciliation | High | DOC-004 |
 | PEND-007 | Exact savings-goal, contribution and ledger relationship | Medium | DOC-004 |
-| PEND-008 | Local OCR library for scanned statement files (text-based PDF extraction resolved in DB-028) | High | DOC-003, DOC-004 |
 
 ## 8.2 User interface and experience
 
@@ -1160,6 +1176,8 @@ The following matters require additional research, technical validation or expli
 |---|---|---|---|
 | PEND-019 | Test coverage expectations and release gates | Medium | DOC-006 |
 | PEND-020 | Acceptance criteria refinement where required | Medium | DOC-002, DOC-006 |
+
+`PEND-008` was resolved by `DB-037` on 8 November 2026; manual OCR accuracy and language coverage remain verification limits, not an open library-selection decision.
 
 ## 8.4 Deployment and maintenance
 

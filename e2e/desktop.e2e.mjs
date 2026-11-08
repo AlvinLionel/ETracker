@@ -246,6 +246,14 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 staged rows')]")), 15_000);
 
+  const scannedPdfPath = resolve(repositoryRoot, "src/features/imports/fixtures/scanned-statement.pdf");
+  await driver.findElement(By.css("input[type='file']")).sendKeys(scannedPdfPath);
+  await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'local OCR processed 1 scanned page')]")), 60_000);
+  const scannedPdfBatch = await driver.wait(until.elementLocated(By.xpath("//li[.//span[normalize-space()='scanned-statement.pdf']]")), 15_000);
+  await scannedPdfBatch.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//tbody/tr[contains(.,'MARKET') and .//td[normalize-space()='uncertain']]")), 15_000);
+
   const protectedPdfPath = resolve(repositoryRoot, "src/features/imports/fixtures/protected-statement.pdf");
   await driver.findElement(By.css("input[type='file']")).sendKeys(protectedPdfPath);
   const importSubmitButton = await driver.wait(until.elementLocated(By.xpath("//form//button[normalize-space()='Create import workspace']")), 15_000);
