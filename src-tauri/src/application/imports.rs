@@ -5,6 +5,36 @@ fn source_file_is_too_large(size: usize) -> bool {
     size > MAX_SOURCE_FILE_BYTES
 }
 
+pub fn detect_csv_delimiter(contents: &[u8]) -> u8 {
+    let mut counts = [(b',', 0usize), (b';', 0), (b'\t', 0), (b'|', 0)];
+    let mut quoted = false;
+    let mut index = 0;
+    while let Some(&byte) = contents.get(index) {
+        if byte == b'"' {
+            if quoted && contents.get(index + 1) == Some(&b'"') {
+                index += 1;
+            } else {
+                quoted = !quoted;
+            }
+        } else if byte == b'\n' || byte == b'\r' {
+            if !quoted {
+                break;
+            }
+        } else if !quoted {
+            if let Some((_, count)) = counts.iter_mut().find(|(delimiter, _)| *delimiter == byte) {
+                *count += 1;
+            }
+        }
+        index += 1;
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .filter(|(_, count)| *count > 0)
+        .map(|(delimiter, _)| delimiter)
+        .unwrap_or(b',')
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewImportBatch {
     pub account_id: String,
@@ -165,11 +195,24 @@ impl<R: ImportRepository> ImportService<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SOURCE_FILE_BYTES, source_file_is_too_large};
+    use super::{MAX_SOURCE_FILE_BYTES, detect_csv_delimiter, source_file_is_too_large};
 
     #[test]
     fn source_file_size_limit_accepts_the_limit_and_rejects_larger_files() {
         assert!(!source_file_is_too_large(MAX_SOURCE_FILE_BYTES));
         assert!(source_file_is_too_large(MAX_SOURCE_FILE_BYTES + 1));
+    }
+
+    #[test]
+    fn detects_common_delimiters_without_counting_quoted_punctuation() {
+        assert_eq!(detect_csv_delimiter(b"Date;Amount;Memo\n"), b';');
+        assert_eq!(detect_csv_delimiter(b"Date\tAmount\tMemo\n"), b'\t');
+        assert_eq!(detect_csv_delimiter(b"Date|Amount|Memo\n"), b'|');
+        assert_eq!(detect_csv_delimiter(b"Date,Amount,Memo\n"), b',');
+        assert_eq!(
+            detect_csv_delimiter(b"Date;Amount;Memo\n2026;1;\"a,b;c\"\n"),
+            b';'
+        );
+        assert_eq!(detect_csv_delimiter(b"Date;Amount"), b';');
     }
 }

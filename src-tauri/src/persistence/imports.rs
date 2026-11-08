@@ -2,7 +2,7 @@ use crate::{
     application::imports::{
         CsvImportMapping, ImportError, ImportReconciliation, ImportRepository,
         MAX_SOURCE_FILE_BYTES, MAX_WORKBOOK_EXPANDED_BYTES, NewImportBatch,
-        StagedCategoryAllocation,
+        StagedCategoryAllocation, detect_csv_delimiter,
     },
     infrastructure::database::Database,
 };
@@ -1190,6 +1190,7 @@ impl SqliteImportRepository<'_> {
         }
         let mut reader = csv::ReaderBuilder::new()
             .flexible(false)
+            .delimiter(detect_csv_delimiter(contents.as_bytes()))
             .from_reader(contents.as_bytes());
         let headers = reader
             .headers()
@@ -2135,6 +2136,48 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
             .unwrap();
         assert_eq!(entries, 0);
+    }
+
+    #[test]
+    fn csv_staging_uses_detected_semicolon_delimiter_and_explicit_date_format() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let id = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "semicolon.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"fixture".to_vec(),
+            })
+            .unwrap();
+        let mapping = CsvImportMapping {
+            date_column: "Date".into(),
+            description_column: Some("Memo".into()),
+            amount_column: "Amount".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "day_month_year_slash".into(),
+        };
+        assert_eq!(
+            repo.stage_csv(
+                &id,
+                "Date;Amount;Memo\n06/11/2026;12.50;\"Cafe, downtown\"\n",
+                &mapping
+            )
+            .unwrap(),
+            1
+        );
+        let records = repo.list_records(&id).unwrap();
+        assert_eq!(records[0].validation_status, "valid");
+        assert_eq!(
+            records[0].normalized_date.as_deref(),
+            Some("2026-11-06T00:00:00Z")
+        );
+        assert_eq!(
+            records[0].normalized_description.as_deref(),
+            Some("Cafe, downtown")
+        );
     }
     #[test]
     fn corrected_csv_record_stays_staged_and_is_audited() {

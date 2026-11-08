@@ -1,6 +1,7 @@
 use crate::{
     application::imports::{
         CsvImportMapping, ImportError, ImportService, NewImportBatch, StagedCategoryAllocation,
+        detect_csv_delimiter,
     },
     infrastructure::database::Database,
     persistence::imports::{
@@ -114,6 +115,7 @@ pub fn finalize_import_batch(
 pub fn csv_headers(contents: String) -> Result<Vec<String>, String> {
     let mut reader = csv::ReaderBuilder::new()
         .flexible(false)
+        .delimiter(detect_csv_delimiter(contents.as_bytes()))
         .from_reader(contents.as_bytes());
     reader
         .headers()
@@ -127,6 +129,7 @@ pub fn csv_rows(contents: String) -> Result<Vec<Vec<String>>, String> {
     }
     let mut reader = csv::ReaderBuilder::new()
         .flexible(true)
+        .delimiter(detect_csv_delimiter(contents.as_bytes()))
         .from_reader(contents.as_bytes());
     let headers = reader
         .headers()
