@@ -200,6 +200,30 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await expenseRow.findElement(By.xpath(".//button[normalize-space()='History']")).click();
   const auditHistory = await driver.wait(until.elementLocated(By.xpath("//aside[.//h3[normalize-space()='Audit history']]")), 15_000);
   assert.match(await auditHistory.getText(), new RegExp(editedExpenseDescription));
+  await auditHistory.findElement(By.xpath(".//button[normalize-space()='Close']")).click();
+
+  const refundDescription = `E2E refund ${suffix}`;
+  const entryForm = (await driver.findElements(By.css("main form")))[0];
+  const entrySelects = await entryForm.findElements(By.css("select"));
+  await new Select(entrySelects[0]).selectByValue("refund");
+  await entryForm.findElement(By.css("input[placeholder='0.00']")).sendKeys("2.00");
+  await entryForm.findElement(By.xpath(".//label[normalize-space()='Description']/input")).sendKeys(refundDescription);
+  const refundOption = await driver.wait(until.elementLocated(By.xpath(`//select[.//option[contains(.,'${editedExpenseDescription}')]]/option[contains(.,'${editedExpenseDescription}')]`)), 15_000);
+  await new Select(await refundOption.findElement(By.xpath(".."))).selectByValue(await refundOption.getAttribute("value"));
+  await entryForm.findElement(By.xpath(".//button[normalize-space()='Save transaction']")).click();
+  await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${refundDescription}'] and .//td[normalize-space()='refund']]`)), 15_000);
+  expenseRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${editedExpenseDescription}']]`));
+  await expenseRow.findElement(By.xpath(".//button[normalize-space()='History']")).click();
+  const refundAuditHistory = await driver.wait(until.elementLocated(By.xpath("//aside[.//h3[normalize-space()='Audit history']]")), 15_000);
+  assert.match(await refundAuditHistory.getText(), /refund received/i);
+  assert.match(await refundAuditHistory.getText(), new RegExp(refundDescription));
+  await refundAuditHistory.findElement(By.xpath(".//button[normalize-space()='Close']")).click();
+
+  const refundRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${refundDescription}'] and .//td[normalize-space()='refund']]`));
+  await refundRow.findElement(By.xpath(".//button[normalize-space()='Reverse']")).click();
+  await driver.wait(until.alertIsPresent(), 5_000);
+  await driver.switchTo().alert().accept();
+  await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${refundDescription}'] and .//td[normalize-space()='reversal']]`)), 15_000);
 
   await expenseRow.findElement(By.xpath(".//button[normalize-space()='Void']")).click();
   await driver.wait(until.alertIsPresent(), 5_000);

@@ -11,7 +11,9 @@ function classifySpreadsheet(headers: string[]): SpreadsheetKind {
   const normalized = headers.map((header) => header.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
   const hasDate = normalized.some((header) => /(^| )(transaction |posting |value )?date( |$)|timestamp/.test(header));
   const hasAmount = normalized.some((header) => /amount|debit|credit|withdrawal|deposit|paid out|paid in/.test(header));
-  if (!hasDate && normalized.some((header) => /budget|planned|target|allocation/.test(header))) return "budget-plan";
+  const hasPlanningField = normalized.some((header) => /(^| )(planned|budgeted|target|allocation|allocated)( |$)|^budget( amount| plan)?$|^planning amount$/.test(header));
+  const hasCategoryField = normalized.some((header) => /category|budget item|plan item/.test(header));
+  if (hasPlanningField && hasCategoryField) return "budget-plan";
   const hasAccountIdentity = normalized.some((header) => /account (name|type)|opening balance|current balance/.test(header));
   const hasBalanceColumn = normalized.some((header) => /opening balance|current balance/.test(header));
   if (hasAccountIdentity && (!hasAmount || hasBalanceColumn)) return "account-list";

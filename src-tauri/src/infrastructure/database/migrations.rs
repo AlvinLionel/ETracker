@@ -5,7 +5,7 @@ struct Migration {
     sql: &'static str,
 }
 
-pub(super) const LATEST_VERSION: i64 = 14;
+pub(super) const LATEST_VERSION: i64 = 15;
 
 const MIGRATIONS: &[Migration] = &[
     Migration {
@@ -64,6 +64,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 14,
         sql: include_str!("../../../migrations/0014_theme_preference.sql"),
     },
+    Migration {
+        version: 15,
+        sql: include_str!("../../../migrations/0015_refund_audit_events.sql"),
+    },
 ];
 
 pub(super) fn run(connection: &mut Connection) -> rusqlite::Result<()> {
@@ -93,4 +97,62 @@ pub(super) fn run(connection: &mut Connection) -> rusqlite::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MIGRATIONS, run};
+    use rusqlite::Connection;
+
+    #[test]
+    fn refund_audit_migration_preserves_existing_history_and_accepts_link_events() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);",
+            )
+            .unwrap();
+        for migration in MIGRATIONS.iter().filter(|migration| migration.version < 15) {
+            connection.execute_batch(migration.sql).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations(version) VALUES (?1)",
+                    [migration.version],
+                )
+                .unwrap();
+        }
+
+        connection
+            .execute(
+                "INSERT INTO financial_transactions(id, transaction_type, amount_minor, currency_code, occurred_at, source_type) VALUES ('expense-1', 'expense', 1000, 'KES', '2026-11-01T00:00:00Z', 'manual')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO transaction_audit_log(id, transaction_id, action, new_values) VALUES ('audit-1', 'expense-1', 'created', '{\"type\":\"expense\"}')",
+                [],
+            )
+            .unwrap();
+
+        run(&mut connection).unwrap();
+
+        let preserved: String = connection
+            .query_row(
+                "SELECT new_values FROM transaction_audit_log WHERE id='audit-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(preserved, "{\"type\":\"expense\"}");
+        connection
+            .execute(
+                "INSERT INTO transaction_audit_log(id, transaction_id, action) VALUES ('audit-2', 'expense-1', 'refund_received')",
+                [],
+            )
+            .unwrap();
+    }
 }

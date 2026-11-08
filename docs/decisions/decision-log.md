@@ -719,6 +719,18 @@ Refunds are represented as tagged positive ledger inflows, and the initial relea
 - Leaves linked refunds’ original category attribution available for separate refund analysis without changing gross budget actuals.
 - Maintains compatibility with existing currency codes without expanding KES-only v1 or rewriting stored data.
 
+## DB-033 — Audit linked refund lifecycle on the original expense
+
+**Status:** Approved
+**Date:** 8 November 2026
+**Related documents:** DOC-002, DOC-004, DOC-006
+
+### Decision
+Every linked refund keeps its own audit history and also records a corresponding event in the original expense's audit history. Record receipt, void and reversal events with the linked refund identifier and amount where applicable; receipt events also include the description for readability. Write both sides atomically with the associated ledger operation. Unlinked refunds remain auditable from their own transaction only.
+
+### Rationale and implications
+Users can trace a refund from the expense it relates to while preserving an independent history for the refund transaction. Migration 0015 adds the lifecycle action names while preserving earlier audit records.
+
 ---
 
 ## DB-030 — Encrypted local backup and restore
@@ -768,7 +780,7 @@ This offers useful first-line support details while limiting sensitive data expo
 Statement source files are read into memory, passed to the local desktop backend, and retained in the database for up to 90 days. Unbounded inputs can cause high memory and storage use.
 
 ### Decision
-Limit each imported statement source file to 25 MiB. Reject larger files in the interface before reading them and enforce the same limit in the application service before saving a batch. For ZIP-based Excel workbooks, cap the total uncompressed entry size at 100 MiB before parsing; legacy OLE `.xls` files remain protected by the compressed source limit and parser validation. Users can divide larger statements into smaller files.
+Limit each imported statement source file to 25 MiB. Reject larger files in the interface before reading them and enforce the same limit in the application service before saving a batch. For ZIP-based Excel workbooks, cap the total uncompressed entry size at 100 MiB before parsing; legacy OLE `.xls` files remain protected by the compressed source limit and parser validation. Users can divide larger statements into smaller files. At startup, remove expired source BLOB rows with SQLite secure-delete enabled, then request a truncate checkpoint of the WAL. This reduces recoverable data in SQLite pages and the WAL but is not a physical-erasure guarantee.
 
 ### Rationale and implications
 - Bound routine memory, IPC and retained database use for local statement imports.
@@ -1199,7 +1211,7 @@ Routine implementation details do not need separate decision records unless they
 | Exact physical database schema | Pending |
 | Import libraries and institution-specific processing | Pending |
 | Final UI design and component libraries | Pending |
-| Testing toolchain | Pending |
+| Testing toolchain | Selected: Vitest, React Testing Library, Rust test framework and rustfmt; Selenium/tauri-driver/Edge for desktop E2E |
 | Installer, backup, encryption and update policies | Partially approved; installer and update details pending |
 
 ---
@@ -1208,4 +1220,4 @@ Routine implementation details do not need separate decision records unless they
 
 **Document status:** Active  
 **Version:** 0.1  
-**Last updated:** 4 November 2026
+**Last updated:** 8 November 2026

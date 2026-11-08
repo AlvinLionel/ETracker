@@ -158,6 +158,13 @@ impl SqliteTransactionRepository<'_> {
             tx.execute("INSERT INTO category_allocations(id,transaction_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)",params![Uuid::new_v4().to_string(),id,category,amount]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
         }
         tx.execute("INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'created',?3)",params![Uuid::new_v4().to_string(),id,serde_json::json!({"type":"refund","amount_minor":item.amount_minor,"original_expense_transaction_id":original_id}).to_string()]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        if let Some(original_id) = original_id {
+            tx.execute(
+                "INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'refund_received',?3)",
+                params![Uuid::new_v4().to_string(), original_id, serde_json::json!({"refund_transaction_id": id, "amount_minor": item.amount_minor, "description": item.description.as_deref()}).to_string()],
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        }
         tx.commit()
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
         Ok(id)
@@ -474,6 +481,15 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
             )
             .optional()
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        let refund_original: Option<String> = tx
+            .query_row(
+                "SELECT original_expense_transaction_id FROM refund_transactions WHERE transaction_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
+            .flatten();
         if source.as_deref() != Some("manual") {
             return Err(TransactionRepositoryError::NotEditable);
         }
@@ -486,6 +502,13 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
             return Err(TransactionRepositoryError::NotEditable);
         }
         tx.execute("INSERT INTO transaction_audit_log(id,transaction_id,action,reason) VALUES (?1,?2,'voided',?3)",params![Uuid::new_v4().to_string(),id,reason]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        if let Some(original_id) = refund_original {
+            tx.execute(
+                "INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'refund_voided',?3)",
+                params![Uuid::new_v4().to_string(), original_id, serde_json::json!({"refund_transaction_id": id}).to_string()],
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        }
         tx.commit()
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
         Ok(())
@@ -504,6 +527,15 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         let Some((kind, amount, currency, source)) = original else {
             return Err(TransactionRepositoryError::NotReversible);
         };
+        let refund_original: Option<String> = tx
+            .query_row(
+                "SELECT original_expense_transaction_id FROM refund_transactions WHERE transaction_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
+            .flatten();
         if !matches!(kind.as_str(), "income" | "expense" | "transfer") || source != "manual" {
             return Err(TransactionRepositoryError::NotReversible);
         }
@@ -515,6 +547,13 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         tx.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,description,source_type,reversal_of_transaction_id) SELECT ?1,'reversal',amount_minor,currency_code,datetime('now'),description,'reversal',id FROM financial_transactions WHERE id=?2",params![reversal_id,id]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
         tx.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) SELECT ?1,?2,account_id,-amount_minor FROM account_entries WHERE transaction_id=?3",params![Uuid::new_v4().to_string(),reversal_id,id]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
         tx.execute("INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'reversed',?3)",params![Uuid::new_v4().to_string(),id,serde_json::json!({"reversal_id":reversal_id}).to_string()]).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+        if let Some(original_id) = refund_original {
+            tx.execute(
+                "INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'refund_reversed',?3)",
+                params![Uuid::new_v4().to_string(), original_id, serde_json::json!({"refund_transaction_id": id, "reversal_id": reversal_id}).to_string()],
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        }
         tx.commit()
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
         let _ = (amount, currency);
@@ -1048,5 +1087,41 @@ mod tests {
                 .refundable_minor,
             600
         );
+    }
+
+    #[test]
+    fn linked_refund_audit_is_visible_from_original_and_tracks_voids_and_reversals() {
+        let db = db();
+        account(&db, "a");
+        let repository = SqliteTransactionRepository::new(&db);
+        let mut expense = input("a", TransactionType::Expense);
+        expense.amount_minor = 1_000;
+        let original = repository.create(&expense).unwrap();
+
+        let mut refund = input("a", TransactionType::Income);
+        refund.amount_minor = 300;
+        refund.description = Some("Linked refund".into());
+        let reversed_refund = repository.create_refund(&refund, Some(&original)).unwrap();
+        let received_event = repository
+            .audit_history(&original)
+            .unwrap()
+            .into_iter()
+            .find(|event| event.action == "refund_received")
+            .unwrap();
+        let received_values = received_event.new_values.unwrap();
+        assert!(received_values.contains(&reversed_refund));
+        assert!(received_values.contains("Linked refund"));
+
+        repository.reverse(&reversed_refund).unwrap();
+        let mut second_refund = refund.clone();
+        second_refund.amount_minor = 200;
+        let voided_refund = repository
+            .create_refund(&second_refund, Some(&original))
+            .unwrap();
+        repository.void(&voided_refund, "Duplicate refund").unwrap();
+
+        let events = repository.audit_history(&original).unwrap();
+        assert!(events.iter().any(|event| event.action == "refund_reversed"));
+        assert!(events.iter().any(|event| event.action == "refund_voided"));
     }
 }

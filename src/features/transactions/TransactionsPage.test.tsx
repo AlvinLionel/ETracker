@@ -24,6 +24,14 @@ describe("TransactionsPage",()=>{
   fireEvent.click(screen.getByRole("button",{name:"Save transaction"}));
   await waitFor(()=>expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({transaction_type:"refund",amount_minor:500,refund_of_transaction_id:"original",allocations:[]})));
  });
+ it("shows linked refund events in the original expense audit history",async()=>{
+  mocks.list.mockResolvedValue([{id:"original",account_id:"a",transaction_type:"expense",amount_minor:1000,currency_code:"KES",occurred_at:"2026-11-01T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1000}]);
+  mocks.audit.mockResolvedValue([{action:"refund_received",previous_values:null,new_values:'{"refund_transaction_id":"refund-1","amount_minor":300}',reason:null,created_at:"2026-11-02T09:00:00Z"}]);
+  render(<TransactionsPage/>);
+  fireEvent.click(await screen.findByRole("button",{name:"History"}));
+  expect(await screen.findByText(/refund received/)).toBeInTheDocument();
+  expect(screen.getByText(/refund_transaction_id/)).toBeInTheDocument();
+ });
  it("requires split allocations to reconcile before submitting",async()=>{
   render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});

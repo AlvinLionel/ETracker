@@ -64,6 +64,19 @@ describe("ImportsPage", () => {
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
   });
 
+  it("classifies a dated budget plan before statement fields", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Date", "Category", "Planned Amount"]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage navigate={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["budget"], "dated-plan.csv", { type: "text/csv" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/look like a budget plan/i);
+    expect(screen.getByRole("button", { name: "Open Budgeting" })).toBeInTheDocument();
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
   it("detects an account list and prevents it entering transaction history", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);

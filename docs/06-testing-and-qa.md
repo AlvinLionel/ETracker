@@ -1181,7 +1181,7 @@ As of 8 November 2026:
 | Offline and privacy scenarios | Defined |
 | Database and recovery scenarios | Defined |
 | Test tools | Vitest, React Testing Library, Rust test framework, rustfmt and Selenium/tauri-driver/Edge |
-| Automated tests | 69 frontend and 73 Rust tests pass locally |
+| Automated tests | 74 frontend and 76 Rust tests pass locally |
 | Test fixtures | Encrypted PDF fixture and scoped inline CSV/workbook fixtures |
 | CI pipeline | Windows workflow configured; first hosted run pending |
 | Test execution records | Local results recorded in implementation progress |
