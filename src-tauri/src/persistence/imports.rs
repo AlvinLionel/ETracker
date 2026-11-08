@@ -11,6 +11,24 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use sha2::{Digest, Sha256};
 use std::io::Cursor;
 use uuid::Uuid;
+
+fn parse_import_date(value: &str, format: &str) -> Option<String> {
+    if format == "rfc3339" {
+        return chrono::DateTime::parse_from_rfc3339(value)
+            .ok()
+            .map(|date| date.to_rfc3339());
+    }
+    let pattern = match format {
+        "iso_date" => "%Y-%m-%d",
+        "day_month_year_slash" => "%d/%m/%Y",
+        "month_day_year_slash" => "%m/%d/%Y",
+        "day_month_year_dash" => "%d-%m-%Y",
+        _ => return None,
+    };
+    chrono::NaiveDate::parse_from_str(value, pattern)
+        .ok()
+        .map(|date| format!("{}T00:00:00Z", date))
+}
 pub struct SqliteImportRepository<'a> {
     database: &'a Database,
 }
@@ -1159,7 +1177,14 @@ impl SqliteImportRepository<'_> {
         mapping: &CsvImportMapping,
     ) -> Result<usize, ImportError> {
         if !matches!(mapping.positive_amount_type.as_str(), "income" | "expense")
-            || !matches!(mapping.date_format.as_str(), "iso_date" | "rfc3339")
+            || !matches!(
+                mapping.date_format.as_str(),
+                "iso_date"
+                    | "rfc3339"
+                    | "day_month_year_slash"
+                    | "month_day_year_slash"
+                    | "day_month_year_dash"
+            )
         {
             return Err(ImportError::InvalidBatch);
         }
@@ -1195,15 +1220,7 @@ impl SqliteImportRepository<'_> {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned);
-            let date = if mapping.date_format == "iso_date" {
-                chrono::NaiveDate::parse_from_str(&raw_date, "%Y-%m-%d")
-                    .ok()
-                    .map(|d| format!("{}T00:00:00Z", d))
-            } else {
-                chrono::DateTime::parse_from_rfc3339(&raw_date)
-                    .ok()
-                    .map(|d| d.to_rfc3339())
-            };
+            let date = parse_import_date(&raw_date, &mapping.date_format);
             let signed = raw_amount.starts_with('-');
             let amount = parse_minor_units(raw_amount.strip_prefix('-').unwrap_or(&raw_amount));
             let status = if raw_date.is_empty() || raw_amount.is_empty() {
@@ -1847,6 +1864,27 @@ mod tests {
     use crate::infrastructure::database::Database;
     use std::io::{Cursor, Write};
     use std::path::Path;
+
+    #[test]
+    fn parses_explicit_statement_date_formats_without_ambiguous_guessing() {
+        assert_eq!(
+            parse_import_date("06/11/2026", "day_month_year_slash").as_deref(),
+            Some("2026-11-06T00:00:00Z")
+        );
+        assert_eq!(
+            parse_import_date("06/11/2026", "month_day_year_slash").as_deref(),
+            Some("2026-06-11T00:00:00Z")
+        );
+        assert_eq!(
+            parse_import_date("06-11-2026", "day_month_year_dash").as_deref(),
+            Some("2026-11-06T00:00:00Z")
+        );
+        assert_eq!(
+            parse_import_date("31/11/2026", "day_month_year_slash"),
+            None
+        );
+        assert_eq!(parse_import_date("06/11/2026", "unknown"), None);
+    }
 
     #[test]
     fn workbook_expansion_limit_accepts_boundary_and_rejects_excess_or_overflow() {

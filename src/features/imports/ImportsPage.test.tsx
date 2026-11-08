@@ -33,9 +33,10 @@ describe("ImportsPage", () => {
     await screen.findByLabelText("Date column");
     expect(screen.getByLabelText("Date column")).toHaveValue("Date");
     expect(screen.getByLabelText("Amount column")).toHaveValue("Amount");
+    fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "day_month_year_slash" } });
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_csv_import", expect.objectContaining({
-      request: expect.objectContaining({ batch_id: "batch-1", date_column: "Date", amount_column: "Amount" }),
+      request: expect.objectContaining({ batch_id: "batch-1", date_column: "Date", amount_column: "Amount", date_format: "day_month_year_slash" }),
     })));
     expect(mocks.invoke).toHaveBeenCalledWith("create_import_batch", { request: expect.objectContaining({ source_file_contents: expect.any(Array) }) });
     expect(await screen.findByRole("status")).toHaveTextContent("2 staged rows");
