@@ -743,6 +743,18 @@ Users may discard an unfinished statement workspace. Discarding makes the worksp
 ### Rationale and implications
 This supports safe recovery from mistaken or abandoned imports without erasing an audit trail or changing the approved source-file retention period. Migration 0016 records discard time and database triggers enforce read-only state.
 
+## DB-035 — Conservative statement duplicate review
+
+**Status:** Approved
+**Date:** 8 November 2026
+**Related documents:** DOC-002, DOC-004, DOC-006
+
+### Decision
+Use exact account, date, transaction type and amount as a candidate signal only. Never automatically suppress or discard a candidate. Require explicit per-record confirmation or skip before finalization. Defer provider references, fuzzy matching and confidence scores until provider-specific formats are backed by sanitized statement samples.
+
+### Rationale and implications
+False positives can hide legitimate repeated purchases, while false negatives can create duplicate ledger entries. The current review-first workflow favors transparency and explicit user choice. The candidate signal is a baseline, not a claim that the row is a duplicate.
+
 ---
 
 ## DB-030 — Encrypted local backup and restore
@@ -1113,7 +1125,6 @@ The following matters require additional research, technical validation or expli
 |---|---|---|---|
 | PEND-001 | Final physical SQLite schema and relationships | High | DOC-004 |
 | PEND-002 | Institution-specific statement normalization | High | DOC-004 |
-| PEND-003 | Duplicate confidence thresholds and matching rules | High | DOC-004 |
 | PEND-004 | Treatment of pending transactions in reconciliation | High | DOC-004 |
 | PEND-007 | Exact savings-goal, contribution and ledger relationship | Medium | DOC-004 |
 | PEND-008 | Local OCR library for scanned statement files (text-based PDF extraction resolved in DB-028) | High | DOC-003, DOC-004 |
