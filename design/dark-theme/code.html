@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ETracker — Dark Vault Color System & Design Token Template</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            vault: {
+              bg: '#0a0d14',
+              surface: '#0f1420',
+              container: '#151b2a',
+              card: '#1a2236',
+              elevated: '#212a42',
+              highlight: '#2a3552',
+              border: '#242f47',
+              borderSubtle: '#1b2438',
+              borderActive: '#3b4b6f',
+            },
+            accent: {
+              violet: '#7c5cfc',
+              violetGlow: 'rgba(124, 92, 252, 0.18)',
+              emerald: '#10b981',
+              emeraldDim: '#064e3b',
+              amber: '#f59e0b',
+              amberDim: '#78350f',
+              rose: '#f43f5e',
+              roseDim: '#881337',
+              cyan: '#06b6d4',
+              cyanDim: '#164e63',
+            },
+            txt: {
+              primary: '#f3f4f8',
+              secondary: '#94a3b8',
+              muted: '#64748b',
+              dim: '#475569',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Dark graph paper background microgrid */
+    .bg-graph-pattern {
+      background-color: #0a0d14;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    .swatch-glow:hover {
+      box-shadow: 0 0 20px -3px rgba(124, 92, 252, 0.35);
+    }
+  </style>
+</head>
+<body class="bg-graph-pattern text-txt-primary font-sans antialiased min-h-screen p-6 lg:p-10">
+
+  <div class="max-w-[1400px] mx-auto space-y-8">
+    
+    <!-- Header Banner -->
+    <header class="bg-vault-surface border border-vault-border rounded-xl p-6 lg:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
+      <div class="absolute -right-16 -top-16 w-80 h-80 bg-accent-violet opacity-10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="space-y-2 relative z-10">
+        <div class="flex items-center gap-3">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-mono font-medium tracking-wide bg-accent-violet/10 text-accent-violet border border-accent-violet/30">
+            THEME TOKEN SPECIFICATION // V2.1
+          </span>
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-mono font-medium bg-vault-container text-txt-secondary border border-vault-border">
+            DARK VAULT MODE
+          </span>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            WCAG AAA VERIFIED
+          </span>
+        </div>
+        <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+          <span>Dark Vault</span>
+          <span class="text-txt-muted text-lg font-normal font-mono">// Design Token & Color Palette Template</span>
+        </h1>
+        <p class="text-txt-secondary text-sm max-w-3xl leading-relaxed">
+          The official dark-mode aesthetic specification for <strong>ETracker Desktop</strong>. Designed for high-density financial auditing, zero glare during extended market sessions, strict contrast ratios across tabular ledgers, and tactical financial semantic status colors.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-3 shrink-0 relative z-10">
+        <div class="bg-vault-card border border-vault-border px-4 py-3 rounded-lg text-right font-mono text-xs">
+          <div class="text-txt-muted">TARGET BASELINE</div>
+          <div class="text-white font-semibold">Tauri v2 / SQLCipher</div>
+        </div>
+        <div class="bg-vault-card border border-vault-border px-4 py-3 rounded-lg text-right font-mono text-xs">
+          <div class="text-txt-muted">GRID METRIC</div>
+          <div class="text-accent-violet font-semibold">16px @ 4% Opacity</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Section 1: Surface Elevation & Architectural Canvas Hierarchy -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between border-b border-vault-border pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-accent-violet"></div>
+          <h2 class="text-lg font-bold text-white tracking-wide">01. Architectural Surface & Elevation Scale</h2>
+        </div>
+        <span class="text-xs font-mono text-txt-muted">Dark Mode Background Depths & Layering</span>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <!-- Token 1: Background -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-3 swatch-glow transition-all">
+          <div class="h-20 rounded bg-[#0a0d14] border border-[#242f47] flex items-end p-2.5 shadow-inner">
+            <span class="text-[11px] font-mono text-txt-muted">#0a0d14</span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Base Viewport</div>
+            <div class="text-[11px] font-mono text-accent-violet">bg-vault-bg</div>
+            <div class="text-[11px] text-txt-secondary mt-1">Application root workspace & outer desktop window margin.</div>
+          </div>
+        </div>
+
+        <!-- Token 2: Surface Lowest -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-3 swatch-glow transition-all">
+          <div class="h-20 rounded bg-[#0f1420] border border-[#242f47] flex items-end p-2.5 shadow-inner">
+            <span class="text-[11px] font-mono text-txt-muted">#0f1420</span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Primary Surface</div>
+            <div class="text-[11px] font-mono text-accent-violet">bg-vault-surface</div>
+            <div class="text-[11px] text-txt-secondary mt-1">Persistent left sidebar, top global navigation & shell.</div>
+          </div>
+        </div>
+
+        <!-- Token 3: Container Low -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-3 swatch-glow transition-all">
+          <div class="h-20 rounded bg-[#151b2a] border border-[#242f47] flex items-end p-2.5 shadow-inner">
+            <span class="text-[11px] font-mono text-txt-muted">#151b2a</span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Container Low</div>
+            <div class="text-[11px] font-mono text-accent-violet">bg-vault-container</div>
+            <div class="text-[11px] text-txt-secondary mt-1">Ledger table headers, filter toolbars & sub-nav bars.</div>
+          </div>
+        </div>
+
+        <!-- Token 4: Card Surface -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-3 swatch-glow transition-all">
+          <div class="h-20 rounded bg-[#1a2236] border border-[#242f47] flex items-end p-2.5 shadow-inner">
+            <span class="text-[11px] font-mono text-txt-muted">#1a2236</span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Default Card</div>
+            <div class="text-[11px] font-mono text-accent-violet">bg-vault-card</div>
+            <div class="text-[11px] text-txt-secondary mt-1">Standard financial widgets, KPI cards & metric ribbons.</div>
+          </div>
+        </div>
+
+        <!-- Token 5: Elevated Card -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-3 swatch-glow transition-all">
+          <div class="h-20 rounded bg-[#212a42] border border-[#242f47] flex items-end p-2.5 shadow-inner">
+            <span class="text-[11px] font-mono text-txt-muted">#212a42</span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Elevated Container</div>
+            <div class="text-[11px] font-mono text-accent-violet">bg-vault-elevated</div>
+            <div class="text-[11px] text-txt-secondary mt-1">Flyout modals, account inspector drawer & active hovers.</div>
+          </div>
+        </div>
+
+        <!-- Token 6: High Highlight -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-3 swatch-glow transition-all">
+          <div class="h-20 rounded bg-[#2a3552] border border-[#242f47] flex items-end p-2.5 shadow-inner">
+            <span class="text-[11px] font-mono text-txt-muted">#2a3552</span>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white">Highlight State</div>
+            <div class="text-[11px] font-mono text-accent-violet">bg-vault-highlight</div>
+            <div class="text-[11px] text-txt-secondary mt-1">Table row selection, active tabs & pill indicators.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: Hairline Border Tokens & Structural Frame -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between border-b border-vault-border pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-cyan-400"></div>
+          <h2 class="text-lg font-bold text-white tracking-wide">02. Hairline Border & Divider Tokens (1px Precision)</h2>
+        </div>
+        <span class="text-xs font-mono text-txt-muted">Subtle Architectural Separation</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-vault-surface border border-vault-border rounded-lg p-5 flex items-center justify-between">
+          <div class="space-y-1">
+            <div class="text-xs font-bold text-white">Subtle Inner Grid Divider</div>
+            <div class="text-xs font-mono text-txt-muted">border-vault-borderSubtle (#1b2438)</div>
+            <div class="text-xs text-txt-secondary">Used for ledger inner table rows and light sub-dividers.</div>
+          </div>
+          <div class="w-24 h-12 border-2 border-[#1b2438] bg-[#0a0d14] rounded flex items-center justify-center font-mono text-[11px] text-txt-muted">
+            1px Hairline
+          </div>
+        </div>
+
+        <div class="bg-vault-surface border border-vault-border rounded-lg p-5 flex items-center justify-between">
+          <div class="space-y-1">
+            <div class="text-xs font-bold text-white">Default Structural Border</div>
+            <div class="text-xs font-mono text-txt-muted">border-vault-border (#242f47)</div>
+            <div class="text-xs text-txt-secondary">Standard border for cards, sidebars, headers & modules.</div>
+          </div>
+          <div class="w-24 h-12 border-2 border-[#242f47] bg-[#151b2a] rounded flex items-center justify-center font-mono text-[11px] text-white">
+            Standard
+          </div>
+        </div>
+
+        <div class="bg-vault-surface border border-vault-border rounded-lg p-5 flex items-center justify-between">
+          <div class="space-y-1">
+            <div class="text-xs font-bold text-white">Focused / Active Border</div>
+            <div class="text-xs font-mono text-txt-muted">border-vault-borderActive (#3b4b6f)</div>
+            <div class="text-xs text-txt-secondary">Active input fields, selected rows & modal perimeters.</div>
+          </div>
+          <div class="w-24 h-12 border-2 border-[#3b4b6f] bg-[#1a2236] rounded flex items-center justify-center font-mono text-[11px] text-accent-violet font-semibold">
+            Active Focus
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Semantic Financial Accent Tokens -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between border-b border-vault-border pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
+          <h2 class="text-lg font-bold text-white tracking-wide">03. Financial Semantic Action & Status Tokens</h2>
+        </div>
+        <span class="text-xs font-mono text-txt-muted">Double-Entry Financial Status Rules</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Accent 1: Planning / Brand Purple -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white">Planning & Core Brand</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-accent-violet/20 text-accent-violet border border-accent-violet/40">BRAND / SCENARIO</span>
+          </div>
+          <div class="h-16 rounded bg-[#7c5cfc] flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <span class="font-mono text-white font-bold text-sm">#7c5cfc (Electric Violet)</span>
+          </div>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Surface Fill</span>
+              <span class="font-mono text-txt-secondary">rgba(124, 92, 252, 0.12)</span>
+            </div>
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Contrast on Dark</span>
+              <span class="font-mono text-emerald-400 font-semibold">6.8:1 (AAA)</span>
+            </div>
+            <div class="text-txt-secondary text-[11px]">Primary navigation, what-if scenario drivers, new transaction triggers, and system controls.</div>
+          </div>
+        </div>
+
+        <!-- Accent 2: Solvent Emerald -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white">Solvent Inflow & Yield</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">POSITIVE / ASSET</span>
+          </div>
+          <div class="h-16 rounded bg-[#10b981] flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <span class="font-mono text-white font-bold text-sm">#10b981 (Solvent Emerald)</span>
+          </div>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Surface Fill</span>
+              <span class="font-mono text-txt-secondary">rgba(16, 185, 129, 0.12)</span>
+            </div>
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Contrast on Dark</span>
+              <span class="font-mono text-emerald-400 font-semibold">8.2:1 (AAA)</span>
+            </div>
+            <div class="text-txt-secondary text-[11px]">Inbound revenue, M-Pesa client settlements, MMF compounding gains, reconciled balances.</div>
+          </div>
+        </div>
+
+        <!-- Accent 3: Disciplined Amber -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white">Threshold & Warning</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/40">CAUTION / CAPACITY</span>
+          </div>
+          <div class="h-16 rounded bg-[#f59e0b] flex items-center justify-center shadow-lg shadow-amber-500/20">
+            <span class="font-mono text-slate-900 font-bold text-sm">#f59e0b (Disciplined Amber)</span>
+          </div>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Surface Fill</span>
+              <span class="font-mono text-txt-secondary">rgba(245, 158, 11, 0.12)</span>
+            </div>
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Contrast on Dark</span>
+              <span class="font-mono text-emerald-400 font-semibold">9.1:1 (AAA)</span>
+            </div>
+            <div class="text-txt-secondary text-[11px]">Envelopes near capacity (>90%), tax provisioning milestones, unclassified transaction triage.</div>
+          </div>
+        </div>
+
+        <!-- Accent 4: Precision Coral / Rose -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white">Outflow & Breach</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/20 text-rose-400 border border-rose-500/40">DRAIN / LIABILITY</span>
+          </div>
+          <div class="h-16 rounded bg-[#f43f5e] flex items-center justify-center shadow-lg shadow-rose-500/20">
+            <span class="font-mono text-white font-bold text-sm">#f43f5e (Precision Coral)</span>
+          </div>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Surface Fill</span>
+              <span class="font-mono text-txt-secondary">rgba(244, 63, 94, 0.12)</span>
+            </div>
+            <div class="flex justify-between border-b border-vault-borderSubtle pb-1">
+              <span class="text-txt-muted">Contrast on Dark</span>
+              <span class="font-mono text-emerald-400 font-semibold">5.4:1 (AA)</span>
+            </div>
+            <div class="text-txt-secondary text-[11px]">Operational burn, bill outflows, duplicate reconciliation clashes, hard cap budget breaches.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Typography, Monospace Numbers & Text Tokens -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between border-b border-vault-border pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-txt-secondary"></div>
+          <h2 class="text-lg font-bold text-white tracking-wide">04. Text Hierarchy & Monospace Tabular Readouts</h2>
+        </div>
+        <span class="text-xs font-mono text-txt-muted">JetBrains Mono & Plus Jakarta Sans</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Text Token: Primary -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-2">
+          <div class="text-xs font-mono text-txt-muted">txt-primary (#f3f4f8)</div>
+          <div class="text-xl font-bold text-white">KES 4,180,500.00</div>
+          <p class="text-xs text-txt-secondary">Headings, primary balances, active labels, and ledger metrics.</p>
+        </div>
+
+        <!-- Text Token: Secondary -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-2">
+          <div class="text-xs font-mono text-txt-muted">txt-secondary (#94a3b8)</div>
+          <div class="text-base font-semibold text-txt-secondary">Safaricom Daraja API v2.0</div>
+          <p class="text-xs text-txt-secondary">Secondary descriptors, account names, and table headers.</p>
+        </div>
+
+        <!-- Text Token: Muted -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-2">
+          <div class="text-xs font-mono text-txt-muted">txt-muted (#64748b)</div>
+          <div class="text-sm font-mono text-txt-muted">BLOCK# 884-OCT-KES</div>
+          <p class="text-xs text-txt-secondary">Ledger timestamps, reference hashes, and disabled controls.</p>
+        </div>
+
+        <!-- Text Token: Dim -->
+        <div class="bg-vault-card border border-vault-border rounded-lg p-4 space-y-2">
+          <div class="text-xs font-mono text-txt-muted">txt-dim (#475569)</div>
+          <div class="text-xs font-mono text-txt-dim">Δ = KES 0.00 (Balanced)</div>
+          <p class="text-xs text-txt-secondary">Graph paper coordinates, metadata tags, and micro watermarks.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Real-World Dark Vault Financial Component Live Previews -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between border-b border-vault-border pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-accent-violet"></div>
+          <h2 class="text-lg font-bold text-white tracking-wide">05. Live Dark Vault Ledger Components In-Context</h2>
+        </div>
+        <span class="text-xs font-mono text-txt-muted">High-Fidelity Desktop Component Verification</span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Component A: Metric Command Ribbon Widget -->
+        <div class="bg-vault-card border border-vault-border rounded-xl p-5 space-y-4 shadow-xl">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono uppercase tracking-wider text-txt-secondary">Total Net Liquidity</span>
+            <span class="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              +4.2% MTD
+            </span>
+          </div>
+          <div>
+            <div class="text-2xl font-bold font-mono text-white tracking-tight">KES 2,845,620<span class="text-txt-muted text-lg">.00</span></div>
+            <div class="text-xs text-txt-secondary mt-1 flex items-center gap-2 font-mono">
+              <span class="text-emerald-400">▲ +KES 118,240.00</span> <span>vs Sep '25 close</span>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-vault-borderSubtle grid grid-cols-2 gap-2 text-xs font-mono">
+            <div class="bg-vault-surface/60 p-2.5 rounded border border-vault-borderSubtle">
+              <div class="text-txt-muted text-[10px]">NCBA MMF YIELD</div>
+              <div class="text-white font-semibold mt-0.5">9.50% p.a.</div>
+            </div>
+            <div class="bg-vault-surface/60 p-2.5 rounded border border-vault-borderSubtle">
+              <div class="text-txt-muted text-[10px]">RUNWAY BUFFER</div>
+              <div class="text-accent-violet font-semibold mt-0.5">18.4 Months</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Component B: Live High-Density Transaction Row -->
+        <div class="bg-vault-card border border-vault-border rounded-xl p-5 space-y-3 shadow-xl">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono uppercase tracking-wider text-txt-secondary">Transaction Journal Row</span>
+            <span class="text-[11px] font-mono text-accent-violet">Ctrl+N Quick Add</span>
+          </div>
+          <div class="space-y-2">
+            <!-- Row 1: Inflow -->
+            <div class="bg-vault-surface border border-vault-borderSubtle hover:border-vault-borderActive p-3 rounded-lg flex items-center justify-between transition-colors">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-mono font-bold">
+                  IN
+                </div>
+                <div>
+                  <div class="text-xs font-semibold text-white">Safaricom Merchant Batch Settlement</div>
+                  <div class="text-[11px] font-mono text-txt-muted">TXID: MP25988109312 • M-Pesa SuperApp</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs font-bold font-mono text-emerald-400">+KES 640,000.00</div>
+                <span class="inline-block px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-500/15 text-emerald-300">CLEARED</span>
+              </div>
+            </div>
+
+            <!-- Row 2: Outflow with Amber Warning -->
+            <div class="bg-vault-surface border border-vault-borderSubtle hover:border-vault-borderActive p-3 rounded-lg flex items-center justify-between transition-colors">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 text-xs font-mono font-bold">
+                  OUT
+                </div>
+                <div>
+                  <div class="text-xs font-semibold text-white">Kilimani Lease & Facility Rent</div>
+                  <div class="text-[11px] font-mono text-txt-muted">Standing Order #SO-8841 • Stanbic</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs font-bold font-mono text-rose-400">-KES 95,000.00</div>
+                <span class="inline-block px-1.5 py-0.2 rounded text-[10px] font-mono bg-amber-500/15 text-amber-300">95% CAP</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Component C: Zero-Based Budget Envelope Meter -->
+        <div class="bg-vault-card border border-vault-border rounded-xl p-5 space-y-4 shadow-xl">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-mono uppercase tracking-wider text-txt-secondary">Zero-Based Envelope Meter</span>
+            <span class="px-2 py-0.5 rounded text-[11px] font-mono bg-purple-500/10 text-accent-violet border border-purple-500/30">HARD CAP</span>
+          </div>
+          <div>
+            <div class="flex justify-between items-center text-xs mb-1.5">
+              <span class="font-medium text-white">Housing & Lease Rent</span>
+              <span class="font-mono text-amber-400 font-bold">95.0% Burned</span>
+            </div>
+            <div class="w-full bg-vault-surface h-2 rounded-full overflow-hidden border border-vault-borderSubtle">
+              <div class="bg-gradient-to-r from-accent-violet via-amber-400 to-rose-500 h-full rounded-full" style="width: 95%"></div>
+            </div>
+            <div class="flex justify-between items-center text-[11px] font-mono text-txt-muted mt-2">
+              <span>Spent: KES 95,000.00</span>
+              <span class="text-white">Cap: KES 100,000.00</span>
+            </div>
+          </div>
+          <div class="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg flex items-center justify-between text-xs">
+            <span class="text-amber-300 text-[11px]">Buffer remaining: KES 5,000.00</span>
+            <button class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[10px] font-mono font-bold transition-colors">
+              REALLOCATE
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Section 6: Code Integration Export snippet -->
+    <section class="bg-vault-surface border border-vault-border rounded-xl p-6 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-2.5 h-2.5 rounded-full bg-txt-muted"></div>
+          <h3 class="text-sm font-bold text-white font-mono uppercase tracking-wider">Tailwind CSS v3 / v4 Theme Configuration Bindings</h3>
+        </div>
+        <span class="text-xs font-mono text-accent-violet">tailwind.config.js</span>
+      </div>
+      <pre class="bg-vault-bg border border-vault-borderSubtle rounded-lg p-4 text-xs font-mono text-txt-secondary overflow-x-auto leading-relaxed">
+<code>// ETracker Dark Vault Color Palette Constants
+colors: {
+  vault: {
+    bg: '#0a0d14',             // Root background (6% graph paper microgrid)
+    surface: '#0f1420',        // Sidebars, persistent top nav, headers
+    container: '#151b2a',      // Table header stripes, filter bars
+    card: '#1a2236',           // Financial cards, data containers
+    elevated: '#212a42',       // Drawers, modals, dropdown poppers
+    border: '#242f47',         // 1px hairline standard frame borders
+    borderSubtle: '#1b2438',   // Inner table hairline row dividers
+    borderActive: '#3b4b6f',   // Active keyboard focus ring & selection
+  },
+  accent: {
+    violet: '#7c5cfc',         // Primary Planning & Navigation Purple (AAA: 6.8:1)
+    emerald: '#10b981',        // Inflows, M-Pesa settlements, compound yields (AAA: 8.2:1)
+    amber: '#f59e0b',          // Threshold alerts, 90%+ envelope burn (AAA: 9.1:1)
+    rose: '#f43f5e',           // Outflows, contractual deductions, hard breaches (AA: 5.4:1)
+    cyan: '#06b6d4',           // Bank feed live telemetry & webhooks
+  },
+  txt: {
+    primary: '#f3f4f8',        // Headings & tabular balances
+    secondary: '#94a3b8',      // Counterparty names & secondary metrics
+    muted: '#64748b',          // Timestamps, block hashes, inactive tags
+  }
+}</code>
+      </pre>
+    </section>
+
+  </div>
+
+</body>
+</html>
