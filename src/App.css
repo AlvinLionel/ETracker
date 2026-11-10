@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --workspace-canvas: #f5f0e6;
+  --workspace-canvas: #f8f6f0;
   --workspace-surface: #fffdf8;
   --workspace-line: #e8e0d2;
   --workspace-text: #20221f;
@@ -17,26 +17,28 @@
   --workspace-warning-soft: #fff3d6;
   --workspace-info: #326b86;
   --workspace-info-soft: #e6f3f8;
+  --workspace-grid: color-mix(in srgb, #5c5143 6%, transparent);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --workspace-canvas: #17191f;
-  --workspace-surface: #202638;
-  --workspace-line: #3a4253;
-  --workspace-text: #f1f5f9;
-  --workspace-muted: #cbd5e1;
-  --workspace-accent: #c4a9ef;
-  --workspace-accent-soft: #3a3150;
-  --workspace-subtle-surface: #293246;
-  --workspace-positive: #63cb93;
-  --workspace-positive-soft: #153d32;
-  --workspace-negative: #fda4af;
-  --workspace-negative-soft: #4c0519;
-  --workspace-warning: #fcd34d;
-  --workspace-warning-soft: #713f12;
-  --workspace-info: #7dd3fc;
-  --workspace-info-soft: #082f49;
+  --workspace-canvas: #0a0d14;
+  --workspace-surface: #0f1420;
+  --workspace-line: #242f47;
+  --workspace-text: #f3f4f8;
+  --workspace-muted: #94a3b8;
+  --workspace-accent: #7c5cff;
+  --workspace-accent-soft: #201b3d;
+  --workspace-subtle-surface: #151b2a;
+  --workspace-positive: #10b981;
+  --workspace-positive-soft: #0d3028;
+  --workspace-negative: #f43f5e;
+  --workspace-negative-soft: #321823;
+  --workspace-warning: #f59e0b;
+  --workspace-warning-soft: #332613;
+  --workspace-info: #06b6d4;
+  --workspace-info-soft: #102d38;
+  --workspace-grid: rgb(255 255 255 / 4%);
 }
 
 body {
@@ -48,9 +50,9 @@ body {
   background-color: var(--workspace-canvas);
   color: var(--workspace-text);
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--workspace-line) 28%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--workspace-line) 28%, transparent) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(to right, var(--workspace-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--workspace-grid) 1px, transparent 1px);
+  background-size: 16px 16px;
 }
 
 :where(.app-shell) :is(button, a, input, select, textarea):focus-visible {
@@ -84,6 +86,54 @@ body {
   background: var(--workspace-surface);
   box-shadow: 0 1px 2px rgb(32 34 31 / 4%);
 }
+
+/* Native file controls should feel like part of the ledger, not browser defaults. */
+.app-shell input[type="file"] {
+  width: 100%;
+  max-width: 36rem;
+  border: 1px solid var(--workspace-line);
+  border-radius: 0.55rem;
+  background: var(--workspace-surface);
+  color: var(--workspace-muted);
+  padding: 0.35rem;
+  cursor: pointer;
+}
+
+.app-shell input[type="file"]::file-selector-button {
+  margin-right: 0.75rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: var(--workspace-subtle-surface);
+  color: var(--workspace-text);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+.app-shell input[type="file"]::file-selector-button:hover {
+  background: var(--workspace-accent-soft);
+}
+
+.app-shell :is(button, a, select, [role="button"]) {
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.app-shell button:not(:disabled):active,
+.app-shell a:active,
+.app-shell [role="button"]:active {
+  transform: translateY(1px);
+}
+
+.app-shell button:not(:disabled):hover { filter: brightness(0.96); }
+:root[data-theme="dark"] .app-shell button:not(:disabled):hover { filter: brightness(1.12); }
+.app-shell button:disabled { cursor: not-allowed; opacity: 0.52; }
+
+.app-shell table { border-collapse: separate; border-spacing: 0; }
+.app-shell th { color: var(--workspace-muted); font-weight: 600; white-space: nowrap; }
+.app-shell td { vertical-align: middle; }
+.app-shell section { min-width: 0; }
 
 .workspace-error-panel {
   border-color: color-mix(in srgb, var(--workspace-negative) 32%, var(--workspace-line));
@@ -140,6 +190,39 @@ body {
 .app-shell [class~="bg-red-50"],
 .app-shell [class~="bg-rose-50"] { background-color: var(--workspace-negative-soft); }
 .app-shell [class~="bg-sky-50"] { background-color: var(--workspace-info-soft); }
+
+/* Common controls stay legible and consistent across every feature screen. */
+.app-shell :is(input:not([type="file"]), select, textarea) {
+  color: var(--workspace-text);
+  background-color: var(--workspace-surface);
+  border-color: var(--workspace-line);
+}
+.app-shell :is(input, select, textarea)::placeholder { color: var(--workspace-muted); opacity: 0.8; }
+.app-shell button.bg-emerald-700 { background-color: var(--workspace-accent); }
+.app-shell button.bg-emerald-700:hover { background-color: color-mix(in srgb, var(--workspace-accent) 88%, black); }
+.app-shell button.bg-slate-800 { background-color: var(--workspace-text); }
+.app-shell button:not(:disabled):hover,
+.app-shell a:hover,
+.app-shell [role="button"]:hover { border-color: color-mix(in srgb, var(--workspace-accent) 35%, var(--workspace-line)); }
+.app-shell :is(button, a, [role="button"]) { cursor: pointer; }
+.app-shell [role="button"]:focus-visible { outline: 2px solid var(--workspace-accent); outline-offset: 2px; }
+.app-shell .app-dashboard-main { padding-top: clamp(1.25rem, 3vh, 2rem); padding-bottom: clamp(1.25rem, 3vh, 2rem); }
+.app-shell .app-dashboard-main > section { row-gap: clamp(1rem, 2.4vh, 1.5rem); }
+
+.app-shell .transaction-history-table { table-layout: fixed; }
+.app-shell .transaction-history-table th,
+.app-shell .transaction-history-table td { padding-top: 0.7rem; padding-bottom: 0.7rem; }
+.app-shell .transaction-history-table th:nth-child(1) { width: 7rem; }
+.app-shell .transaction-history-table th:nth-child(2) { width: 19%; }
+.app-shell .transaction-history-table th:nth-child(3) { width: 15%; }
+.app-shell .transaction-history-table th:nth-child(4) { width: 7rem; }
+.app-shell .transaction-history-table th:nth-child(5) { width: 10rem; }
+.app-shell .transaction-history-table th:nth-child(6) { width: 6rem; }
+.app-shell .transaction-history-table th:nth-child(7) { width: 18rem; }
+.app-shell .transaction-history-table td { overflow-wrap: anywhere; }
+.app-shell .transaction-history-table thead { position: sticky; top: 0; z-index: 1; background: var(--workspace-surface); }
+.app-shell .transaction-history-table td:last-child button { white-space: nowrap; text-decoration-line: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
+.app-shell .transaction-history-table td:last-child button:hover:not(:disabled) { text-decoration-color: currentColor; }
 
 .app-shell [class~="text-slate-900"],
 .app-shell [class~="text-slate-800"],

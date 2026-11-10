@@ -14,8 +14,10 @@ Foundation and account management were already present at the start. Transaction
 - Starting commit: `5c3cbaa` — `feat(accounts): complete account management workflows`.
 - Starting working tree: clean (`main...origin/main`).
 - Final branch: `main`.
-- Final commit: still `5c3cbaa`; this assignment's changes are uncommitted because writing Git metadata was not available in the workspace permission profile.
-- Uncommitted files: transaction backend and frontend, navigation integration, removal of an unused account-page helper that broke TypeScript compilation, and documentation updates.
+- Transaction feature commit: `410b490862858de3ff8045e8f284efeafeab9143` — `feat(transactions): add manual income and expense workflows`.
+- Final branch: `main`; the feature commit is one commit ahead of `origin/main`. No push was performed.
+- The handover details were corrected in a follow-up documentation commit after the feature commit. Use `git log -2 --oneline` to see both assignment commits and `git rev-parse HEAD` for the final repository commit.
+- Working tree was clean immediately after the feature commit; it will be clean again after the documentation follow-up commit.
 - No user changes were present at the start. No generated build output is intended for commit.
 
 ## C. Completed functionality
@@ -60,7 +62,7 @@ Foundation and account management were already present at the start. Transaction
 
 ## F. Git history
 
-No assignment commit was created. The latest repository commit remains `5c3cbaa` (`feat(accounts): complete account management workflows`). The current implementation should be reviewed, verified, staged and committed as a coherent transaction milestone when Git metadata writes are available.
+The feature milestone was committed as `410b490862858de3ff8045e8f284efeafeab9143` (`feat(transactions): add manual income and expense workflows`). A documentation-only follow-up records the corrected final handover state. Both assignment commits are local on `main`; no push was performed.
 
 ## G. Testing and verification
 

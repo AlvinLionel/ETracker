@@ -21,7 +21,7 @@ describe("DashboardPage", () => {
   it("shows the ledger summary and navigates to transactions", async () => {
     const navigate = vi.fn();
     render(<DashboardPage navigate={navigate} />);
-    expect(await screen.findByText("Dashboard")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "A clear view of your money" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Import a statement" }));
     expect(navigate).toHaveBeenCalledWith("Imports");
     expect(screen.getByText("Gross expenses")).toBeInTheDocument();

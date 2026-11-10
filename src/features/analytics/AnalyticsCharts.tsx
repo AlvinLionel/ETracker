@@ -1,6 +1,6 @@
 import type { AnalyticsCategory, AnalyticsPoint } from "./api/analytics";
 
-const palette = ["#b45350", "#326b86", "#7654a8", "#25845a", "#be6b35", "#35867f", "#8a5b00", "#596a9b"];
+const palette = ["var(--workspace-negative)", "var(--workspace-info)", "var(--workspace-accent)", "var(--workspace-positive)", "#be6b35", "#35867f", "var(--workspace-warning)", "#596a9b"];
 const formatMoney = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
 const compactMoney = (minor: number, currency: string) => `${currency} ${new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(minor / 100)}`;
 
@@ -13,15 +13,20 @@ export function MonthlyTrendChart({ points, currency }: { points: AnalyticsPoint
   const bottom = 38;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const max = Math.max(1, ...points.flatMap((point) => [point.income_minor, point.expense_minor, point.refund_minor]));
-  const axisStep = Math.pow(10, Math.floor(Math.log10(max)));
-  const axisMax = Math.max(axisStep, Math.ceil(max / axisStep) * axisStep);
+  const netValues = points.map((point) => point.income_minor - point.expense_minor + point.refund_minor);
+  const rawMin = Math.min(0, ...netValues);
+  const rawMax = Math.max(1, ...points.flatMap((point) => [point.income_minor, point.expense_minor, point.refund_minor, point.income_minor - point.expense_minor + point.refund_minor]));
+  const axisStep = Math.pow(10, Math.floor(Math.log10(rawMax)));
+  const axisMin = Math.floor(rawMin / axisStep) * axisStep;
+  const axisMax = Math.max(axisStep, Math.ceil(rawMax / axisStep) * axisStep);
+  const scaleY = (value: number) => top + (axisMax - value) / (axisMax - axisMin) * plotHeight;
+  const zeroY = scaleY(0);
   const barWidth = Math.min(12, plotWidth / Math.max(points.length, 1) / 5);
   const groupWidth = plotWidth / Math.max(points.length, 1);
   const series = [
-    { key: "income", label: "Income", field: "income_minor" as const, color: "#25845a" },
-    { key: "expenses", label: "Gross expenses", field: "expense_minor" as const, color: "#b45350" },
-    { key: "refunds", label: "Refunds", field: "refund_minor" as const, color: "#326b86" },
+    { key: "income", label: "Income", field: "income_minor" as const, color: "var(--workspace-positive)" },
+    { key: "expenses", label: "Gross expenses", field: "expense_minor" as const, color: "var(--workspace-negative)" },
+    { key: "refunds", label: "Refunds", field: "refund_minor" as const, color: "var(--workspace-info)" },
   ];
 
   return <>
@@ -30,8 +35,8 @@ export function MonthlyTrendChart({ points, currency }: { points: AnalyticsPoint
         <title id="monthly-trend-title">Monthly income, gross expenses and refunds</title>
         <desc id="monthly-trend-description">Grouped monthly bars for {points[0]?.period} through {points[points.length - 1]?.period}, in {currency}. Exact values are listed below the chart.</desc>
         {[0, 1, 2, 3, 4].map((step) => {
-          const y = top + plotHeight - plotHeight * step / 4;
-          const value = axisMax * step / 4;
+          const value = axisMin + (axisMax - axisMin) * step / 4;
+          const y = scaleY(value);
           return <g key={step}>
             <line x1={left} x2={width - right} y1={y} y2={y} stroke="var(--workspace-line)" strokeDasharray={step === 0 ? undefined : "3 4"} />
             <text x={left - 8} y={y + 4} textAnchor="end" fill="var(--workspace-muted)" fontSize="10">{compactMoney(value, currency)}</text>
@@ -39,13 +44,13 @@ export function MonthlyTrendChart({ points, currency }: { points: AnalyticsPoint
         })}
         {points.map((point, index) => {
           const center = left + groupWidth * (index + 0.5);
-          const net = point.income_minor - point.expense_minor + point.refund_minor;
           return <g key={point.period}>
             {series.map((item, seriesIndex) => {
               const value = point[item.field];
-              const barHeight = value / axisMax * plotHeight;
+              const valueY = scaleY(value);
+              const barHeight = Math.max(0, zeroY - valueY);
               const x = center + (seriesIndex - 1) * (barWidth + 3) - barWidth / 2;
-              const y = top + plotHeight - barHeight;
+              const y = Math.min(valueY, zeroY);
               return <g key={item.key}>
                 <rect x={x} y={y} width={barWidth} height={Math.max(value > 0 ? 1 : 0, barHeight)} rx="2" fill={item.color}>
                   <title>{point.period} {item.label}: {formatMoney(value, currency)}</title>
@@ -53,13 +58,16 @@ export function MonthlyTrendChart({ points, currency }: { points: AnalyticsPoint
               </g>;
             })}
             <text x={center} y={height - 19} textAnchor="middle" fill="var(--workspace-muted)" fontSize="10">{point.period.slice(2)}</text>
-            <title>{point.period}: net cash flow {formatMoney(net, currency)}</title>
+            <title>{point.period}: net cash flow {formatMoney(point.income_minor - point.expense_minor + point.refund_minor, currency)}</title>
           </g>;
         })}
+        {points.length > 1 && <polyline fill="none" stroke="var(--workspace-accent)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" points={points.map((point, index) => `${left + groupWidth * (index + 0.5)},${scaleY(point.income_minor - point.expense_minor + point.refund_minor)}`).join(" ")} />}
+        {points.map((point, index) => <circle key={`net-${point.period}`} cx={left + groupWidth * (index + 0.5)} cy={scaleY(point.income_minor - point.expense_minor + point.refund_minor)} r="3.5" fill="var(--workspace-surface)" stroke="var(--workspace-accent)" strokeWidth="2"><title>{point.period} net cash flow: {formatMoney(netValues[index], currency)}</title></circle>)}
       </svg>
     </div>
     <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600" aria-hidden="true">
       {series.map((item) => <span key={item.key} className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />{item.label}</span>)}
+      <span className="inline-flex items-center gap-2"><span className="h-0.5 w-4" style={{ backgroundColor: "var(--workspace-accent)" }} />Net cash flow</span>
     </div>
     <table className="sr-only">
       <caption>Exact monthly values for the financial trend chart, in {currency}</caption>

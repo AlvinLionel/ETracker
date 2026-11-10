@@ -148,3 +148,28 @@ These phases are indicative only. They do not establish delivery dates or author
 - What, if anything, should be learned from user corrections, and how should that learning remain local and controllable?
 
 ---
+
+### FE-002- Human like dashboard
+Remove the 'local mode' icon on the dashboard, it's giving ai made, the dashboard should give an overall mood of humanly/homey/finance/banker/teller/paper. Also remove the 'Local workspace Your financial data stays on this device.' from the bottom of the menu and make it so that the menu is scrollable when it extends beyond the screen height, the dashboard tab should remain fixed on the screen unless it's content also advances beyond the screen, then it becomes scrollable.
+
+Fix the chosen file, no file chosen,account list file display styles on the accounts page, same for the budgeting page and the budget plan files and the following button and input
+Fix the layout of the history table in the transactions tab
+In the budgetting tab, is the template's feature complete? if so which templates is the user picking from.
+Did you implement the bar and line graphs and the pie chart in the analytics page? If not do this.
+Add a hover effect over all the buttons and clickable/selectable features.
+Fix the choose file input displays all over the platform
+Fix the layout of the records/logs section of the imports tab, right now it's tranparent, add a background(make sure it fit's the aesthetic of the selected theme but also that it blends in).
+Fix the display of all the buttons/links, right now they appear like normal text, add an idle/hover/click effect for each
+
+### FE-003- Sync platform with mobile and bank feeds
+
+**status**Proposed
+
+**Priority** Long-term candidate
+
+### Problem or opportunity
+
+Sometimes it might become a hustle to request for statements from the money service provider and upload it to the platform. Users might also forget or delay to upload a statement, this misght coz them to not come back to the platform for a while meaning the app becomes pointless.
+
+### concept
+Introduce a feature to sync with mpesa and bank transactions to record them in real time

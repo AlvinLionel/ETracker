@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getAnalyticsSummary, type AnalyticsSummary } from "../analytics/api/analytics";
+import { ExpenseCategoryDonut, MonthlyTrendChart } from "../analytics/AnalyticsCharts";
 
 type Summary = {
   currency_code: string;
@@ -41,12 +43,20 @@ const money = (minor: number, currency: string) =>
 
 function DashboardPage({ navigate }: { navigate: (page: string) => void }) {
   const [data, setData] = useState<Summary | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [analyticsError, setAnalyticsError] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     invoke<Summary>("get_dashboard_summary")
       .then(setData)
       .catch(() => setError("Dashboard information could not be loaded."));
+    const end = new Date();
+    const start = new Date(end.getFullYear(), end.getMonth() - 5, 1);
+    const dateString = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+    getAnalyticsSummary({ from: dateString(start), to: dateString(end), accountId: "", categoryId: "", currencyCode: "KES" })
+      .then(setAnalytics)
+      .catch(() => setAnalyticsError("The six-month activity charts could not be loaded."));
   }, []);
 
   if (error) return <p role="alert" className="text-sm text-rose-700">{error}</p>;
@@ -63,9 +73,9 @@ function DashboardPage({ navigate }: { navigate: (page: string) => void }) {
     <section className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="workspace-accent text-sm font-semibold">Overview</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="workspace-muted mt-1 text-sm">Current balances and this month’s posted activity, in KES.</p>
+          <p className="workspace-accent text-xs font-semibold uppercase tracking-[0.16em]">Your household ledger</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">A clear view of your money</h1>
+          <p className="workspace-muted mt-2 text-sm">A thoughtful summary of this month and the accounts you look after.</p>
         </div>
         <button type="button" onClick={() => navigate("Imports")} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
           Import a statement
@@ -79,6 +89,17 @@ function DashboardPage({ navigate }: { navigate: (page: string) => void }) {
             <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
           </article>
         ))}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
+        <section className="workspace-panel min-w-0 rounded-xl p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-semibold">Money in and out</h2><p className="workspace-muted text-xs">Last six months · income, spending and net flow</p></div>
+          {analytics?.trends?.length ? <div className="mt-4"><MonthlyTrendChart points={analytics.trends} currency="KES" /></div> : <p role={analyticsError ? "alert" : "status"} className="workspace-muted mt-4 rounded-lg bg-slate-50 p-4 text-sm">{analyticsError || "Loading account activity…"}</p>}
+        </section>
+        <section className="workspace-panel min-w-0 rounded-xl p-5">
+          <div><h2 className="font-semibold">Where spending goes</h2><p className="workspace-muted mt-1 text-xs">Gross expenses by category over the selected six-month range</p></div>
+          {analytics ? <div className="mt-3"><ExpenseCategoryDonut categories={analytics.category_breakdown ?? []} currency="KES" /></div> : <p role={analyticsError ? "alert" : "status"} className="workspace-muted mt-4 rounded-lg bg-slate-50 p-4 text-sm">{analyticsError || "Loading category activity…"}</p>}
+        </section>
       </div>
 
       {data.refund_minor > 0 && (
