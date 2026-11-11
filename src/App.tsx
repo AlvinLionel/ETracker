@@ -11,7 +11,7 @@ import ForecastingPage from "./features/forecasting/ForecastingPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import SettingsPage from "./features/settings/SettingsPage";
 import CategoriesPage from "./features/transactions/CategoriesPage";
-import { applyTheme, type ThemePreference } from "./features/settings/theme";
+import { applyAppearancePreferences, type ThemePreference } from "./features/settings/theme";
 import { Activity, CalendarDays, ChartNoAxesCombined, ChevronDown, Download, Landmark, LayoutDashboard, Moon, Monitor, PanelLeftClose, PiggyBank, Repeat2, Search, Settings2, Sun, Tags, TrendingUp, WalletCards } from "lucide-react";
 
 const navigationItems = [
@@ -31,6 +31,7 @@ const navigationItems = [
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
   const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const [appearance, setAppearance] = useState<{ grid_opacity: number; row_density: "compact" | "standard" | "comfortable" }>({ grid_opacity: 5, row_density: "standard" });
   const [themeError, setThemeError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,19 +61,19 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    applyTheme("system");
-    invoke<{ theme: ThemePreference }>("get_user_preferences")
-      .then((preferences) => { if (active) { setThemePreference(preferences.theme); applyTheme(preferences.theme); } })
+    invoke<{ theme: ThemePreference; grid_opacity?: number; row_density?: "compact" | "standard" | "comfortable" }>("get_user_preferences")
+      .then((preferences) => { if (active) { setThemePreference(preferences.theme); setAppearance({ grid_opacity: preferences.grid_opacity ?? 5, row_density: preferences.row_density ?? "standard" }); } })
       .catch(() => {});
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
+    applyAppearancePreferences(themePreference, appearance.grid_opacity, appearance.row_density);
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const updateSystemTheme = () => { if (themePreference === "system") applyTheme("system"); };
+    const updateSystemTheme = () => { if (themePreference === "system") applyAppearancePreferences("system", appearance.grid_opacity, appearance.row_density); };
     media.addEventListener("change", updateSystemTheme);
     return () => media.removeEventListener("change", updateSystemTheme);
-  }, [themePreference]);
+  }, [themePreference, appearance]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -88,10 +89,11 @@ function App() {
   async function changeTheme(theme: ThemePreference) {
     setThemeError("");
     try {
-      const preferences = await invoke<{ subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: ThemePreference }>("get_user_preferences");
+      const preferences = await invoke<{ subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: ThemePreference; grid_opacity: number; row_density: "compact" | "standard" | "comfortable" }>("get_user_preferences");
       await invoke("set_user_preferences", { preferences: { ...preferences, theme } });
       setThemePreference(theme);
-      applyTheme(theme);
+      setAppearance({ grid_opacity: preferences.grid_opacity, row_density: preferences.row_density });
+      applyAppearancePreferences(theme, preferences.grid_opacity, preferences.row_density);
     } catch {
       setThemeError("Theme preference could not be saved.");
     }

@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
-import { applyTheme } from "./theme";
+import { applyAppearancePreferences } from "./theme";
 import { formatMoney as formatCurrency } from "../../shared/formatMoney";
 import { Bell, FileText, HardDrive, Palette, ShieldCheck } from "lucide-react";
 
-type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: "system" | "light" | "dark" };
+type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: "system" | "light" | "dark"; grid_opacity: number; row_density: "compact" | "standard" | "comfortable" };
 type Subscription = { id: string; name: string; amount_minor: number; currency_code: string; frequency: string; next_due_date: string; status: string };
 type IntegrityReport = { integrity_messages: string[]; foreign_key_violations: string[] };
 type DiagnosticReport = { app_version: string; operating_system: string; architecture: string; sqlite_version: string; schema_version: number; latest_supported_schema_version: number; database_integrity: "passed" | "issues_found"; foreign_key_check: "passed" | "issues_found" };
 const money = (minor: number, currency: string) => formatCurrency(minor, currency, { maximumFractionDigits: 2 });
-const defaultPreferences: Preferences = { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" };
+const defaultPreferences: Preferences = { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" };
 const settingsSections = [
   { label: "Appearance", target: "Appearance", icon: Palette },
   { label: "Reminders", target: "Subscription reminders", icon: Bell },
@@ -43,8 +43,6 @@ export default function SettingsPage() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreComplete, setRestoreComplete] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
-  const [gridOpacity, setGridOpacity] = useState(5);
-  const [rowDensity, setRowDensity] = useState(44);
   const [activeSection, setActiveSection] = useState("Reminders");
 
   useEffect(() => {
@@ -64,30 +62,20 @@ export default function SettingsPage() {
   }, [preferences.subscription_reminder_days, subscriptions]);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const previousGrid = root.style.getPropertyValue("--workspace-grid");
-    const previousDensity = root.dataset.previewDensity;
     const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
     const updatePreview = () => {
-      const dark = preferences.theme === "dark" || (preferences.theme === "system" && Boolean(media?.matches));
-      const rgb = dark ? "255 255 255" : "64 0 198";
-      root.style.setProperty("--workspace-grid", `rgb(${rgb} / ${gridOpacity}%)`);
-      root.dataset.previewDensity = rowDensity === 36 ? "compact" : rowDensity === 52 ? "comfortable" : "standard";
+      applyAppearancePreferences(preferences.theme, preferences.grid_opacity, preferences.row_density);
     };
     updatePreview();
     media?.addEventListener("change", updatePreview);
     return () => {
       media?.removeEventListener("change", updatePreview);
-      if (previousGrid) root.style.setProperty("--workspace-grid", previousGrid);
-      else root.style.removeProperty("--workspace-grid");
-      if (previousDensity) root.dataset.previewDensity = previousDensity;
-      else delete root.dataset.previewDensity;
     };
-  }, [gridOpacity, preferences.theme, rowDensity]);
+  }, [preferences.grid_opacity, preferences.theme, preferences.row_density]);
 
   async function save() {
     setSaving(true); setError(""); setMessage("");
-    try { await invoke("set_user_preferences", { preferences }); applyTheme(preferences.theme); setMessage("Preferences saved."); }
+    try { await invoke("set_user_preferences", { preferences }); applyAppearancePreferences(preferences.theme, preferences.grid_opacity, preferences.row_density); setMessage("Preferences saved."); }
     catch { setError("Preferences could not be saved."); }
     finally { setSaving(false); }
   }
@@ -178,7 +166,7 @@ export default function SettingsPage() {
     <section className="workspace-panel rounded-lg p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="text-lg font-semibold">Appearance</h2><p className="workspace-muted mt-1 text-sm">Theme is saved with your preferences. Grid opacity and row density preview only for this session.</p></div>
-        <span className="status-chip">Local preview</span>
+        <span className="status-chip">Saved on this device</span>
       </div>
       <div className="grid gap-3 md:grid-cols-3" role="group" aria-label="Color theme">
         {([ ["light", "Light Ledger", "Bright canvas with accounting grid"], ["dark", "Dark Vault", "Charcoal surfaces with low-contrast grid"], ["system", "System Adaptive", "Follow the operating system theme"] ] as const).map(([theme, title, description]) => (
@@ -191,15 +179,15 @@ export default function SettingsPage() {
       </div>
       <label className="settings-control-row mt-4 flex flex-wrap items-center gap-3 rounded-md bg-slate-50 p-3 text-sm">
         <span>Accounting grid opacity</span>
-        <input aria-label="Accounting grid opacity" type="range" min="0" max="12" value={gridOpacity} onChange={(event) => setGridOpacity(Number(event.target.value))} className="min-w-36 flex-1" />
-        <span className="font-mono tabular-nums">{gridOpacity}%</span>
-        <span className="grid-preview" aria-hidden="true" style={{ backgroundSize: `${8 + gridOpacity}px ${8 + gridOpacity}px` }} />
+        <input aria-label="Accounting grid opacity" type="range" min="0" max="12" value={preferences.grid_opacity} onChange={(event) => setPreferences((current) => ({ ...current, grid_opacity: Number(event.target.value) }))} className="min-w-36 flex-1" />
+        <span className="font-mono tabular-nums">{preferences.grid_opacity}%</span>
+        <span className="grid-preview" aria-hidden="true" style={{ backgroundSize: `${8 + preferences.grid_opacity}px ${8 + preferences.grid_opacity}px` }} />
       </label>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md bg-slate-50 p-3">
-        <div><strong className="text-sm">UI row density</strong><p className="workspace-muted text-xs">Preview density selection. Persistence is not available yet.</p></div>
+        <div><strong className="text-sm">UI row density</strong><p className="workspace-muted text-xs">Preview it here, then use Save changes to keep it for next time.</p></div>
         <div className="flex flex-wrap gap-1" role="group" aria-label="UI row density">
-          {([ [36, "Compact"], [44, "Standard"], [52, "Comfortable"] ] as const).map(([height, label]) => (
-            <button key={height} type="button" aria-pressed={rowDensity === height} onClick={() => setRowDensity(height)} className={`rounded-sm px-3 py-2 text-xs ${rowDensity === height ? "bg-violet-700 text-white" : "border border-slate-200"}`}>{label} · {height}px</button>
+          {([ ["compact", 36, "Compact"], ["standard", 44, "Standard"], ["comfortable", 52, "Comfortable"] ] as const).map(([density, height, label]) => (
+            <button key={density} type="button" aria-pressed={preferences.row_density === density} onClick={() => setPreferences((current) => ({ ...current, row_density: density }))} className={`rounded-sm px-3 py-2 text-xs ${preferences.row_density === density ? "bg-violet-700 text-white" : "border border-slate-200"}`}>{label} · {height}px</button>
           ))}
         </div>
       </div>

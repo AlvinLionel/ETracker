@@ -15,7 +15,7 @@ describe("SettingsPage", () => {
     fileDialog.save.mockReset().mockResolvedValue("C:\\Users\\Test\\ETracker_backup.etracker-backup");
     fileDialog.writeFile.mockReset().mockResolvedValue(undefined);
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([
         { id: "soon", name: "Internet", amount_minor: 2000, currency_code: "KES", frequency: "monthly", next_due_date: dateInDays(3), status: "active" },
         { id: "later", name: "Insurance", amount_minor: 5000, currency_code: "KES", frequency: "yearly", next_due_date: dateInDays(20), status: "active" },
@@ -31,13 +31,13 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /Show upcoming payment reminders/ }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Reminder window in days" }), { target: { value: "14" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: false, subscription_reminder_days: 14, theme: "system" } }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: false, subscription_reminder_days: 14, theme: "system", grid_opacity: 5, row_density: "standard" } }));
     expect(await screen.findByText("Subscription reminders are turned off.")).toBeInTheDocument();
   });
 
   it("runs and displays the local database integrity check", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : Promise.resolve({ integrity_messages: ["ok"], foreign_key_violations: [] }));
     render(<SettingsPage />);
@@ -48,7 +48,7 @@ describe("SettingsPage", () => {
 
   it("shows a diagnostic report when the database has broken references", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : Promise.resolve({ integrity_messages: ["ok"], foreign_key_violations: ["account_entries row Some(3) references accounts (constraint 0)"] }));
     render(<SettingsPage />);
@@ -61,11 +61,11 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
     fireEvent.click(await screen.findByRole("button", { name: /Dark Vault/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "dark" } }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "dark", grid_opacity: 5, row_density: "standard" } }));
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("previews grid opacity and row density on the workspace", async () => {
+  it("previews and persists grid opacity and row density", async () => {
     const { unmount } = render(<SettingsPage />);
     await screen.findByRole("heading", { name: "Appearance" });
 
@@ -74,9 +74,13 @@ describe("SettingsPage", () => {
 
     expect(document.documentElement.style.getPropertyValue("--workspace-grid")).toContain("12%");
     expect(document.documentElement.dataset.previewDensity).toBe("compact");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 12, row_density: "compact" } }));
     unmount();
-    expect(document.documentElement.dataset.previewDensity).toBeUndefined();
-    expect(document.documentElement.style.getPropertyValue("--workspace-grid")).toBe("");
+    expect(document.documentElement.dataset.previewDensity).toBe("compact");
+    expect(document.documentElement.style.getPropertyValue("--workspace-grid")).toContain("12%");
+    document.documentElement.style.removeProperty("--workspace-grid");
+    delete document.documentElement.dataset.previewDensity;
   });
 
   it("marks the active configuration section and navigates to another section", async () => {
@@ -93,7 +97,7 @@ describe("SettingsPage", () => {
 
   it("saves a passphrase-encrypted backup to a user-selected file only after confirmation", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : command === "export_encrypted_backup" ? Promise.resolve("YWJj") : Promise.resolve());
     const { container } = render(<SettingsPage />);
@@ -112,7 +116,7 @@ describe("SettingsPage", () => {
   it("does not write a backup when the native save dialog is cancelled", async () => {
     fileDialog.save.mockResolvedValue(null);
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : command === "export_encrypted_backup" ? Promise.resolve("YWJj") : Promise.resolve());
     const { container } = render(<SettingsPage />);
@@ -127,7 +131,7 @@ describe("SettingsPage", () => {
 
   it("requires explicit restore confirmation and reloads after validation", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : command === "restore_encrypted_backup" ? Promise.resolve() : Promise.resolve());
     const file = new File(["encrypted"], "backup.etracker-backup");
@@ -145,7 +149,7 @@ describe("SettingsPage", () => {
 
   it("downloads a diagnostic report on request", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
-      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" })
+      ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
         : command === "get_diagnostic_report" ? Promise.resolve({ app_version: "0.1.0", operating_system: "windows", architecture: "x86_64", sqlite_version: "3.50.0", schema_version: 14, latest_supported_schema_version: 14, database_integrity: "passed", foreign_key_check: "passed" }) : Promise.resolve());
     const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:diagnostics");

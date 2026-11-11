@@ -20,7 +20,6 @@ This document records the behavior implied by the nine design screens that does 
 ### Shared Workspace
 
 - Global search covers posted transactions, accounts, active categories, and budget templates with a bounded local result set. Rules remain out of scope because ETracker has no rule model.
-- Add a persisted active-ledger or fiscal-period model before the shell's ledger selector and period controls can switch datasets rather than merely changing labels.
 - Add persisted active-ledger selection before shell period controls can switch datasets rather than merely changing labels. Current data remains in the one local ledger.
 
 ### Dashboard
@@ -62,7 +61,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ### Settings
 
-- Add persisted preferences for row density, graph-grid opacity, primary/reporting currencies, fiscal-year start, accounting method, backup schedule, vault sync, and notification delivery if these design controls are to be editable.
+- Persisted preferences now include theme, grid opacity and row density. Primary/reporting currencies, fiscal-year start, accounting method, backup schedule, vault sync, and background notification delivery remain open; notifications are currently shown only when the app is open.
 - A local backup command exists, but automated scheduled backups need a lifecycle-safe scheduler and retention policy. The design's hardware keystore, SQLCipher state, and sync status must be sourced from actual platform capabilities before display.
 
 ## Implementation Rule

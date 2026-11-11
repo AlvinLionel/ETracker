@@ -1,5 +1,5 @@
 use crate::infrastructure::database::Database;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -7,6 +7,8 @@ pub struct UserPreferences {
     pub subscription_reminders_enabled: bool,
     pub subscription_reminder_days: u8,
     pub theme: String,
+    pub grid_opacity: u8,
+    pub row_density: String,
 }
 
 pub struct SqlitePreferencesRepository<'a> {
@@ -39,8 +41,34 @@ impl<'a> SqlitePreferencesRepository<'a> {
                 |row| row.get(0),
             )
             .map_err(|e| e.to_string())?;
+        let grid_opacity: u8 = connection
+            .query_row(
+                "SELECT preference_value FROM user_preferences WHERE preference_key='grid_opacity'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| "5".to_string())
+            .parse()
+            .map_err(|_| "Stored grid opacity is invalid")?;
+        let row_density: String = connection
+            .query_row(
+                "SELECT preference_value FROM user_preferences WHERE preference_key='row_density'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| "standard".into());
         if !["system", "light", "dark"].contains(&theme.as_str()) {
             return Err("Stored theme preference is invalid.".into());
+        }
+        if grid_opacity > 12 {
+            return Err("Stored grid opacity is invalid.".into());
+        }
+        if !["compact", "standard", "comfortable"].contains(&row_density.as_str()) {
+            return Err("Stored row density is invalid.".into());
         }
         Ok(UserPreferences {
             subscription_reminders_enabled: enabled
@@ -50,6 +78,8 @@ impl<'a> SqlitePreferencesRepository<'a> {
                 .parse()
                 .map_err(|_| "Stored reminder window is invalid")?,
             theme,
+            grid_opacity,
+            row_density,
         })
     }
 
@@ -59,6 +89,12 @@ impl<'a> SqlitePreferencesRepository<'a> {
         }
         if !["system", "light", "dark"].contains(&preferences.theme.as_str()) {
             return Err("Theme must be system, light, or dark.".into());
+        }
+        if preferences.grid_opacity > 12 {
+            return Err("Accounting grid opacity must be between 0 and 12.".into());
+        }
+        if !["compact", "standard", "comfortable"].contains(&preferences.row_density.as_str()) {
+            return Err("Row density must be compact, standard, or comfortable.".into());
         }
         let mut connection = self
             .database
@@ -76,6 +112,8 @@ impl<'a> SqlitePreferencesRepository<'a> {
                 preferences.subscription_reminder_days.to_string(),
             ),
             ("theme", preferences.theme.clone()),
+            ("grid_opacity", preferences.grid_opacity.to_string()),
+            ("row_density", preferences.row_density.clone()),
         ] {
             transaction.execute(
                 "INSERT INTO user_preferences(preference_key,preference_value,updated_at) VALUES (?1,?2,CURRENT_TIMESTAMP) ON CONFLICT(preference_key) DO UPDATE SET preference_value=excluded.preference_value,updated_at=CURRENT_TIMESTAMP",
@@ -100,7 +138,9 @@ mod tests {
             UserPreferences {
                 subscription_reminders_enabled: true,
                 subscription_reminder_days: 7,
-                theme: "system".into()
+                theme: "system".into(),
+                grid_opacity: 5,
+                row_density: "standard".into()
             }
         );
         assert!(
@@ -108,7 +148,9 @@ mod tests {
                 .set(&UserPreferences {
                     subscription_reminders_enabled: false,
                     subscription_reminder_days: 0,
-                    theme: "dark".into()
+                    theme: "dark".into(),
+                    grid_opacity: 5,
+                    row_density: "standard".into()
                 })
                 .is_err()
         );
@@ -116,8 +158,26 @@ mod tests {
             subscription_reminders_enabled: false,
             subscription_reminder_days: 14,
             theme: "dark".into(),
+            grid_opacity: 11,
+            row_density: "compact".into(),
         };
         repository.set(&updated).unwrap();
         assert_eq!(repository.get().unwrap(), updated);
+        assert!(
+            repository
+                .set(&UserPreferences {
+                    grid_opacity: 13,
+                    ..updated.clone()
+                })
+                .is_err()
+        );
+        assert!(
+            repository
+                .set(&UserPreferences {
+                    row_density: "dense".into(),
+                    ..updated
+                })
+                .is_err()
+        );
     }
 }
