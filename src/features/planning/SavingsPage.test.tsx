@@ -12,11 +12,23 @@ describe("SavingsPage", () => {
     mocks.accounts.mockResolvedValue([]);
     mocks.invoke.mockImplementation(async (command: string) => command === "list_savings_goals" ? [{ id: "goal", name: "Emergency fund", target_amount_minor: 100000, contributed_minor: 12500, currency_code: "KES", target_date: null, status: "active", account_id: null }] : command === "list_eligible_savings_transfers" ? [] : "created");
   });
-  it("shows saved progress", async () => { render(<SavingsPage />); expect(await screen.findByText(/saved of/)).toBeInTheDocument(); });
+  it("shows saved progress", async () => { render(<SavingsPage />); expect(await screen.findByText(/\/ KES/)).toBeInTheDocument(); });
+  it("keeps foreign-currency goals out of the KES reserve summary", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => command === "list_savings_goals" ? [
+      { id: "goal", name: "Emergency fund", target_amount_minor: 100000, contributed_minor: 12500, currency_code: "KES", target_date: null, status: "active", account_id: null },
+      { id: "usd-goal", name: "Travel fund", target_amount_minor: 10000000, contributed_minor: 9000000, currency_code: "USD", target_date: null, status: "active", account_id: null },
+    ] : command === "list_eligible_savings_transfers" ? [] : "created");
+    render(<SavingsPage />);
+
+    await screen.findByRole("heading", { name: "Travel fund" });
+    const totalCard = screen.getByText("Total accumulated reserves").closest("article");
+    expect(totalCard).toHaveTextContent("KES 125.00");
+    expect(totalCard).not.toHaveTextContent("90,000.00");
+  });
   it("records an actual contribution without invoking transaction creation", async () => {
     render(<SavingsPage />);
     fireEvent.change(await screen.findByLabelText("Contribution amount (KES)"), { target: { value: "25.50" } });
-    fireEvent.click(screen.getByRole("button", { name: "Record savings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Record contribution" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("add_savings_contribution", expect.objectContaining({ request: expect.objectContaining({ goal_id: "goal", amount_minor: 2550 }) })));
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_transaction", expect.anything());
   });

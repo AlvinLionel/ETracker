@@ -1,4 +1,5 @@
 import type { Account } from "./types";
+import { formatMoney } from "../../shared/formatMoney";
 
 interface AccountArchiveDialogProps {
     account: Account;
@@ -11,10 +12,7 @@ interface AccountArchiveDialogProps {
 }
 
 function formatKES(amountMinor: number): string {
-    return new Intl.NumberFormat("en-KE", {
-        style: "currency",
-        currency: "KES",
-    }).format(amountMinor / 100);
+    return formatMoney(amountMinor, "KES");
 }
 
 export default function AccountArchiveDialog({ account, balanceMinor, isLoading, isSubmitting, error, onConfirm, onCancel }: AccountArchiveDialogProps) {

@@ -13,9 +13,11 @@ describe("ForecastingPage",()=>{
   it("generates snapshots from user choices and evaluates completed periods",async()=>{
     render(<ForecastingPage/>);
     expect(await screen.findByText("KES · 1-month forecast")).toBeInTheDocument();
-    expect(screen.getByText(/history coverage: moderate/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Deterministic ending balance and monthly cash flow forecast" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: /Exact deterministic forecast values/ })).toHaveTextContent("Jan 20");
+    expect(screen.getAllByText(/history coverage: moderate/i)).toHaveLength(2);
     expect(screen.getByText(/Seasonality is not modeled/)).toBeInTheDocument();
-    fireEvent.change(screen.getAllByLabelText("Forecast length")[0],{target:{value:"6"}});
+    fireEvent.click(screen.getByRole("button", { name: "6 mo" }));
     fireEvent.click(screen.getAllByRole("button",{name:"Generate forecast"})[0]);
     await waitFor(()=>expect(invoke).toHaveBeenCalledWith("generate_forecast",{request:{currency_code:"KES",period_months:6}}));
     const evaluateButton=await screen.findByRole("button",{name:"Evaluate"});
@@ -25,7 +27,7 @@ describe("ForecastingPage",()=>{
   it("saves opt-in monthly forecast generation settings",async()=>{
     render(<ForecastingPage/>);
     fireEvent.click(screen.getByRole("checkbox",{name:/Generate monthly/}));
-    fireEvent.change(screen.getAllByLabelText("Forecast length")[0],{target:{value:"6"}});
+    fireEvent.click(screen.getByRole("button", { name: "6 mo" }));
     fireEvent.click(screen.getByRole("button",{name:"Save schedule"}));
     await waitFor(()=>expect(invoke).toHaveBeenCalledWith("set_forecast_schedule",{schedule:{enabled:true,currency_code:"KES",period_months:6}}));
   });

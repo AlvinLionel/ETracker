@@ -3,13 +3,28 @@ import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { applyTheme } from "./theme";
+import { formatMoney as formatCurrency } from "../../shared/formatMoney";
+import { Bell, FileText, HardDrive, Palette, ShieldCheck } from "lucide-react";
 
 type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: "system" | "light" | "dark" };
 type Subscription = { id: string; name: string; amount_minor: number; currency_code: string; frequency: string; next_due_date: string; status: string };
 type IntegrityReport = { integrity_messages: string[]; foreign_key_violations: string[] };
 type DiagnosticReport = { app_version: string; operating_system: string; architecture: string; sqlite_version: string; schema_version: number; latest_supported_schema_version: number; database_integrity: "passed" | "issues_found"; foreign_key_check: "passed" | "issues_found" };
-const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(minor / 100);
+const money = (minor: number, currency: string) => formatCurrency(minor, currency, { maximumFractionDigits: 2 });
 const defaultPreferences: Preferences = { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system" };
+const settingsSections = [
+  { label: "Appearance", target: "Appearance", icon: Palette },
+  { label: "Reminders", target: "Subscription reminders", icon: Bell },
+  { label: "Backup & Restore", target: "Encrypted backup", icon: HardDrive },
+  { label: "Data Health", target: "Local data integrity", icon: ShieldCheck },
+  { label: "Diagnostics", target: "Diagnostic report", icon: FileText },
+];
+
+function scrollToSettingsSection(target: string) {
+  const heading = Array.from(document.querySelectorAll<HTMLHeadingElement>(".settings-content h2"))
+    .find((item) => item.textContent?.trim().toLowerCase().includes(target.toLowerCase()));
+  heading?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
 
 export default function SettingsPage() {
   const [preferences, setPreferences] = useState(defaultPreferences);
@@ -28,6 +43,9 @@ export default function SettingsPage() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreComplete, setRestoreComplete] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [gridOpacity, setGridOpacity] = useState(5);
+  const [rowDensity, setRowDensity] = useState(44);
+  const [activeSection, setActiveSection] = useState("Reminders");
 
   useEffect(() => {
     Promise.all([
@@ -44,6 +62,28 @@ export default function SettingsPage() {
     return subscriptions.filter((item) => { const due = new Date(`${item.next_due_date}T00:00:00`); return item.status === "active" && due >= from && due <= until; })
       .sort((a, b) => a.next_due_date.localeCompare(b.next_due_date));
   }, [preferences.subscription_reminder_days, subscriptions]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousGrid = root.style.getPropertyValue("--workspace-grid");
+    const previousDensity = root.dataset.previewDensity;
+    const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const updatePreview = () => {
+      const dark = preferences.theme === "dark" || (preferences.theme === "system" && Boolean(media?.matches));
+      const rgb = dark ? "255 255 255" : "64 0 198";
+      root.style.setProperty("--workspace-grid", `rgb(${rgb} / ${gridOpacity}%)`);
+      root.dataset.previewDensity = rowDensity === 36 ? "compact" : rowDensity === 52 ? "comfortable" : "standard";
+    };
+    updatePreview();
+    media?.addEventListener("change", updatePreview);
+    return () => {
+      media?.removeEventListener("change", updatePreview);
+      if (previousGrid) root.style.setProperty("--workspace-grid", previousGrid);
+      else root.style.removeProperty("--workspace-grid");
+      if (previousDensity) root.dataset.previewDensity = previousDensity;
+      else delete root.dataset.previewDensity;
+    };
+  }, [gridOpacity, preferences.theme, rowDensity]);
 
   async function save() {
     setSaving(true); setError(""); setMessage("");
@@ -120,16 +160,50 @@ export default function SettingsPage() {
     finally { setRestoreBusy(false); }
   }
 
-  return <section className="mx-auto max-w-4xl space-y-6">
-    <header><p className="workspace-accent text-xs font-semibold uppercase tracking-[0.14em]">System</p><h1 className="mt-2 text-2xl font-bold tracking-tight">Settings and reminders</h1><p className="workspace-muted mt-2 text-sm">Manage local reminder preferences for subscription payments.</p></header>
+  return <section className="settings-screen space-y-5">
+    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="workspace-accent font-mono text-xs font-semibold uppercase tracking-[0.1em]">System / Preferences · Local data</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Application settings</h1><p className="workspace-muted mt-2 text-sm">Appearance, in-app reminders, encrypted backups, and local data health.</p></div><button type="button" disabled={saving} onClick={save} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : "Save changes"}</button></header>
     {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}{message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
+    <div className="settings-layout grid gap-5 lg:grid-cols-[14rem_minmax(0,1fr)]">
+      <nav aria-label="Settings sections" className="settings-index h-fit rounded-lg border border-slate-200 bg-white p-3 lg:sticky lg:top-4">
+        <p className="px-2 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Configuration</p>
+        <div className="space-y-1">{settingsSections.map(({ label, target, icon: Icon }) => <button key={label} type="button" aria-current={activeSection === label ? "location" : undefined} onClick={() => { setActiveSection(label); scrollToSettingsSection(target); }} className={`settings-index-link flex min-h-10 w-full items-center gap-3 rounded-sm px-2.5 py-2 text-left text-sm font-medium text-slate-600 ${activeSection === label ? "settings-index-link-active" : ""}`}><Icon size={16} aria-hidden="true"/><span>{label}</span></button>)}</div>
+        <div className="mt-4 border-t border-slate-200 px-2 pt-3"><p className="text-xs font-semibold">Local workspace</p><p className="workspace-muted mt-1 text-xs">Backup files are saved where you choose.</p></div>
+      </nav>
+      <div className="settings-content min-w-0 space-y-5">
     <section className="rounded-xl border border-slate-200 bg-white p-5">
       <h2 className="font-semibold">Subscription reminders</h2>
       <label className="mt-4 flex items-start gap-3 text-sm"><input type="checkbox" checked={preferences.subscription_reminders_enabled} onChange={(event) => setPreferences((current) => ({ ...current, subscription_reminders_enabled: event.target.checked }))} /><span><strong className="block">Show upcoming payment reminders</strong><span className="text-slate-600">Reminders appear here when you open the app. ETracker does not send background or operating-system notifications.</span></span></label>
       <label className="mt-4 block text-sm font-medium">Remind me within <span className="sr-only">days</span><input aria-label="Reminder window in days" type="number" min="1" max="30" value={preferences.subscription_reminder_days} onChange={(event) => setPreferences((current) => ({ ...current, subscription_reminder_days: Number(event.target.value) }))} className="ml-2 w-20 rounded-md border border-slate-300 px-2 py-1" /> days</label>
-      <button type="button" disabled={saving || preferences.subscription_reminder_days < 1 || preferences.subscription_reminder_days > 30} onClick={save} className="mt-4 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving ? "Saving…" : "Save preferences"}</button>
     </section>
-    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Appearance</h2><label className="mt-3 block text-sm font-medium">Color theme<select aria-label="Color theme" value={preferences.theme} onChange={(event) => setPreferences((current) => ({ ...current, theme: event.target.value as Preferences["theme"] }))} className="mt-1 block w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2"><option value="system">Use device setting</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p className="mt-2 text-xs text-slate-500">Theme changes apply after saving.</p></section>
+    <section className="workspace-panel rounded-lg p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="text-lg font-semibold">Appearance</h2><p className="workspace-muted mt-1 text-sm">Theme is saved with your preferences. Grid opacity and row density preview only for this session.</p></div>
+        <span className="status-chip">Local preview</span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3" role="group" aria-label="Color theme">
+        {([ ["light", "Light Ledger", "Bright canvas with accounting grid"], ["dark", "Dark Vault", "Charcoal surfaces with low-contrast grid"], ["system", "System Adaptive", "Follow the operating system theme"] ] as const).map(([theme, title, description]) => (
+          <button key={theme} type="button" aria-pressed={preferences.theme === theme} onClick={() => setPreferences((current) => ({ ...current, theme }))} className={`theme-option rounded-lg border p-4 text-left ${preferences.theme === theme ? "theme-option-active" : ""}`}>
+            <div className={`theme-swatch theme-swatch-${theme}`} aria-hidden="true"><span/><i/><b/></div>
+            <div className="mt-3 flex items-center justify-between gap-3"><strong>{title}</strong><span className="theme-radio" aria-hidden="true">{preferences.theme === theme ? "●" : "○"}</span></div>
+            <p className="workspace-muted mt-1 text-xs">{description}</p>
+          </button>
+        ))}
+      </div>
+      <label className="settings-control-row mt-4 flex flex-wrap items-center gap-3 rounded-md bg-slate-50 p-3 text-sm">
+        <span>Accounting grid opacity</span>
+        <input aria-label="Accounting grid opacity" type="range" min="0" max="12" value={gridOpacity} onChange={(event) => setGridOpacity(Number(event.target.value))} className="min-w-36 flex-1" />
+        <span className="font-mono tabular-nums">{gridOpacity}%</span>
+        <span className="grid-preview" aria-hidden="true" style={{ backgroundSize: `${8 + gridOpacity}px ${8 + gridOpacity}px` }} />
+      </label>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md bg-slate-50 p-3">
+        <div><strong className="text-sm">UI row density</strong><p className="workspace-muted text-xs">Preview density selection. Persistence is not available yet.</p></div>
+        <div className="flex flex-wrap gap-1" role="group" aria-label="UI row density">
+          {([ [36, "Compact"], [44, "Standard"], [52, "Comfortable"] ] as const).map(([height, label]) => (
+            <button key={height} type="button" aria-pressed={rowDensity === height} onClick={() => setRowDensity(height)} className={`rounded-sm px-3 py-2 text-xs ${rowDensity === height ? "bg-violet-700 text-white" : "border border-slate-200"}`}>{label} · {height}px</button>
+          ))}
+        </div>
+      </div>
+    </section>
     <section aria-live="polite" className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Upcoming payment reminders</h2>{!preferences.subscription_reminders_enabled ? <p className="mt-3 text-sm text-slate-500">Subscription reminders are turned off.</p> : reminders.length === 0 ? <p className="mt-3 text-sm text-slate-500">No active subscriptions are due within {preferences.subscription_reminder_days} days.</p> : <ul className="mt-3 divide-y">{reminders.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span><strong>{item.name}</strong><span className="ml-2 text-slate-500">{item.frequency}</span></span><span>{item.next_due_date} · {money(item.amount_minor, item.currency_code)}</span></li>)}</ul>}</section>
     <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5"><div><h2 className="font-semibold">Encrypted backup and restore</h2><p className="mt-1 text-sm text-slate-600">Backups contain your financial records and retained statement files. Choose a strong passphrase and store it somewhere separate from the backup. ETracker does not save it and cannot recover a forgotten passphrase.</p></div>
       <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Create backup</h3><label className="block text-sm">Passphrase (at least 12 characters)<input aria-label="Backup passphrase" type="password" autoComplete="new-password" value={backupPassphrase} onChange={(event) => setBackupPassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Confirm passphrase<input aria-label="Confirm backup passphrase" type="password" autoComplete="new-password" value={backupConfirmation} onChange={(event) => setBackupConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={backupBusy || backupPassphrase.length < 12 || backupPassphrase !== backupConfirmation} onClick={exportBackup} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{backupBusy ? "Creating backup…" : import.meta.env.MODE === "e2e" ? "Download encrypted backup" : "Save encrypted backup"}</button></div>
@@ -137,5 +211,7 @@ export default function SettingsPage() {
     </section>
     <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Local data integrity</h2><p className="mt-1 text-sm text-slate-600">Check SQLite structure and references between saved records.</p><button type="button" disabled={checking} onClick={checkIntegrity} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{checking ? "Checking…" : "Check local data"}</button>{integrity && <div role="status" className="mt-3 text-sm">{integrity.integrity_messages.length === 1 && integrity.integrity_messages[0].toLowerCase() === "ok" && integrity.foreign_key_violations.length === 0 ? <p className="text-emerald-800">The local database passed both checks.</p> : <div className="text-rose-700"><p>Database check found issues. Avoid editing affected records; this report may help diagnose the problem.</p>{integrity.integrity_messages.map((item) => <p key={item}>{item}</p>)}{integrity.foreign_key_violations.map((item) => <p key={item}>{item}</p>)}</div>}</div>}</section>
     <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Diagnostic report</h2><p className="mt-1 text-sm text-slate-600">Download app version, platform, SQLite/schema versions, and redacted database health status. The report excludes financial records and is not sent anywhere.</p><button type="button" disabled={diagnosticsBusy} onClick={exportDiagnostics} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{diagnosticsBusy ? "Preparing report…" : "Download diagnostic report"}</button></section>
+      </div>
+    </div>
   </section>;
 }

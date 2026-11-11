@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import AccountForm from "./AccountForm";
 import AccountEditForm from "./AccountEditForm";
 import AccountArchiveDialog from "./AccountArchiveDialog";
+import { MetricCard } from "../../shared/ui/MetricCard";
+import { StatusChip } from "../../shared/ui/StatusChip";
+import { formatMoney } from "../../shared/formatMoney";
 import { useAccounts } from "./hooks/useAccounts";
 import type { Account, AccountType, CreateAccountInput, UpdateAccountInput } from "./types";
 
@@ -63,6 +66,24 @@ export default function AccountsPage() {
     const [accountImportError, setAccountImportError] = useState("");
     const [accountImportMessage, setAccountImportMessage] = useState("");
     const [isImportingAccounts, setIsImportingAccounts] = useState(false);
+    const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
+    const [selectedAccountId, setSelectedAccountId] = useState("");
+
+    useEffect(() => {
+        let active = true;
+        Promise.all(accounts.map(async (account) => {
+            try { return [account.id, await getBalance(account.id)] as const; }
+            catch { return [account.id, null] as const; }
+        })).then((entries) => { if (active) setAccountBalances(Object.fromEntries(entries.filter((entry): entry is readonly [string, number] => entry[1] !== null))); });
+        if (!selectedAccountId && accounts[0]) setSelectedAccountId(accounts[0].id);
+        if (selectedAccountId && !accounts.some((account) => account.id === selectedAccountId)) setSelectedAccountId(accounts[0]?.id ?? "");
+        return () => { active = false; };
+    }, [accounts, getBalance, selectedAccountId]);
+
+    const portfolioCurrency = "KES";
+    const portfolioBalanceMinor = accounts
+        .filter((account) => account.currency_code === portfolioCurrency)
+        .reduce((sum, account) => sum + (accountBalances[account.id] ?? 0), 0);
 
     async function handleCreateAccount(request: CreateAccountInput) {
         await create(request);
@@ -220,31 +241,38 @@ export default function AccountsPage() {
     }
 
     return (
-        <div className="mx-auto max-w-6xl space-y-6">
+        <div className="accounts-screen space-y-5">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
-                    <p className="workspace-accent text-xs font-semibold uppercase tracking-[0.14em]">Financial accounts</p>
-                    <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Your accounts</h1>
-                    <p className="workspace-muted mt-2 max-w-2xl text-sm leading-6">Manage the accounts you use to hold and move your money.</p>
+                    <div className="flex flex-wrap items-center gap-3"><h1 className="text-3xl font-semibold tracking-tight text-slate-900">Accounts &amp; Balance Portfolio</h1><StatusChip tone="positive">{accounts.length} sources</StatusChip></div>
+                    <p className="workspace-muted mt-2 max-w-2xl text-sm leading-6">Consolidated balances across your active cash, mobile-money, and bank accounts.</p>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={showArchived ? () => setShowArchived(false) : handleShowArchived}
                         aria-pressed={showArchived}
-                        className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                         {showArchived ? "Active accounts" : "Archived accounts"}
                     </button>
 
                     <button type="button" onClick={() => setIsCreateFormOpen(true)} disabled={isMutating}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                        <span className="text-lg leading-none">+</span>
-                        Add account
+                        className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                        <span className="text-lg leading-none">+</span> New account
                     </button>
                 </div>
             </div>
 
+            {!showArchived && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="Total portfolio assets" value={formatMoney(portfolioBalanceMinor, portfolioCurrency)} detail="KES accounts only; other currencies shown per account" />
+                <MetricCard label="Active accounts" value={String(accounts.length)} />
+                <MetricCard label="Mobile money & wallets" value={String(accounts.filter((account) => account.account_type === "mobile_money").length)} />
+                <MetricCard label="Bank & cash accounts" value={String(accounts.filter((account) => account.account_type !== "mobile_money").length)} />
+            </div>}
+
             {!showArchived && (
-                <section className="workspace-panel space-y-4 rounded-xl p-5">
+                <details className="workspace-panel rounded-lg p-4">
+                    <summary className="cursor-pointer text-sm font-semibold">Import account list</summary>
+                    <div className="mt-4 space-y-4">
                     <div>
                         <h2 className="font-semibold">Import an account list</h2>
                         <p className="workspace-muted mt-1 text-sm">
@@ -335,7 +363,8 @@ export default function AccountsPage() {
                             </button>
                         </>
                     )}
-                </section>
+                    </div>
+                </details>
             )}
 
             {showArchived
@@ -398,7 +427,7 @@ export default function AccountsPage() {
                             <div className="workspace-panel workspace-error-panel rounded-xl p-8">
                                 <h3 className="font-semibold text-red-700"> Unable to load accounts </h3>
                                 <p className="mt-2 text-sm text-slate-600">{loadError}</p>
-                                <button type="button" onClick={() => void refresh().catch(() => { })}
+                                    <button type="button" onClick={() => void refresh().catch(() => { })}
                                     className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
                                     Try again
                                 </button>
@@ -415,41 +444,28 @@ export default function AccountsPage() {
                                     </button>
                                 </div>)
                             : (
-                                <div className="workspace-panel overflow-hidden rounded-xl">
-                                    <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                                        <h3 className="font-semibold text-slate-800"> Active accounts </h3>
-                                        <span className="text-xs text-slate-500">
-                                            {accounts.length}{" "}
-                                            {accounts.length === 1 ? "account" : "accounts"}
-                                        </span>
-                                    </div>
-                                    <div className="divide-y divide-slate-100">
-                                        {accounts.map((account) => (
-                                            <div key={account.id}
-                                                className="workspace-row flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-                                                <div className="min-w-0">
-                                                    <h4 className="truncate text-sm font-semibold text-slate-800"> {account.name} </h4>
-                                                    <p className="mt-1 text-xs text-slate-500">
-                                                        {accountTypeLabels[account.account_type]}
-                                                        {account.institution_name ? ` · ${account.institution_name}` : ""}
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button type="button" onClick={() => setEditingAccount(account)} disabled={isMutating}
-                                                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                                                        Edit
+                                <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,0.9fr)]">
+                                    <div className="space-y-4">
+                                        {(["mobile_money", "bank", "cash", "other"] as const).map((type) => {
+                                            const grouped = accounts.filter((account) => account.account_type === type);
+                                            if (!grouped.length) return null;
+                                            return <section key={type} className="workspace-panel overflow-hidden rounded-lg">
+                                                <div className="flex items-center justify-between bg-slate-50 px-4 py-3"><h3 className="text-sm font-semibold uppercase tracking-[0.08em]">{type === "mobile_money" ? "Mobile money & wallets" : type === "bank" ? "Core commercial banking" : type === "cash" ? "Cash accounts" : "Other accounts"}</h3><span className="font-mono text-xs">{grouped.length} active</span></div>
+                                                <div className="divide-y divide-slate-100">{grouped.map((account) => <div key={account.id} className={`workspace-row flex flex-wrap items-center justify-between gap-4 px-4 py-4 ${selectedAccountId === account.id ? "bg-violet-50/70" : ""}`}>
+                                                    <button type="button" onClick={() => setSelectedAccountId(account.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-800">{type === "mobile_money" ? "M" : type === "bank" ? "B" : type === "cash" ? "C" : "A"}</span>
+                                                        <span className="min-w-0"><strong className="block truncate text-base">{account.name}</strong><span className="workspace-muted block truncate font-mono text-xs">{accountTypeLabels[account.account_type]}{account.institution_name ? ` · ${account.institution_name}` : ""}</span></span>
                                                     </button>
-                                                    <button type="button" onClick={() => void handleOpenArchiveDialog(account)} disabled={isMutating}
-                                                        className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50">
-                                                        Archive
-                                                    </button>
-                                                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                                                        Active
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ))}
+                                                    <div className="text-right"><strong className="block font-mono text-lg tabular-nums">{accountBalances[account.id] === undefined ? "Balance unavailable" : formatMoney(accountBalances[account.id], account.currency_code)}</strong><span className="workspace-muted text-xs">{account.currency_code}</span></div>
+                                                    <div className="flex w-full justify-end gap-2 xl:w-auto">
+                                                        <button type="button" onClick={() => setEditingAccount(account)} disabled={isMutating} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium">Edit</button>
+                                                        <button type="button" onClick={() => void handleOpenArchiveDialog(account)} disabled={isMutating} className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700">Archive</button>
+                                                    </div>
+                                                </div>)}</div>
+                                            </section>;
+                                        })}
                                     </div>
+                                    <AccountInspector account={accounts.find((account) => account.id === selectedAccountId) ?? null} balance={accountBalances[selectedAccountId]} />
                                 </div>
                             )}
 
@@ -474,4 +490,28 @@ export default function AccountsPage() {
             )}
         </div>
     );
+}
+
+function AccountInspector({ account, balance }: { account: Account | null; balance: number | undefined }) {
+    return <aside className="workspace-panel space-y-4 rounded-lg p-4 xl:sticky xl:top-4">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <h2 className="font-mono text-xs font-semibold uppercase tracking-[0.08em]">Account inspector</h2>
+            <StatusChip tone={account ? "positive" : "neutral"}>{account ? "Active" : "Select account"}</StatusChip>
+        </div>
+        {account ? <>
+            <div className="rounded-md bg-slate-50 p-4">
+                <p className="workspace-muted text-xs uppercase tracking-[0.08em]">{account.institution_name || accountTypeLabels[account.account_type]}</p>
+                <h3 className="mt-2 text-xl font-semibold">{account.name}</h3>
+                <p className="mt-4 font-mono text-2xl font-semibold tabular-nums">{balance === undefined ? "Balance unavailable" : formatMoney(balance, account.currency_code)}</p>
+                <p className="workspace-muted mt-1 text-xs">{account.currency_code} current balance</p>
+            </div>
+            <dl className="space-y-3 text-sm">
+                <div className="flex justify-between gap-3"><dt className="workspace-muted">Account type</dt><dd>{accountTypeLabels[account.account_type]}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="workspace-muted">Created</dt><dd className="font-mono text-xs">{new Date(account.created_at).toLocaleDateString()}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="workspace-muted">Account ID</dt><dd className="font-mono text-xs">{account.id.slice(0, 12)}</dd></div>
+            </dl>
+            {account.notes && <p className="workspace-muted border-t border-slate-200 pt-3 text-sm">{account.notes}</p>}
+            <p className="workspace-muted border-t border-slate-200 pt-3 text-xs">Balances are calculated from the local posted ledger. Connection, yield, and historical balance data are not available for this account.</p>
+        </> : <p className="workspace-muted text-sm">Choose an active account to inspect its local balance and details.</p>}
+    </aside>;
 }

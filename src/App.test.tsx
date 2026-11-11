@@ -26,6 +26,9 @@ describe("application navigation shell", () => {
     render(<App />);
 
     expect(await screen.findByText("Dashboard test content")).toBeInTheDocument();
+    const now = new Date();
+    expect(screen.getByText(`Calendar Q${Math.floor(now.getMonth() / 3) + 1} · ${now.getFullYear()}`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconcile statement" })).toHaveAttribute("title", "Open statement import reconciliation");
     expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const compactNavigation = screen.getByRole("navigation", { name: "Compact navigation" });
     const compactLabels = within(compactNavigation).getAllByRole("button").map((button) => button.textContent);

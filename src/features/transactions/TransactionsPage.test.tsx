@@ -98,4 +98,13 @@ describe("TransactionsPage",()=>{
   fireEvent.click(screen.getByRole("button",{name:"Save transfer"}));
   await waitFor(()=>expect(mocks.transfer).toHaveBeenCalledWith(expect.objectContaining({from_account_id:"a",to_account_id:"b",amount_minor:2000,fee_minor:150})));
  });
+ it("exports the filtered journal rows as CSV",async()=>{
+  mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);
+  const create=vi.spyOn(URL,"createObjectURL").mockReturnValue("blob:transactions");
+  const revoke=vi.spyOn(URL,"revokeObjectURL").mockImplementation(()=>{});
+  render(<TransactionsPage/>);
+  fireEvent.click(await screen.findByRole("button",{name:/Export filtered CSV/}));
+  expect(create).toHaveBeenCalledWith(expect.any(Blob));
+  expect(revoke).toHaveBeenCalledWith("blob:transactions");
+ });
 });

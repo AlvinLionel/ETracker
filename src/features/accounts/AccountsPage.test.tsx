@@ -46,6 +46,23 @@ describe("AccountsPage", () => {
     expect(screen.getByRole("button", { name: "Active accounts" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("does not add foreign-currency balances to the KES portfolio total", async () => {
+    const foreignAccount = { ...activeAccount, id: "foreign-1", name: "Dollar account", currency_code: "USD" };
+    invoke.mockImplementation((command: string, args?: { id?: string }) => {
+      if (command === "list_active_accounts") return Promise.resolve([activeAccount, foreignAccount]);
+      if (command === "list_archived_accounts") return Promise.resolve([]);
+      if (command === "get_account_balance") return Promise.resolve(args?.id === "active-1" ? 12500 : 9000000);
+      return Promise.resolve(0);
+    });
+
+    render(<AccountsPage />);
+
+    const portfolioCard = screen.getByText("Total portfolio assets").closest("article");
+    await waitFor(() => expect(portfolioCard).toHaveTextContent(/KES\s*125\.00/));
+    expect(portfolioCard).not.toHaveTextContent("90,125.00");
+    expect(portfolioCard).toHaveTextContent("KES accounts only; other currencies shown per account");
+  });
+
   it("reviews account-list rows, skips duplicates and creates only safe account fields", async () => {
     const createdAccount = { ...activeAccount, id: "new-1", name: "Travel wallet", account_type: "mobile_money", institution_name: "M-Pesa" };
     invoke.mockImplementation((command: string, args?: { request?: Record<string, unknown> }) => {

@@ -30,7 +30,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("Paused")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: /Show upcoming payment reminders/ }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Reminder window in days" }), { target: { value: "14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: false, subscription_reminder_days: 14, theme: "system" } }));
     expect(await screen.findByText("Subscription reminders are turned off.")).toBeInTheDocument();
   });
@@ -59,11 +59,36 @@ describe("SettingsPage", () => {
 
   it("saves and applies the selected theme", async () => {
     render(<SettingsPage />);
-    await screen.findByRole("combobox", { name: "Color theme" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Color theme" }), { target: { value: "dark" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Dark Vault/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_user_preferences", { preferences: { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "dark" } }));
     expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("previews grid opacity and row density on the workspace", async () => {
+    const { unmount } = render(<SettingsPage />);
+    await screen.findByRole("heading", { name: "Appearance" });
+
+    fireEvent.change(screen.getByRole("slider", { name: "Accounting grid opacity" }), { target: { value: "12" } });
+    fireEvent.click(screen.getByRole("button", { name: /Compact/ }));
+
+    expect(document.documentElement.style.getPropertyValue("--workspace-grid")).toContain("12%");
+    expect(document.documentElement.dataset.previewDensity).toBe("compact");
+    unmount();
+    expect(document.documentElement.dataset.previewDensity).toBeUndefined();
+    expect(document.documentElement.style.getPropertyValue("--workspace-grid")).toBe("");
+  });
+
+  it("marks the active configuration section and navigates to another section", async () => {
+    render(<SettingsPage />);
+    const appearance = screen.getByRole("button", { name: "Appearance" });
+    const reminders = screen.getByRole("button", { name: "Reminders" });
+    expect(reminders).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(appearance);
+
+    expect(appearance).toHaveAttribute("aria-current", "location");
+    expect(reminders).not.toHaveAttribute("aria-current");
   });
 
   it("saves a passphrase-encrypted backup to a user-selected file only after confirmation", async () => {

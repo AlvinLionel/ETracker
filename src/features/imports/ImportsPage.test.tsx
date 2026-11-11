@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ImportsPage from "./ImportsPage";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn(), pdfText: vi.fn(), confirmAction: vi.fn() }));
@@ -42,6 +42,24 @@ describe("ImportsPage", () => {
     })));
     expect(mocks.invoke).toHaveBeenCalledWith("create_import_batch", { request: expect.objectContaining({ source_file_contents: expect.any(Array) }) });
     expect(await screen.findByRole("status")).toHaveTextContent("2 staged rows");
+  });
+
+  it("opens a saved import's audit log directly", async () => {
+    const batch = { id: "batch-audit", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "2026-11-06", revision_of_batch_id: null };
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([batch]);
+      if (command === "list_staged_import_records") return Promise.resolve([]);
+      if (command === "list_import_logs") return Promise.resolve([{ id: "log-1", timestamp: "2026-11-06T10:00:00Z", stage: "parse", severity: "info", message: "Rows staged", record_id: null, corrective_action: null }]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Audit log" }));
+
+    const workspaceViews = screen.getByRole("navigation", { name: "Import workspace views" });
+    await waitFor(() => expect(within(workspaceViews).getByRole("button", { name: "Logs" })).toHaveAttribute("aria-current", "page"));
+    expect(await screen.findByText("Rows staged")).toBeInTheDocument();
   });
 
   it("rejects an oversized statement before reading or sending it", async () => {
@@ -227,7 +245,7 @@ describe("ImportsPage", () => {
       return Promise.resolve([]);
     });
     render(<ImportsPage />);
-    expect(await screen.findByText(/Start here to build your past spending history from account statements/)).toBeInTheDocument();
+    expect(await screen.findByText(/Import statements, review parsed rows, reconcile balances/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
     expect(screen.getByRole("navigation", { name: "Import workspace views" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Logs" }));

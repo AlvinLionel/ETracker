@@ -26,9 +26,10 @@ describe("AnalyticsPage", () => {
   beforeEach(() => { invoke.mockReset(); invoke.mockResolvedValue(sample); });
   it("loads summaries with filters and exports reports", async () => {
     render(<AnalyticsPage />);
-    expect(await screen.findByText("Income, expense and refund trends")).toBeInTheDocument();
+    expect(await screen.findByText("Monthly income vs expenditure trajectory")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Monthly income, gross expenses and refunds chart" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: /Exact monthly values for the financial trend chart/ })).toHaveTextContent("2026-11");
+    expect(screen.getByRole("img", { name: "Income, gross expenses and refunds by account" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Expense category mix chart" })).toBeInTheDocument();
     expect(screen.getAllByText("Food").length).toBeGreaterThan(1);
     expect(screen.getByText("Internet")).toBeInTheDocument();
@@ -41,8 +42,20 @@ describe("AnalyticsPage", () => {
     await waitFor(() => expect(invoke).toHaveBeenLastCalledWith("get_analytics_summary", expect.objectContaining({ accountId: "cash" })));
     const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export statement CSV" }));
     expect(create).toHaveBeenCalled();
     expect(revoke).toHaveBeenCalledWith("blob:test");
+  });
+
+  it("maps the six-month preset to an inclusive calendar range", async () => {
+    render(<AnalyticsPage />);
+    await screen.findByText("Monthly income vs expenditure trajectory");
+    fireEvent.click(screen.getByRole("button", { name: "6 months" }));
+
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const dateString = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    await waitFor(() => expect(invoke).toHaveBeenLastCalledWith("get_analytics_summary", expect.objectContaining({ from: dateString(start), to: dateString(now) })));
+    expect(screen.getByRole("button", { name: "6 months" })).toHaveAttribute("aria-pressed", "true");
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listActiveAccounts } from "../accounts/api/accounts";
 import { listActiveCategories } from "../transactions/api/transactions";
+import { formatMoney as formatCurrency } from "../../shared/formatMoney";
 
 type Account = { id: string; name: string; currency_code: string };
 type Category = { id: string; name: string; category_type: string };
@@ -9,7 +10,7 @@ type Subscription = { id: string; name: string; description: string | null; amou
 type EligiblePayment = { transaction_id: string; amount_minor: number; occurred_at: string; description: string | null };
 type Draft = { name: string; description: string; amount: string; currency_code: string; frequency: string; next_due_date: string; account_id: string; category_id: string };
 const freshDraft = (): Draft => ({ name: "", description: "", amount: "", currency_code: "KES", frequency: "monthly", next_due_date: new Date().toISOString().slice(0, 10), account_id: "", category_id: "" });
-const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(minor / 100);
+const money = (minor: number, currency: string) => formatCurrency(minor, currency);
 function parseMinor(value: string) { if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null; const [whole, fraction = ""] = value.split("."); const amount = BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2)); return amount > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(amount); }
 function upcoming(date: string) { const due = new Date(`${date}T00:00:00Z`).getTime(); const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime(); const days = Math.ceil((due - today) / 86_400_000); return days >= 0 && days <= 7; }
 

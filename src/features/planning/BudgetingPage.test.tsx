@@ -26,10 +26,11 @@ describe("BudgetingPage", () => {
     expect(await screen.findByRole("heading", { name: "Monthly plan worksheet" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: /Monthly financial plan with posted actuals/ })).toBeInTheDocument();
     expect(await screen.findByText("Food", { selector: "td" })).toBeInTheDocument();
-    expect(screen.getAllByText(/80\.00/)).toHaveLength(2);
-    expect(screen.getByText(/170\.00/)).toBeInTheDocument();
-    expect(screen.getByText("Unallocated actual")).toBeInTheDocument();
-    expect(screen.getByText(/99\.99/)).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Food actual against plan" })).toHaveAttribute("aria-valuenow", "32");
+    expect(screen.getAllByText(/80\.00/)).toHaveLength(4);
+    expect(screen.getAllByText(/170\.00/)).toHaveLength(2);
+    expect(screen.getAllByText("Unallocated actual")).toHaveLength(2);
+    expect(screen.getAllByText(/99\.99/)).toHaveLength(2);
   });
 
   it("creates an independent monthly budget from a template", async () => {
