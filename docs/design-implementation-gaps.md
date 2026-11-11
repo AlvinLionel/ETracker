@@ -13,7 +13,7 @@ This document records the behavior implied by the nine design screens that does 
 - **Analytics:** filtered summaries, trends, category breakdown, account comparisons, budget performance, savings progress, recurring expenses, and unusual expenses are implemented.
 - **Forecasting:** local forecast snapshots, schedule configuration, and month evaluation are implemented. The current model is documented by its returned assumptions and limitations.
 - **Settings:** theme and subscription reminder preferences, encrypted backup/restore, database integrity checks, and privacy-safe diagnostics are implemented.
-- **Exports:** filtered journal, analytics report, monthly budget worksheet, savings contribution ledger, and active account portfolio CSV exports are implemented. PDF/print output and saved report definitions remain open.
+- **Exports:** filtered journal, analytics report, monthly budget worksheet, savings contribution ledger, and active account portfolio CSV exports are implemented. Named Analytics filter sets can be saved and reopened. PDF/print output remains open.
 
 ## Backend Work Needed
 
@@ -51,7 +51,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ### Analytics
 
-- Analytics CSV export and an equal-length previous-period comparison are implemented with the active date/account/category/currency filters. Saved report definitions and print/PDF output remain open.
+- Analytics CSV export, saved filter definitions, and an equal-length previous-period comparison are implemented with the active date/account/category/currency filters. Print/PDF output remains open.
 
 ### Forecasting
 

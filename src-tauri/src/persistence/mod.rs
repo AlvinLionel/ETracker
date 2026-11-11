@@ -9,5 +9,6 @@ pub mod imports;
 pub mod integrity;
 pub mod planning;
 pub mod preferences;
+pub mod saved_reports;
 pub mod search;
 pub mod transactions;

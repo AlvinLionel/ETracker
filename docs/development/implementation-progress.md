@@ -160,3 +160,5 @@ Completed work must be supported by actual implementation and verification rathe
 - Appearance preference persistence: grid opacity and row density now save in the existing local preferences store, validate on write, default safely for existing databases, and apply across app pages and launches. Settings and preference repository regression coverage added.
 
 - Dashboard import triage: the dashboard now shows active statement workspaces awaiting review and highlights how many have reconciliation differences, with a direct link back to Imports. Discarded and finalized batches are excluded from the counts.
+
+- Saved Analytics reports: added a persisted report-definition table and validated save/list/delete commands. Analytics can save and restore named date, account, category and currency filters. Backend tests cover CRUD, duplicate names, invalid dates and range validation; UI tests cover saving and restoring filters.

@@ -5,7 +5,7 @@ struct Migration {
     sql: &'static str,
 }
 
-pub(super) const LATEST_VERSION: i64 = 17;
+pub(super) const LATEST_VERSION: i64 = 18;
 
 const MIGRATIONS: &[Migration] = &[
     Migration {
@@ -75,6 +75,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 17,
         sql: include_str!("../../../migrations/0017_transaction_attachments.sql"),
+    },
+    Migration {
+        version: 18,
+        sql: include_str!("../../../migrations/0018_saved_analytics_reports.sql"),
     },
 ];
 

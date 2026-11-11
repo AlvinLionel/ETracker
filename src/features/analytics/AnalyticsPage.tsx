@@ -3,6 +3,8 @@ import { getAnalyticsSummary, type AnalyticsSummary } from "./api/analytics";
 import { serializeCsv } from "./csv";
 import { AccountActivityChart, ExpenseCategoryDonut, MonthlyTrendChart } from "./AnalyticsCharts";
 import { formatMoney as formatCurrency } from "../../shared/formatMoney";
+import { confirmAction } from "../../shared/confirmAction";
+import { deleteSavedAnalyticsReport, listSavedAnalyticsReports, saveAnalyticsReport, type SavedAnalyticsReport } from "./api/savedReports";
 
 const today = new Date().toISOString().slice(0, 10);
 const yearAgo = new Date(new Date().setMonth(new Date().getMonth() - 11)).toISOString().slice(0, 7) + "-01";
@@ -20,6 +22,12 @@ export default function AnalyticsPage() {
   const [comparePrevious, setComparePrevious] = useState(false);
   const [comparison, setComparison] = useState<AnalyticsSummary | null>(null);
   const [comparisonError, setComparisonError] = useState("");
+  const [savedReports, setSavedReports] = useState<SavedAnalyticsReport[]>([]);
+  const [selectedSavedReportId, setSelectedSavedReportId] = useState("");
+  const [savedReportName, setSavedReportName] = useState("");
+  const [showSaveReport, setShowSaveReport] = useState(false);
+  const [savedReportError, setSavedReportError] = useState("");
+  const [savedReportBusy, setSavedReportBusy] = useState(false);
   const [scenarioIncome, setScenarioIncome] = useState("");
   const [scenarioExpenseReduction, setScenarioExpenseReduction] = useState("");
   const [error, setError] = useState("");
@@ -34,6 +42,12 @@ export default function AnalyticsPage() {
     finally { setBusy(false); }
   }, [from, to, accountId, categoryId, currencyCode]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    listSavedAnalyticsReports().then((reports) => { if (active) setSavedReports(reports); })
+      .catch(() => { if (active) setSavedReportError("Saved reports could not be loaded."); });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (!comparePrevious) { setComparison(null); setComparisonError(""); return; }
     let active = true;
@@ -59,6 +73,31 @@ export default function AnalyticsPage() {
     setFrom(dateOnly(start));
     setTo(dateOnly(end));
     setPeriodPreset(preset);
+  }
+  function applySavedReport(report: SavedAnalyticsReport) {
+    setFrom(report.from_date ?? "");
+    setTo(report.to_date ?? "");
+    setAccountId(report.account_id ?? "");
+    setCategoryId(report.category_id ?? "");
+    setCurrencyCode(report.currency_code ?? "");
+    setPeriodPreset("custom");
+    setSelectedSavedReportId(report.id);
+  }
+  async function createSavedReport() {
+    setSavedReportBusy(true); setSavedReportError("");
+    try {
+      const saved = await saveAnalyticsReport({ name: savedReportName, from_date: from || null, to_date: to || null, account_id: accountId || null, category_id: categoryId || null, currency_code: currencyCode || null });
+      setSavedReports((current) => [saved, ...current]); setSelectedSavedReportId(saved.id); setSavedReportName(""); setShowSaveReport(false);
+    } catch (error) { setSavedReportError(typeof error === "string" ? error : "The report could not be saved. Check the name and filters."); }
+    finally { setSavedReportBusy(false); }
+  }
+  async function removeSavedReport() {
+    const report = savedReports.find((item) => item.id === selectedSavedReportId);
+    if (!report || !(await confirmAction(`Delete the saved report “${report.name}”?`))) return;
+    setSavedReportBusy(true); setSavedReportError("");
+    try { const deleted = await deleteSavedAnalyticsReport(report.id); if (!deleted) throw new Error("Saved report no longer exists."); setSavedReports((current) => current.filter((item) => item.id !== report.id)); setSelectedSavedReportId(""); }
+    catch { setSavedReportError("The saved report could not be deleted."); }
+    finally { setSavedReportBusy(false); }
   }
   const currency = currencyCode || data?.currencies[0] || "KES";
   const comparisonMetrics = data && comparison ? [
@@ -92,6 +131,13 @@ export default function AnalyticsPage() {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-3"><button type="button" aria-pressed={comparePrevious} onClick={() => setComparePrevious((value) => !value)} className={`rounded-md border px-3 py-2 text-xs font-semibold ${comparePrevious ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600"}`}>Compare previous period</button><p className="workspace-muted font-mono text-xs tabular-nums">{from} – {to}</p></div>
+    </div>
+    <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-white p-3">
+      <label className="min-w-56 flex-1 text-xs font-semibold text-slate-600">Saved report<select aria-label="Saved report" value={selectedSavedReportId} disabled={savedReportBusy} onChange={(event) => { const id = event.target.value; setSelectedSavedReportId(id); const report = savedReports.find((item) => item.id === id); if (report) applySavedReport(report); }} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Choose a saved report</option>{savedReports.map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}</select></label>
+      <button type="button" disabled={!data || savedReportBusy} onClick={() => { setShowSaveReport((value) => !value); setSavedReportError(""); }} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50">Save current report</button>
+      {selectedSavedReportId && <button type="button" disabled={savedReportBusy} onClick={() => void removeSavedReport()} className="rounded-md border border-rose-200 px-3 py-2 text-sm font-medium text-rose-800 disabled:opacity-50">Delete saved report</button>}
+      {showSaveReport && <form className="flex w-full flex-wrap items-end gap-2 border-t border-slate-100 pt-3" onSubmit={(event) => { event.preventDefault(); void createSavedReport(); }}><label className="min-w-56 flex-1 text-xs font-semibold text-slate-600">Report name<input aria-label="Report name" maxLength={64} required value={savedReportName} onChange={(event) => setSavedReportName(event.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label><button type="submit" disabled={savedReportBusy || !savedReportName.trim()} className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{savedReportBusy ? "Saving…" : "Save report"}</button><button type="button" onClick={() => setShowSaveReport(false)} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Cancel</button></form>}
+      {savedReportError && <p role="alert" className="w-full text-sm text-rose-700">{savedReportError}</p>}
     </div>
     <div className="analytics-filters grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
       <label className="text-xs font-semibold text-slate-600">From<input aria-label="From date" type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPeriodPreset("custom"); }} className="mt-1 block w-full rounded-md border border-slate-300 px-2 py-2 text-sm" /></label>

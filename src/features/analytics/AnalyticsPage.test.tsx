@@ -4,6 +4,8 @@ import AnalyticsPage from "./AnalyticsPage";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+const confirmMock = vi.hoisted(() => vi.fn());
+vi.mock("../../shared/confirmAction", () => ({ confirmAction: (...args: unknown[]) => confirmMock(...args) }));
 
 const sample = {
   currencies: ["KES"],
@@ -23,7 +25,7 @@ const sample = {
 };
 
 describe("AnalyticsPage", () => {
-  beforeEach(() => { invoke.mockReset(); invoke.mockResolvedValue(sample); });
+  beforeEach(() => { invoke.mockReset(); confirmMock.mockReset().mockResolvedValue(true); invoke.mockImplementation((command: string) => command === "list_saved_analytics_reports" ? Promise.resolve([]) : Promise.resolve(sample)); });
   it("loads summaries with filters and exports reports", async () => {
     render(<AnalyticsPage />);
     expect(await screen.findByText("Monthly income vs expenditure trajectory")).toBeInTheDocument();
@@ -67,5 +69,31 @@ describe("AnalyticsPage", () => {
     expect(screen.getByText(/Previous range:/)).toBeInTheDocument();
     const calls = invoke.mock.calls.filter(([command]) => command === "get_analytics_summary");
     expect(calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("saves the selected filters as a named report for reuse", async () => {
+    const saved = { id: "saved-1", name: "Monthly review", from_date: "2026-10-01", to_date: "2026-10-31", account_id: "cash", category_id: "food", currency_code: "KES", created_at: "2026-11-12", updated_at: "2026-11-12" };
+    invoke.mockImplementation((command: string) => command === "list_saved_analytics_reports" ? Promise.resolve([]) : command === "save_analytics_report" ? Promise.resolve(saved) : Promise.resolve(sample));
+    render(<AnalyticsPage />);
+    await screen.findByText("Monthly income vs expenditure trajectory");
+    fireEvent.click(screen.getByRole("button", { name: "Save current report" }));
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Monthly review" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save report" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("save_analytics_report", { request: expect.objectContaining({ name: "Monthly review", from_date: expect.any(String), to_date: expect.any(String), currency_code: "KES" }) }));
+    expect(await screen.findByRole("option", { name: "Monthly review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete saved report" })).toBeInTheDocument();
+  });
+
+  it("restores a saved report's date and ledger filters", async () => {
+    const saved = { id: "saved-2", name: "Food in October", from_date: "2026-10-01", to_date: "2026-10-31", account_id: "cash", category_id: "food", currency_code: "KES", created_at: "2026-11-12", updated_at: "2026-11-12" };
+    invoke.mockImplementation((command: string) => command === "list_saved_analytics_reports" ? Promise.resolve([saved]) : Promise.resolve(sample));
+    render(<AnalyticsPage />);
+    await screen.findByText("Monthly income vs expenditure trajectory");
+    fireEvent.change(await screen.findByRole("combobox", { name: "Saved report" }), { target: { value: "saved-2" } });
+    expect(screen.getByLabelText("From date")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("To date")).toHaveValue("2026-10-31");
+    expect(screen.getByLabelText("Account")).toHaveValue("cash");
+    expect(screen.getByLabelText("Category")).toHaveValue("food");
+    await waitFor(() => expect(invoke).toHaveBeenLastCalledWith("get_analytics_summary", expect.objectContaining({ from: "2026-10-01", to: "2026-10-31", accountId: "cash", categoryId: "food", currencyCode: "KES" })));
   });
 });
