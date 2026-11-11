@@ -173,3 +173,17 @@ Sometimes it might become a hustle to request for statements from the money serv
 
 ### concept
 Introduce a feature to sync with mpesa and bank transactions to record them in real time
+
+### FE-004- Flag non- statement files
+
+**status:** Implemented (12 November 2026)
+
+**priority** Urgent
+
+### Problem
+
+The current system accepts any type of file and documents it in the system.
+
+### concept
+
+Imports now validate supported file types and container signatures, inspect mapped CSV/Excel data for transaction date and amount rows, and classify extracted PDF text before creating an import workspace. Budget plans, account lists, unrelated documents, and unsupported or malformed files are rejected with a reviewable error. Provider-specific formats still require representative samples.

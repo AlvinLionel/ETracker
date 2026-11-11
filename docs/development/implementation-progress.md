@@ -162,3 +162,5 @@ Completed work must be supported by actual implementation and verification rathe
 - Dashboard import triage: the dashboard now shows active statement workspaces awaiting review and highlights how many have reconciliation differences, with a direct link back to Imports. Discarded and finalized batches are excluded from the counts.
 
 - Saved Analytics reports: added a persisted report-definition table and validated save/list/delete commands. Analytics can save and restore named date, account, category and currency filters. Backend tests cover CRUD, duplicate names, invalid dates and range validation; UI tests cover saving and restoring filters.
+
+- Import file validation: reject unsupported formats and mismatched PDF/Excel containers before retention; validate mapped CSV/Excel transaction rows and classify extracted PDFs before creating workspaces. Budget plans, account lists and unrelated documents are routed away from transaction import. Provider-specific parsing remains dependent on verified samples.

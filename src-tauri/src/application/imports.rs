@@ -4,6 +4,9 @@ pub const MAX_WORKBOOK_EXPANDED_BYTES: u64 = 100 * 1024 * 1024;
 fn source_file_is_too_large(size: usize) -> bool {
     size > MAX_SOURCE_FILE_BYTES
 }
+fn source_format_is_supported(format: &str) -> bool {
+    matches!(format, "csv" | "xlsx" | "pdf")
+}
 
 pub fn detect_csv_delimiter(contents: &[u8]) -> u8 {
     let mut counts = [(b',', 0usize), (b';', 0), (b'\t', 0), (b'|', 0)];
@@ -118,10 +121,7 @@ impl<R: ImportRepository> ImportService<R> {
         if batch.account_id.trim().is_empty()
             || batch.source_file_name.trim().is_empty()
             || batch.source_file_contents.is_empty()
-            || !matches!(
-                batch.source_format.as_str(),
-                "csv" | "xlsx" | "pdf" | "unknown"
-            )
+            || !source_format_is_supported(batch.source_format.as_str())
         {
             return Err(ImportError::InvalidBatch);
         }
@@ -195,7 +195,19 @@ impl<R: ImportRepository> ImportService<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SOURCE_FILE_BYTES, detect_csv_delimiter, source_file_is_too_large};
+    use super::{
+        MAX_SOURCE_FILE_BYTES, detect_csv_delimiter, source_file_is_too_large,
+        source_format_is_supported,
+    };
+
+    #[test]
+    fn rejects_unknown_and_unsupported_import_formats() {
+        assert!(source_format_is_supported("csv"));
+        assert!(source_format_is_supported("xlsx"));
+        assert!(source_format_is_supported("pdf"));
+        assert!(!source_format_is_supported("unknown"));
+        assert!(!source_format_is_supported("docx"));
+    }
 
     #[test]
     fn source_file_size_limit_accepts_the_limit_and_rejects_larger_files() {

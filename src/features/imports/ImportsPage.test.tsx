@@ -11,12 +11,13 @@ vi.mock("../../shared/confirmAction", () => ({ confirmAction: mocks.confirmActio
 describe("ImportsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.pdfText.mockResolvedValue({ pages: ["2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
+    mocks.pdfText.mockResolvedValue({ pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
     mocks.confirmAction.mockResolvedValue(true);
     mocks.accounts.mockResolvedValue([{ id: "a", name: "Main", currency_code: "KES" }]);
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "csv_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
+      if (command === "csv_rows") return Promise.resolve([["Date", "Amount", "Memo"], ["2026-11-01", "10.00", "Shop"]]);
       if (command === "create_import_batch") return Promise.resolve("batch-1");
       if (command === "stage_csv_import") return Promise.resolve(2);
       if (command === "list_staged_import_records") return Promise.resolve([]);
@@ -69,6 +70,48 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
     expect(await screen.findByRole("alert")).toHaveTextContent(/25 MiB or smaller/);
     expect(mocks.invoke).not.toHaveBeenCalledWith("csv_headers", expect.anything());
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("rejects unsupported file extensions before creating an import workspace", async () => {
+    render(<ImportsPage />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["notes"], "notes.docx")] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/file type is not supported/i);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("rejects a renamed non-PDF document before extraction", async () => {
+    render(<ImportsPage />);
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["meeting notes"], "notes.pdf", { type: "application/pdf" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent(/contents do not match its/i);
+    expect(mocks.pdfText).not.toHaveBeenCalled();
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("rejects a non-financial CSV without creating a retained import workspace", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Title", "Owner", "Status"]);
+      if (command === "csv_rows") return Promise.resolve([["Title", "Owner", "Status"], ["Planning notes", "Alex", "Complete"]]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["Title,Owner,Status\nPlanning notes,Alex,Complete"], "notes.csv", { type: "text/csv" })] } });
+    await screen.findByLabelText("Date column");
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/does not contain transaction rows/i);
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
+  });
+
+  it("rejects an unrelated PDF before retaining it as a statement batch", async () => {
+    mocks.pdfText.mockResolvedValue({ pages: ["Meeting agenda", "Welcome and discussion points"], ocrPageNumbers: [] });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["%PDF-1.5 fixture"], "agenda.pdf", { type: "application/pdf" })] } });
+    await screen.findByText(/Selectable text is extracted directly/);
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/does not appear to contain bank or mobile-money statement activity/i);
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
   });
 
@@ -141,6 +184,7 @@ describe("ImportsPage", () => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "xlsx_sheet_names") return Promise.resolve(["Transactions", "Summary"]);
       if (command === "xlsx_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
+      if (command === "xlsx_rows") return Promise.resolve([["Date", "Amount", "Memo"], ["2026-11-01", "10.00", "Shop"]]);
       if (command === "create_import_batch") return Promise.resolve("batch-xlsx");
       if (command === "stage_xlsx_import") return Promise.resolve(1);
       if (command === "list_staged_import_records") return Promise.resolve([]);
@@ -150,7 +194,7 @@ describe("ImportsPage", () => {
     });
     render(<ImportsPage />);
     fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
-    const file = new File([new Uint8Array([1, 2, 3])], "statement.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const file = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], "statement.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
     await screen.findByLabelText("Worksheet");
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
@@ -173,12 +217,12 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
     expect(await screen.findByText(/Selectable text is extracted directly/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "pdf-batch", pages: ["2026-11-01 Grocery shop 12.50"] }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "pdf-batch", pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"] }));
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });
 
   it("keeps an encrypted PDF import open until its password unlocks extraction", async () => {
-    mocks.pdfText.mockRejectedValueOnce("password-required").mockResolvedValueOnce({ pages: ["2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
+    mocks.pdfText.mockRejectedValueOnce("password-required").mockResolvedValueOnce({ pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "create_import_batch") return Promise.resolve("protected-batch");
@@ -198,7 +242,7 @@ describe("ImportsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unlock PDF and continue" }));
 
     await waitFor(() => expect(mocks.pdfText.mock.calls[mocks.pdfText.mock.calls.length - 1]?.slice(0, 2)).toEqual([expect.any(Uint8Array), "statement-secret"]));
-    expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "protected-batch", pages: ["2026-11-01 Grocery shop 12.50"] });
+    expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "protected-batch", pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"] });
     expect(mocks.invoke.mock.calls.filter(([command]) => command === "create_import_batch")).toHaveLength(1);
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });
@@ -211,6 +255,7 @@ describe("ImportsPage", () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve(++batchReads === 1 ? [previous] : [revised, previous]);
       if (command === "csv_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
+      if (command === "csv_rows") return Promise.resolve([["Date", "Amount", "Memo"], ["2026-11-01", "15.00", "Groceries"]]);
       if (command === "create_import_batch") return Promise.resolve("new-batch");
       if (command === "stage_csv_import") return Promise.resolve(1);
       if (command === "compare_import_revision" || command === "list_import_revision_changes") return Promise.resolve([change]);

@@ -22,6 +22,48 @@ function classifySpreadsheet(headers: string[]): SpreadsheetKind {
   if (hasDate && hasAmount) return "statement";
   return "unrecognized";
 }
+function looksLikeDate(value: string): boolean {
+  const trimmed = value.trim();
+  return /^(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})(?:[T\s].*)?$/.test(trimmed);
+}
+function looksLikeMoney(value: string): boolean {
+  const normalized = value.trim().replace(/^(?:KES|KSHS?|USD|EUR|GBP)\s*/i, "").replace(/\s*(?:CR|DR)$/i, "").replace(/[\s,]/g, "");
+  return /^-?\(?\d+(?:\.\d{1,2})?\)?$/.test(normalized);
+}
+function containsTransactionRows(rows: string[][], dateColumn: string, amountColumn: string): boolean {
+  const headers = rows[0] ?? [];
+  const dateIndex = headers.indexOf(dateColumn);
+  const amountIndex = headers.indexOf(amountColumn);
+  if (dateIndex < 0 || amountIndex < 0 || dateIndex === amountIndex) return false;
+  return rows.slice(1, 101).some((row) => looksLikeDate(row[dateIndex] ?? "") && looksLikeMoney(row[amountIndex] ?? ""));
+}
+function classifyPdfPages(pages: string[]): SpreadsheetKind {
+  const text = pages.join("\n");
+  if (/\b(budget plan|budget planner|monthly budget|budget worksheet|spending plan)\b/i.test(text)) return "budget-plan";
+  if (/\b(account list|account directory|account register)\b/i.test(text)) return "account-list";
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const datePattern = /(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})/;
+  const amountPattern = /(?:KES|KSHS?|USD)\s*\d+|\b\d[\d,]*\.\d{2}\b/i;
+  const dateMoneyRows = lines.filter((line) => datePattern.test(line) && amountPattern.test(line)).length;
+  const hasDateEvidence = lines.some((line) => datePattern.test(line));
+  const hasAmountEvidence = lines.some((line) => amountPattern.test(line));
+  const statementCue = /\b(statement|transaction history|transaction details|account activity|opening balance|closing balance|debit|credit|withdrawal|deposit|m[- ]?pesa|mobile money|bank)\b/i.test(text);
+  return (statementCue && hasDateEvidence && hasAmountEvidence) || dateMoneyRows >= 2 ? "statement" : "unrecognized";
+}
+function supportedFileFormat(fileName: string): "csv" | "xls" | "xlsx" | "pdf" | null {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  return ext === "csv" || ext === "xls" || ext === "xlsx" || ext === "pdf" ? ext : null;
+}
+function hasExpectedContainer(fileName: string, bytes: number[]): boolean {
+  const extension = supportedFileFormat(fileName);
+  if (extension === "pdf") return new TextDecoder().decode(new Uint8Array(bytes.slice(0, 1024))).includes("%PDF-");
+  if (extension === "xlsx" || extension === "xls") {
+    const zip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+    const legacyExcel = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1].every((byte, index) => bytes[index] === byte);
+    return zip || legacyExcel;
+  }
+  return extension === "csv";
+}
 function detectHeader(headers: string[], pattern: RegExp, fallback = 0): string {
   return headers.find((header) => pattern.test(header.toLowerCase())) ?? headers[fallback] ?? "";
 }
@@ -64,11 +106,13 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   async function selectFile(selected:File|null){
     setHeaders([]);setSpreadsheetKind("unrecognized");setContents("");setSourceBytes([]);setXlsxBytes([]);setSheetNames([]);setSheetName("");setError("");setMessage("");setPdfProgress("");setPendingPdfBatchId("");setPdfPassword("");setNeedsPdfPassword(false);setIsFileLoading(false);
     if(!selected){setFile(null);return;}
+    if(!supportedFileFormat(selected.name)){setFile(null);setError("This file type is not supported here. Choose a CSV, Excel workbook, or PDF bank/mobile-money statement.");return;}
     if(selected.size>MAX_SOURCE_FILE_BYTES){setFile(null);setError("Statement files must be 25 MiB or smaller. Split a larger statement into smaller files and import them separately.");return;}
     setFile(selected);
     setIsFileLoading(true);
     try{
       const bytes=Array.from(new Uint8Array(await selected.arrayBuffer()));setSourceBytes(bytes);
+      if(!hasExpectedContainer(selected.name,bytes)){setFile(null);setSourceBytes([]);setError("The file contents do not match its .csv, Excel, or PDF extension. Choose the original financial statement file.");return;}
       if(selected.name.toLowerCase().endsWith(".csv")){
         const text=await selected.text();setContents(text);
         applySpreadsheetHeaders(await invoke<string[]>("csv_headers",{contents:text}));
@@ -83,8 +127,8 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   async function submit(e:FormEvent){
     e.preventDefault();setError("");setMessage("");setPdfProgress("");
     if(!accountId||!file){setError("Choose an account and statement file.");return;}
-    const ext=file.name.split(".").pop()?.toLowerCase()??"unknown";
-    const format=["csv","xls","xlsx","pdf"].includes(ext)?ext:"unknown";
+    const format=supportedFileFormat(file.name);
+    if(!format){setError("This file type is not supported. Choose a CSV, Excel workbook, or PDF bank/mobile-money statement.");return;}
     const sourceFormat=format==="xls"?"xlsx":format;
     if(spreadsheetKind==="budget-plan"||spreadsheetKind==="account-list"){
       setError(spreadsheetKind==="budget-plan"?"This spreadsheet looks like a budget plan, not spending history. It has not been imported as transactions.":"This spreadsheet looks like an account list, not transaction history. It has not been imported as transactions.");
@@ -93,15 +137,18 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
     let id=pendingPdfBatchId;
     setIsFileLoading(true);
     try{
-      if(!id) id=await invoke<string>("create_import_batch",{request:{account_id:accountId,source_file_name:file.name,source_format:sourceFormat,revision_of_batch_id:revisionBase||null,source_file_contents:sourceBytes}});
       if(format==="csv"||format==="xlsx"||format==="xls"){
         if(!dateColumn||!amountColumn)throw "Select the date and amount columns.";
+        const rows=format==="csv"
+          ? await invoke<string[][]>("csv_rows",{contents})
+          : await invoke<string[][]>("xlsx_rows",{contents:xlsxBytes,sheetName,headerRow:Number(headerRow)});
+        if(!containsTransactionRows(rows,dateColumn,amountColumn))throw "This file does not contain transaction rows with a recognizable date and amount. Choose a bank or mobile-money statement rather than a general document or plan.";
+        if(!id)id=await invoke<string>("create_import_batch",{request:{account_id:accountId,source_file_name:file.name,source_format:sourceFormat,revision_of_batch_id:revisionBase||null,source_file_contents:sourceBytes}});
         const request={batch_id:id,date_column:dateColumn,description_column:descriptionColumn||null,amount_column:amountColumn,positive_amount_type:positiveType,date_format:dateFormat};
         const count=format==="csv"?await invoke<number>("stage_csv_import",{request:{...request,contents}}):await invoke<number>("stage_xlsx_import",{request:{...request,contents:xlsxBytes,sheet_name:sheetName,header_row:Number(headerRow)}});
         if(revisionBase)setRevisionChanges(await invoke<RevisionChange[]>("compare_import_revision",{batchId:id}));
         setMessage(`Created workspace with ${count} staged rows.`);
       }else if(format==="pdf"){
-        setPendingPdfBatchId(id);
         let pages: string[];
         let ocrPageNumbers: number[];
         try {
@@ -114,12 +161,16 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
           if(reason==="password-incorrect") throw "The PDF password is incorrect. Check it and try again.";
           if(reason==="extracted-text-too-large") throw "The extracted PDF text exceeds the 100 MiB processing limit.";
           if(reason==="pdf-page-limit-exceeded") throw "This PDF has more than 200 pages. Split it into smaller files and import each part separately.";
-          if(reason==="ocr-failed") throw "Local OCR could not read one of the scanned pages. The workspace remains available so you can retry or use another statement file.";
+          if(reason==="ocr-failed") throw "Local OCR could not read one of the scanned pages. The file remains selected so you can retry or choose another statement.";
           throw "The PDF could not be opened. Check that the file is a readable PDF.";
         }
+        const pdfKind=classifyPdfPages(pages);
+        if(pdfKind!=="statement")throw pdfKind==="budget-plan"?"This PDF looks like a budget plan, not a bank or mobile-money statement. It has not been imported.":pdfKind==="account-list"?"This PDF looks like an account list, not transaction history. It has not been imported.":"This PDF does not appear to contain bank or mobile-money statement activity. Choose a statement file instead.";
+        if(!id)id=await invoke<string>("create_import_batch",{request:{account_id:accountId,source_file_name:file.name,source_format:sourceFormat,revision_of_batch_id:revisionBase||null,source_file_contents:sourceBytes}});
+        setPendingPdfBatchId(id);
         const count=await invoke<number>("stage_pdf_extracted_text",{batchId:id,pages});
         setMessage(`Created workspace with ${count} PDF text lines for manual review${ocrPageNumbers.length?`; local OCR processed ${ocrPageNumbers.length} scanned ${ocrPageNumbers.length===1?"page":"pages"}`:""}.`);
-      }else setMessage("Workspace created. This file type cannot be parsed yet.");
+      }
       setPendingPdfBatchId("");setPdfPassword("");setNeedsPdfPassword(false);
       setFile(null);setContents("");setSourceBytes([]);setXlsxBytes([]);setHeaders([]);await refresh();
     }catch(e){
@@ -147,10 +198,10 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
     <form onSubmit={submit} className="workspace-panel grid gap-4 rounded-xl p-5 sm:p-6 md:grid-cols-3">
       <h2 className="text-lg font-semibold md:col-span-3">Start a new import</h2>
       <label className="text-sm font-medium">Account<select value={accountId} onChange={e=>setAccountId(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2"><option value="">Choose account</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-      <label className="statement-dropzone text-center md:col-span-3" onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();void selectFile(event.dataTransfer.files[0]??null);}}><CloudUpload aria-hidden="true" size={32} strokeWidth={1.7}/><span className="statement-drop-title">{file?file.name:"Drop bank statements or M-Pesa files here, or Browse Files"}</span><span className="workspace-muted text-sm">Supports CSV, Excel, and PDF statements up to 25 MiB. Parsing stays on this device.</span><span className="statement-drop-prompt">Choose statement file</span><input aria-label="Statement file" type="file" accept=".csv,.xls,.xlsx,.pdf" disabled={Boolean(pendingPdfBatchId)||isFileLoading} onChange={e=>void selectFile(e.target.files?.[0]??null)} className="mt-2 block w-full text-sm disabled:opacity-60"/></label>
+      <label className="statement-dropzone text-center md:col-span-3" onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();void selectFile(event.dataTransfer.files[0]??null);}}><CloudUpload aria-hidden="true" size={32} strokeWidth={1.7}/><span className="statement-drop-title">{file?file.name:"Drop bank statements or M-Pesa files here, or Browse Files"}</span><span className="workspace-muted text-sm">Supports CSV, XLS/XLSX, and PDF bank or mobile-money statements up to 25 MiB. Budget plans, account lists, and unrelated documents are rejected here. Parsing stays on this device.</span><span className="statement-drop-prompt">Choose statement file</span><input aria-label="Statement file" type="file" accept=".csv,.xls,.xlsx,.pdf" disabled={Boolean(pendingPdfBatchId)||isFileLoading} onChange={e=>void selectFile(e.target.files?.[0]??null)} className="mt-2 block w-full text-sm disabled:opacity-60"/></label>
       {spreadsheetKind==="budget-plan"&&<div role="alert" className="md:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">The column names look like a budget plan, so this file is blocked from transaction import. Open Budgeting and select the file there to load its rows into a reviewable plan template.{navigate&&<button type="button" onClick={()=>navigate("Budgeting")} className="ml-2 font-semibold underline">Open Budgeting</button>}</div>}
       {spreadsheetKind==="account-list"&&<div role="alert" className="md:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">The column names look like an account list, so this file is blocked from transaction import. Open Accounts and select the file there to review and import it; account numbers are not retained.{navigate&&<button type="button" onClick={()=>navigate("Accounts")} className="ml-2 font-semibold underline">Open Accounts</button>}</div>}
-      {spreadsheetKind==="unrecognized"&&headers.length>0&&<p className="md:col-span-3 text-sm text-slate-600">Standard statement fields were not recognized. Choose the date and amount columns below; imported records will remain staged for review.</p>}
+      {spreadsheetKind==="unrecognized"&&headers.length>0&&<p className="md:col-span-3 text-sm text-slate-600">Standard statement fields were not recognized. Map the date and amount columns below; before saving a workspace, ETracker checks that the mapped rows contain transaction-like dates and amounts.</p>}
       {file?.name.toLowerCase().endsWith(".pdf")&&<p className="text-sm text-amber-800 md:col-span-3">Selectable text is extracted directly. Scanned pages use the bundled local English OCR model, then remain uncertain records for review; OCR never posts transactions automatically. Password-protected PDFs can be unlocked here.</p>}
       {pdfProgress&&<p role="status" aria-live="polite" className="md:col-span-3 text-sm text-slate-600">{pdfProgress}</p>}
       {needsPdfPassword&&<label className="text-sm font-medium md:col-span-3">PDF password<input aria-label="PDF password" type="password" autoComplete="current-password" value={pdfPassword} onChange={e=>setPdfPassword(e.target.value)} className="mt-1 block w-full max-w-md rounded border px-3 py-2"/><span className="mt-1 block text-xs font-normal text-slate-500">The password is used only to unlock this file for extraction and is not saved.</span></label>}
