@@ -106,7 +106,7 @@ describe("TransactionsPage",()=>{
   const exportButton=await screen.findByRole("button",{name:/Export filtered CSV/});
   await waitFor(()=>expect(exportButton).toBeEnabled());
   fireEvent.click(exportButton);
-  expect(create).toHaveBeenCalledWith(expect.any(Blob));
+  await waitFor(()=>expect(create).toHaveBeenCalledWith(expect.any(Blob)));
   expect(revoke).toHaveBeenCalledWith("blob:transactions");
  });
 });

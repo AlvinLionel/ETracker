@@ -215,7 +215,7 @@ pub fn search_transactions(
             status.as_deref(),
             flow.as_deref(),
             offset.unwrap_or(0),
-            limit.unwrap_or(50),
+            limit.unwrap_or(50).clamp(1, 200),
         )
         .map_err(|_| "Transactions could not be searched.".into())
 }

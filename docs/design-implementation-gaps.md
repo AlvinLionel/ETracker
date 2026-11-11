@@ -36,7 +36,7 @@ This document records the behavior implied by the nine design screens that does 
 ### Transaction Journal
 
 - Transaction search now supports free text/reference, status and flow filters, account/date filters, and bounded server-side pagination. Selectable batch reconciliation and dedicated split-edit workflows remain unimplemented.
-- Add transaction CSV export and any audit-integrity/hash snapshot service before showing the design's export or cryptographic audit status.
+- Filtered transaction CSV export is implemented with a 10,000-row safety cap. An audit-integrity/hash snapshot service remains unimplemented.
 
 ### Budgeting
 

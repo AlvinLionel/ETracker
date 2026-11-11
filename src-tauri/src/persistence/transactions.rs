@@ -297,7 +297,7 @@ impl SqliteTransactionRepository<'_> {
         from: Option<&str>,
         to: Option<&str>,
     ) -> Result<Vec<TransactionRecord>, TransactionRepositoryError> {
-        self.list_page(account_id, from, to, None, None, None, 0, 500)
+        self.list_page(account_id, from, to, None, None, None, 0, 1000)
             .map(|page| page.items)
     }
 
@@ -320,7 +320,7 @@ impl SqliteTransactionRepository<'_> {
         let pattern =
             query.map(|value| format!("%{}%", value.replace('%', "\\%").replace('_', "\\_")));
         let where_clause = "FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN accounts a ON a.id=e.account_id WHERE (?1 IS NULL OR e.account_id=?1) AND (?2 IS NULL OR date(t.occurred_at)>=date(?2)) AND (?3 IS NULL OR date(t.occurred_at)<=date(?3)) AND (?4 IS NULL OR t.status=?4) AND (?5 IS NULL OR t.description LIKE ?5 ESCAPE '\\' OR a.name LIKE ?5 ESCAPE '\\' OR t.source_reference LIKE ?5 ESCAPE '\\') AND (?6 IS NULL OR (?6='income' AND t.transaction_type='income') OR (?6='expense' AND (t.transaction_type='expense' OR EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id))) OR (?6='transfers' AND t.transaction_type='transfer'))";
-        let count_sql = format!("SELECT COUNT(DISTINCT t.id) {where_clause}");
+        let count_sql = format!("SELECT COUNT(*) {where_clause}");
         let total: i64 = connection
             .query_row(
                 &count_sql,
@@ -343,7 +343,7 @@ impl SqliteTransactionRepository<'_> {
                     status,
                     pattern,
                     flow,
-                    limit.clamp(1, 200) as i64,
+                    limit.clamp(1, 1000) as i64,
                     offset.min(1_000_000) as i64
                 ],
                 |r| {
