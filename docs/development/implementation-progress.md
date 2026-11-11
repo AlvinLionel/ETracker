@@ -147,7 +147,7 @@ Implementation progress should be updated as meaningful milestones are completed
 
 Completed work must be supported by actual implementation and verification rather than planned functionality or assumptions.
 
-- Backend UI alignment (11 November 2026): connected global search to a bounded SQLite query; added server-side transaction text/status/flow/date/account filters and pagination; added savings contribution history that excludes voided or reversed linked transfers. Search/journal checkpoint 799219; Rust 84 tests passed, focused frontend tests passed, full frontend 91 tests passed, and production build passed. Savings history is in current verification.
+- Backend UI alignment (11 November 2026): connected global search to a bounded SQLite query; added server-side transaction text/status/flow/date/account filters and pagination; added savings contribution history that excludes voided or reversed linked transfers. Search/journal checkpoint a799219; Rust 84 tests passed, focused frontend tests passed, full frontend 91 tests passed, and production build passed. Savings history is in current verification.
 
 - Savings contribution ledger and full-filter transaction export: added a persisted contribution history view that excludes linked transfers which are voided or reversed; transaction CSV now exports all matching results across pages up to 10,000 rows. Verified with 84 Rust tests, 11 transaction UI tests, 4 savings UI tests and a successful production build.
 
