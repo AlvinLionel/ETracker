@@ -13,6 +13,7 @@ This document records the behavior implied by the nine design screens that does 
 - **Analytics:** filtered summaries, trends, category breakdown, account comparisons, budget performance, savings progress, recurring expenses, and unusual expenses are implemented.
 - **Forecasting:** local forecast snapshots, schedule configuration, and month evaluation are implemented. The current model is documented by its returned assumptions and limitations.
 - **Settings:** theme and subscription reminder preferences, encrypted backup/restore, database integrity checks, and privacy-safe diagnostics are implemented.
+- **Exports:** filtered journal, analytics report, monthly budget worksheet, savings contribution ledger, and active account portfolio CSV exports are implemented. PDF/print output and saved report definitions remain open.
 
 ## Backend Work Needed
 
@@ -20,18 +21,17 @@ This document records the behavior implied by the nine design screens that does 
 
 - Global search covers posted transactions, accounts, active categories, and budget templates with a bounded local result set. Rules remain out of scope because ETracker has no rule model.
 - Add a persisted active-ledger or fiscal-period model before the shell's ledger selector and period controls can switch datasets rather than merely changing labels.
-- Add a report/export service with explicit date, currency, account, and category filters. The current design's general export actions do not all map to an existing report operation.
+- Add persisted active-ledger selection before shell period controls can switch datasets rather than merely changing labels. Current data remains in the one local ledger.
 
 ### Dashboard
 
-- Add a transaction export/report endpoint for the dashboard's journal export action.
 - Add reconciliation summary data and a workflow entry point if the dashboard is to expose the design's global reconcile action. Import-batch reconciliation exists, but it is not the same as reconciling all posted account activity.
 - Account-level yield, sync uptime, liquidity trajectory, and monthly burn pacing require sources and calculation definitions; they must not be inferred from the design mock's sample values.
 
 ### Accounts
 
 - Institution connectivity, live sync status, yield/accrual calculations, statements, and cross-institution balance reconciliation need provider contracts, persistence, and validation rules. Current account records are user-maintained local records.
-- Add account portfolio CSV/PDF export and portfolio comparison history if those design actions are required.
+- Account portfolio CSV export is implemented with a fresh balance lookup for every active account and per-currency amounts. Portfolio comparison history and PDF output remain open.
 
 ### Transaction Journal
 
@@ -52,8 +52,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ### Analytics
 
-- Add report/export output formats and saved report definitions. Existing analytics returns summaries and chart data but does not create/export a financial statement.
-- Add explicit comparison-period selection and its date semantics; the current summary supports a single date range.
+- Analytics CSV export and an equal-length previous-period comparison are implemented with the active date/account/category/currency filters. Saved report definitions and print/PDF output remain open.
 
 ### Forecasting
 

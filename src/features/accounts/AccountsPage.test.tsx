@@ -63,6 +63,24 @@ describe("AccountsPage", () => {
     expect(portfolioCard).toHaveTextContent("KES accounts only; other currencies shown per account");
   });
 
+  it("exports live balances and currencies for every active account", async () => {
+    const foreignAccount = { ...activeAccount, id: "foreign-1", name: "Dollar account", currency_code: "USD" };
+    invoke.mockImplementation((command: string, args?: { id?: string }) => {
+      if (command === "list_active_accounts") return Promise.resolve([activeAccount, foreignAccount]);
+      if (command === "list_archived_accounts") return Promise.resolve([]);
+      if (command === "get_account_balance") return Promise.resolve(args?.id === "active-1" ? 12500 : 9000000);
+      return Promise.resolve(0);
+    });
+    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:portfolio");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    render(<AccountsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Export portfolio CSV" }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    const csv = await (create.mock.calls[0][0] as Blob).text();
+    expect(csv).toContain('"Everyday account","Bank","Example Bank","KES","12500"');
+    expect(csv).toContain('"Dollar account","Bank","Example Bank","USD","9000000"');
+  });
+
   it("reviews account-list rows, skips duplicates and creates only safe account fields", async () => {
     const createdAccount = { ...activeAccount, id: "new-1", name: "Travel wallet", account_type: "mobile_money", institution_name: "M-Pesa" };
     invoke.mockImplementation((command: string, args?: { request?: Record<string, unknown> }) => {

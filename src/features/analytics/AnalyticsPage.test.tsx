@@ -58,4 +58,14 @@ describe("AnalyticsPage", () => {
     await waitFor(() => expect(invoke).toHaveBeenLastCalledWith("get_analytics_summary", expect.objectContaining({ from: dateString(start), to: dateString(now) })));
     expect(screen.getByRole("button", { name: "6 months" })).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("compares the selected range with an equal-length previous period", async () => {
+    render(<AnalyticsPage />);
+    await screen.findByText("Monthly income vs expenditure trajectory");
+    fireEvent.click(screen.getByRole("button", { name: "Compare previous period" }));
+    expect(await screen.findByRole("region", { name: "Comparison with previous period" })).toBeInTheDocument();
+    expect(screen.getByText(/Previous range:/)).toBeInTheDocument();
+    const calls = invoke.mock.calls.filter(([command]) => command === "get_analytics_summary");
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+  });
 });

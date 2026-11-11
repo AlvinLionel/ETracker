@@ -154,3 +154,5 @@ Completed work must be supported by actual implementation and verification rathe
 - Budget worksheet export: added CSV export for the selected monthly budget, including plan, category, planned amount, posted actual, variance, and currency. Verified with 5 Budgeting UI tests and production frontend build.
 
 - Savings report export: added CSV export for contribution history, including goal, source, date, amount and currency; linked reversed or voided entries remain excluded by the backend query. Verified with 4 Savings UI tests and production build.
+
+- Portfolio and period-comparison exports: Accounts now exports fresh balances for every active account with account type, institution, currency and timestamp; Analytics compares the chosen date range with the immediately preceding range of equal length and displays changes in income, gross expenses, refunds and net spending. Updated `docs/design-implementation-gaps.md` to distinguish implemented exports from remaining PDF, saved-report and reconciliation work. Focused account and analytics UI tests plus the production build pass.

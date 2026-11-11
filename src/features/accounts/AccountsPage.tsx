@@ -8,6 +8,7 @@ import { StatusChip } from "../../shared/ui/StatusChip";
 import { formatMoney } from "../../shared/formatMoney";
 import { useAccounts } from "./hooks/useAccounts";
 import type { Account, AccountType, CreateAccountInput, UpdateAccountInput } from "./types";
+import { serializeCsv } from "../analytics/csv";
 
 type AccountImportDraft = { row: number; name: string; account_type: AccountType; institution_name: string; opening_balance: string; balance_date: string; selected: boolean; issue: string; created: boolean };
 function parseAccountAmount(value: string): number | null {
@@ -68,6 +69,7 @@ export default function AccountsPage() {
     const [isImportingAccounts, setIsImportingAccounts] = useState(false);
     const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
     const [selectedAccountId, setSelectedAccountId] = useState("");
+    const [portfolioExportError, setPortfolioExportError] = useState("");
 
     useEffect(() => {
         let active = true;
@@ -84,6 +86,22 @@ export default function AccountsPage() {
     const portfolioBalanceMinor = accounts
         .filter((account) => account.currency_code === portfolioCurrency)
         .reduce((sum, account) => sum + (accountBalances[account.id] ?? 0), 0);
+
+    async function exportPortfolioCsv() {
+        setPortfolioExportError("");
+        try {
+            const asOf = new Date().toISOString();
+            const rows = await Promise.all(accounts.map(async (account) => [account, await getBalance(account.id)] as const));
+            const csv = serializeCsv([
+                ["account", "type", "institution", "currency", "balance_minor", "balance_as_of"],
+                ...rows.map(([account, balance]) => [account.name, accountTypeLabels[account.account_type], account.institution_name ?? "", account.currency_code, String(balance), asOf]),
+            ], [0, 1, 2, 3]);
+            const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+            const link = document.createElement("a"); link.href = url; link.download = `etracker-account-portfolio-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
+        } catch {
+            setPortfolioExportError("Portfolio export could not retrieve every account balance. Try again after checking account data.");
+        }
+    }
 
     async function handleCreateAccount(request: CreateAccountInput) {
         await create(request);
@@ -249,6 +267,8 @@ export default function AccountsPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                    {!showArchived && <button type="button" onClick={() => void exportPortfolioCsv()} disabled={isLoading || accounts.length === 0}
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Export portfolio CSV</button>}
                     <button type="button" onClick={showArchived ? () => setShowArchived(false) : handleShowArchived}
                         aria-pressed={showArchived}
                         className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -261,6 +281,7 @@ export default function AccountsPage() {
                     </button>
                 </div>
             </div>
+            {portfolioExportError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{portfolioExportError}</p>}
 
             {!showArchived && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard label="Total portfolio assets" value={formatMoney(portfolioBalanceMinor, portfolioCurrency)} detail="KES accounts only; other currencies shown per account" />

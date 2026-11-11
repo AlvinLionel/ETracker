@@ -17,6 +17,9 @@ export default function AnalyticsPage() {
   const [currencyCode, setCurrencyCode] = useState("");
   const [periodPreset, setPeriodPreset] = useState<"30d" | "6m" | "12m" | "custom">("12m");
   const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [comparePrevious, setComparePrevious] = useState(false);
+  const [comparison, setComparison] = useState<AnalyticsSummary | null>(null);
+  const [comparisonError, setComparisonError] = useState("");
   const [scenarioIncome, setScenarioIncome] = useState("");
   const [scenarioExpenseReduction, setScenarioExpenseReduction] = useState("");
   const [error, setError] = useState("");
@@ -31,6 +34,20 @@ export default function AnalyticsPage() {
     finally { setBusy(false); }
   }, [from, to, accountId, categoryId, currencyCode]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!comparePrevious) { setComparison(null); setComparisonError(""); return; }
+    let active = true;
+    setComparison(null);
+    const start = new Date(`${from}T00:00:00`); const end = new Date(`${to}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) { setComparisonError("Choose a valid report range before comparing."); return () => { active = false; }; }
+    const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+    const priorEnd = new Date(start); priorEnd.setDate(priorEnd.getDate() - 1);
+    const priorStart = new Date(priorEnd); priorStart.setDate(priorStart.getDate() - days + 1);
+    setComparisonError("");
+    getAnalyticsSummary({ from: dateOnly(priorStart), to: dateOnly(priorEnd), accountId, categoryId, currencyCode })
+      .then((result) => { if (active) setComparison(result); }).catch(() => { if (active) setComparisonError("The previous period could not be loaded."); });
+    return () => { active = false; };
+  }, [comparePrevious, from, to, accountId, categoryId, currencyCode]);
   function choosePeriod(preset: "30d" | "6m" | "12m") {
     const end = new Date();
     const start = new Date(end);
@@ -44,6 +61,20 @@ export default function AnalyticsPage() {
     setPeriodPreset(preset);
   }
   const currency = currencyCode || data?.currencies[0] || "KES";
+  const comparisonMetrics = data && comparison ? [
+    ["Income", data.total_income_minor, comparison.total_income_minor],
+    ["Gross expenses", data.total_expense_minor, comparison.total_expense_minor],
+    ["Refunds", data.total_refund_minor, comparison.total_refund_minor],
+    ["Net spending", data.total_net_spending_minor, comparison.total_net_spending_minor],
+  ] as const : [];
+  const comparisonRange = (() => {
+    const start = new Date(`${from}T00:00:00`); const end = new Date(`${to}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return "";
+    const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+    const priorEnd = new Date(start); priorEnd.setDate(priorEnd.getDate() - 1);
+    const priorStart = new Date(priorEnd); priorStart.setDate(priorStart.getDate() - days + 1);
+    return `${dateOnly(priorStart)} – ${dateOnly(priorEnd)}`;
+  })();
   const scenarioNet = data ? data.total_income_minor + data.total_refund_minor + Math.max(0, Math.round((Number(scenarioIncome) || 0) * 100)) - Math.max(0, data.total_expense_minor - Math.max(0, Math.round((Number(scenarioExpenseReduction) || 0) * 100))) : 0;
   const exportCsv = () => {
     if (!data) return;
@@ -60,7 +91,7 @@ export default function AnalyticsPage() {
           <button key={value} type="button" aria-pressed={periodPreset === value} onClick={() => value === "custom" ? setPeriodPreset("custom") : choosePeriod(value)} className={`rounded-sm border px-3 py-2 text-xs font-semibold ${periodPreset === value ? "border-violet-300 bg-violet-50 text-violet-800" : "border-slate-200 bg-white text-slate-600"}`}>{label}</button>
         ))}
       </div>
-      <p className="workspace-muted font-mono text-xs tabular-nums">{from} – {to}</p>
+      <div className="flex flex-wrap items-center gap-3"><button type="button" aria-pressed={comparePrevious} onClick={() => setComparePrevious((value) => !value)} className={`rounded-md border px-3 py-2 text-xs font-semibold ${comparePrevious ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600"}`}>Compare previous period</button><p className="workspace-muted font-mono text-xs tabular-nums">{from} – {to}</p></div>
     </div>
     <div className="analytics-filters grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
       <label className="text-xs font-semibold text-slate-600">From<input aria-label="From date" type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPeriodPreset("custom"); }} className="mt-1 block w-full rounded-md border border-slate-300 px-2 py-2 text-sm" /></label>
@@ -72,6 +103,7 @@ export default function AnalyticsPage() {
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {busy && !data ? <p className="text-sm text-slate-600">Loading analytics…</p> : data && <>
       <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4"><Metric title="Total income" value={money(data.total_income_minor,currency)} /><Metric title="Gross expenses" value={money(data.total_expense_minor,currency)} /><Metric title="Refunds" value={money(data.total_refund_minor,currency)} /><Metric title="Net spending" value={money(data.total_net_spending_minor,currency)} /></div>
+      {comparePrevious && (comparisonError ? <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{comparisonError}</p> : comparison && <section aria-label="Comparison with previous period" className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5"><div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-semibold">Change from previous period</h2><p className="workspace-muted text-xs">Previous range: {comparisonRange}</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{comparisonMetrics.map(([title, current, previous]) => { const delta = current - previous; return <div key={title} className="rounded-lg border border-emerald-100 bg-white p-3"><p className="text-xs text-slate-500">{title}</p><p className={`mt-1 font-semibold tabular-nums ${delta > 0 ? "text-amber-800" : delta < 0 ? "text-emerald-800" : "text-slate-700"}`}>{delta > 0 ? "+" : delta < 0 ? "−" : ""}{money(Math.abs(delta), currency)}</p><p className="mt-1 text-xs text-slate-500">Previous {money(previous, currency)}</p></div>; })}</div></section>)}
       <section className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">What-if simulation</h2><p className="mt-1 text-xs text-slate-600">Try changes for this selected period. The estimate is temporary and does not alter budgets or transactions.</p></div><strong className="text-lg">Simulated net: {money(scenarioNet,currency)}</strong></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-600">Additional income<input aria-label="Additional simulated income" type="number" min="0" step="0.01" value={scenarioIncome} onChange={(e) => setScenarioIncome(e.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" /></label><label className="text-xs font-semibold text-slate-600">Expense reduction<input aria-label="Simulated expense reduction" type="number" min="0" step="0.01" value={scenarioExpenseReduction} onChange={(e) => setScenarioExpenseReduction(e.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" /></label></div></section>
       <div className="analytics-report-grid grid gap-5 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Monthly income vs expenditure trajectory</h2><p className="mb-5 mt-1 text-xs text-slate-500">Inflows, gross expenses, refunds, net cash flow, and 3-month average · {currency}</p>{data.trends.length ? <MonthlyTrendChart points={data.trends} currency={currency} /> : <Empty>No posted activity in this range.</Empty>}</section>
