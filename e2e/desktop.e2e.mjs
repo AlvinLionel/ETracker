@@ -108,15 +108,22 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
     throw new Error(`No visible navigation control for ${page}.`);
   }
 
+  async function clickCentered(element) {
+    await driver.executeScript("arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });", element);
+    await element.click();
+  }
+
   async function createAccount(name, type) {
     await navigateTo("Accounts");
-    await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Your accounts']")), 15_000);
-    const addAccountButton = await driver.findElements(By.xpath("//button[contains(normalize-space(.), 'Add account')]"));
+    await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Accounts & Balance Portfolio']")), 15_000);
+    const addAccountButton = await driver.findElements(By.xpath("//button[contains(normalize-space(.), 'New account')]"));
     await addAccountButton[0].click();
     await driver.findElement(By.id("account-name")).sendKeys(name);
     await new Select(await driver.findElement(By.id("account-type"))).selectByValue(type);
     await driver.findElement(By.xpath("//div[@role='dialog']//button[normalize-space()='Create account']")).click();
-    await driver.wait(until.elementLocated(By.xpath(`//h4[normalize-space()='${name}']`)), 15_000);
+    await driver.wait(until.elementLocated(By.xpath(`//main//*[normalize-space()='${name}']`)), 15_000).catch(async (error) => {
+      throw new Error(`${error.message}; accounts screen: ${await driver.findElement(By.css("main")).getText()}`);
+    });
   }
 
   async function createExpenseCategory(name) {
@@ -133,19 +140,20 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const importedAccount = `E2E Imported Wallet ${suffix}`;
   await writeFile(accountListPath, `Account Name,Account Number,Type,Institution,Opening Balance,Opening Date,Currency\n${checking},123456789012,bank,,,,KES\n${importedAccount},987654321098,mobile money,M-Pesa,12.50,2026-11-01,KES\n`, "utf8");
   await navigateTo("Accounts");
+  await driver.findElement(By.xpath("//summary[normalize-space()='Import account list']")).click();
   await driver.findElement(By.css("input[aria-label='Account list file']")).sendKeys(accountListPath);
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'2 account rows loaded')]")), 15_000);
   await driver.wait(until.elementLocated(By.xpath("//tr[.//td[contains(.,'already exists or appears earlier')]]")), 5_000);
   await driver.findElement(By.xpath("//button[normalize-space()='Create selected accounts']")).click();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'1 account imported')]")), 15_000);
-  await driver.wait(until.elementLocated(By.xpath(`//h4[normalize-space()='${importedAccount}']`)), 15_000);
+  await driver.wait(until.elementLocated(By.xpath(`//main//*[normalize-space()='${importedAccount}']`)), 15_000);
   await unlink(accountListPath).catch(() => {});
   await createExpenseCategory(foodCategory);
   await createExpenseCategory(travelCategory);
 
   await writeFile(budgetPlanPath, `Category,Planned Amount,Type\n${foodCategory},25.00,expense\n`, "utf8");
   await navigateTo("Budgeting");
-  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Budgeting']")), 15_000);
+  await driver.wait(until.elementLocated(By.xpath("//h1[contains(normalize-space(), 'Monthly Budget & Envelope Allocation')]")), 15_000);
   await driver.findElement(By.css("input[aria-label='Budget plan file']")).sendKeys(budgetPlanPath);
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'plan items loaded for review')]")), 15_000);
   await new Select(await driver.findElement(By.css("select[aria-label='Category 1']"))).selectByVisibleText(foodCategory);
@@ -238,7 +246,7 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
 
   await writeFile(statementPath, `Date,Amount,Memo\n2026-11-01,8.00,${importDescription}\n`, "utf8");
   await navigateTo("Imports");
-  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Statement imports']")), 15_000);
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Financial Data Import']")), 15_000);
   const importAccountOption = await driver.wait(until.elementLocated(By.xpath(`//main//select[1]/option[contains(.,'${checking}')]`)), 15_000);
   await new Select(await driver.findElement(By.css("main form select"))).selectByValue(await importAccountOption.getAttribute("value"));
   await driver.findElement(By.css("input[type='file']")).sendKeys(statementPath);
@@ -248,8 +256,12 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
 
   const scannedPdfPath = resolve(repositoryRoot, "src/features/imports/fixtures/scanned-statement.pdf");
   await driver.findElement(By.css("input[type='file']")).sendKeys(scannedPdfPath);
-  await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
-  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'local OCR processed 1 scanned page')]")), 60_000);
+  const scannedPdfSubmit = await driver.wait(until.elementLocated(By.xpath("//form//button[normalize-space()='Create import workspace']")), 15_000);
+  await driver.wait(until.elementIsEnabled(scannedPdfSubmit), 15_000);
+  await scannedPdfSubmit.click();
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'local OCR processed 1 scanned page')]")), 60_000).catch(async (error) => {
+    throw new Error(`${error.message}; import screen: ${await driver.findElement(By.css("main")).getText()}`);
+  });
   const scannedPdfBatch = await driver.wait(until.elementLocated(By.xpath("//li[.//span[normalize-space()='scanned-statement.pdf']]")), 15_000);
   await scannedPdfBatch.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[contains(.,'MARKET') and .//td[normalize-space()='uncertain']]")), 15_000);
@@ -268,7 +280,9 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await passwordRetry.clear();
   await passwordRetry.sendKeys("ledger-secret");
   await driver.findElement(By.xpath("//form//button[normalize-space()='Unlock PDF and continue']")).click();
-  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 PDF text lines')]")), 20_000);
+  await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Created workspace with 1 PDF text lines')]")), 20_000).catch(async (error) => {
+    throw new Error(`${error.message}; import screen: ${await driver.findElement(By.css("main")).getText()}`);
+  });
   const protectedPdfBatch = await driver.wait(until.elementLocated(By.xpath("//li[.//span[normalize-space()='protected-statement.pdf']]")), 15_000);
   await protectedPdfBatch.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[contains(.,'Market purchase')]]")), 15_000);
@@ -303,7 +317,8 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await reconciliationForm.findElement(By.xpath(".//button[normalize-space()='Check balances']")).click();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Outcome:') and contains(.,'reconciled')]")), 15_000);
   assert.equal((await importedRow.findElements(By.xpath(".//td[normalize-space()='corrected']"))).length, 1);
-  await batchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
+  const finalizeImportedBatch = await batchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']"));
+  await clickCentered(finalizeImportedBatch);
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized 1 transactions')]")), 15_000);
   await unlink(statementPath).catch(() => {});
 
@@ -322,12 +337,12 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const revisedDecision = await driver.findElement(By.css("select[aria-label^='Review change']"));
   await new Select(revisedDecision).selectByValue("use_revised");
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Statement change decision saved')]")), 15_000);
-  await revisedBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
+  await clickCentered(await revisedBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")));
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Finalized')]")), 15_000);
   await unlink(revisedStatementPath).catch(() => {});
 
   const invalidStatementPath = join(tmpdir(), `etracker-invalid-${suffix}.csv`);
-  await writeFile(invalidStatementPath, `Date,Amount,Memo\nnot-a-date,9.00,E2E invalid row ${suffix}\n`, "utf8");
+  await writeFile(invalidStatementPath, `Date,Amount,Memo\n2026-02-31,9.00,E2E invalid row ${suffix}\n`, "utf8");
   await driver.findElement(By.css("input[type='file']")).sendKeys(invalidStatementPath);
   await driver.wait(async () => (await driver.findElement(By.css("main form")).findElements(By.css("select"))).length >= 6, 15_000);
   await driver.findElement(By.xpath("//form//button[normalize-space()='Create import workspace']")).click();
@@ -335,14 +350,14 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   const invalidBatchItem = await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]`)), 15_000);
   await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Records']")).click();
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='uncertain']]")), 15_000);
-  await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")).click();
+  await clickCentered(await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Finalize']")));
   await driver.wait(async () => {
     const batches = await driver.findElements(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]`));
     if (!batches[0]) return false;
     return (await batches[0].findElements(By.xpath(".//button[normalize-space()='Finalize']"))).length > 0;
   }, 5_000);
   assert.equal((await driver.findElements(By.xpath(`//tbody/tr[.//td[normalize-space()='uncertain']]`))).length, 1);
-  await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Discard']")).click();
+  await clickCentered(await invalidBatchItem.findElement(By.xpath(".//button[normalize-space()='Discard']")));
   await driver.wait(until.elementLocated(By.xpath(`//li[.//span[normalize-space()='etracker-invalid-${suffix}.csv']]//span[normalize-space()='discarded']`)), 10_000);
   assert.equal((await invalidBatchItem.findElements(By.xpath(".//button[normalize-space()='Finalize']"))).length, 0);
   assert.equal((await invalidBatchItem.findElements(By.xpath(".//button[normalize-space()='Download source']"))).length, 1);
@@ -351,8 +366,8 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await unlink(invalidStatementPath).catch(() => {});
 
   await navigateTo("Dashboard");
-  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Dashboard']")), 15_000);
-  const accountsPanel = "//section[.//h2[normalize-space()='Accounts'] and not(.//section[.//h2[normalize-space()='Accounts']])]";
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Financial dashboard']")), 15_000);
+  const accountsPanel = "//section[.//h2[normalize-space()='Account liquidity']]";
   const checkingCard = await driver.wait(async () => {
     const matches = await driver.findElements(By.xpath(`${accountsPanel}//button[contains(.,'${checking}')]`));
     return matches[0] ?? false;
@@ -362,17 +377,18 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   assert.match(await savingsCard.getText(), /50[.,]00/);
 
   await navigateTo("Settings");
-  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Settings and reminders']")), 15_000);
-  const themeSelect = new Select(await driver.findElement(By.css("select[aria-label='Color theme']")));
-  await themeSelect.selectByValue("dark");
-  await driver.findElement(By.xpath("//button[normalize-space()='Save preferences']")).click();
+  await driver.wait(until.elementLocated(By.xpath("//h1[normalize-space()='Application settings']")), 15_000);
+  const darkTheme = await driver.findElement(By.xpath("//div[@role='group' and @aria-label='Color theme']//button[.//strong[normalize-space()='Dark Vault']]"));
+  await clickCentered(darkTheme);
+  await clickCentered(await driver.findElement(By.xpath("//button[normalize-space()='Save changes']")));
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Preferences saved')]")), 15_000);
   assert.equal(
     await driver.executeScript("return getComputedStyle(document.querySelector('.app-shell')).backgroundColor"),
-    "rgb(23, 25, 31)",
+    "rgb(15, 17, 21)",
   );
-  await themeSelect.selectByValue("light");
-  await driver.findElement(By.xpath("//button[normalize-space()='Save preferences']")).click();
+  const lightTheme = await driver.findElement(By.xpath("//div[@role='group' and @aria-label='Color theme']//button[.//strong[normalize-space()='Light Ledger']]"));
+  await clickCentered(lightTheme);
+  await clickCentered(await driver.findElement(By.xpath("//button[normalize-space()='Save changes']")));
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Preferences saved')]")), 15_000);
 
   await driver.executeScript(`

@@ -1,6 +1,6 @@
 # ETracker — Implementation Progress
 
-**Last updated:** 2026-11-11
+**Last updated:** 2026-11-12
 
 ## 1. Project Status
 
@@ -164,3 +164,5 @@ Completed work must be supported by actual implementation and verification rathe
 - Saved Analytics reports: added a persisted report-definition table and validated save/list/delete commands. Analytics can save and restore named date, account, category and currency filters. Backend tests cover CRUD, duplicate names, invalid dates and range validation; UI tests cover saving and restoring filters.
 
 - Import file validation: reject unsupported formats and mismatched PDF/Excel containers before retention; validate mapped CSV/Excel transaction rows and classify extracted PDFs before creating workspaces. Budget plans, account lists and unrelated documents are routed away from transaction import. Provider-specific parsing remains dependent on verified samples.
+
+- Release-hardening checkpoint (12 November 2026): refreshed the Edge desktop workflow selectors for current Accounts, Dashboard, Imports, Settings and appearance controls; made file staging wait for asynchronous reads, opened the collapsed account-list panel, and scrolled batch actions into view. Replaced the scanned-PDF test fixture with an image-only synthetic M-Pesa statement containing a statement cue and multiple transaction rows, and refreshed the password-protected fixture to contain statement evidence while retaining its test password. The complete isolated Edge workflow passes, including offline English OCR staging, password-protected extraction/retry, statement reconciliation and revision, theme persistence, encrypted backup, wrong-passphrase rejection and successful restore. Verification: 88 Rust tests, 100 frontend tests across 17 files, Rust formatting, production build and desktop E2E pass. Rebuilt unsigned x64 MSI (11.58 MiB) and NSIS (10.50 MiB) installers; hashes are recorded in `RELEASE_NOTES.md`. Native dialogs, installation/upgrade, disconnected-machine behavior, responsive/accessibility review, provider samples and at-rest attachment protection remain release gates.

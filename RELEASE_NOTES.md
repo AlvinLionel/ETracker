@@ -9,12 +9,12 @@ This first usable preview provides local accounts, transaction history and audit
 
 Both packages are unsigned. Keep encrypted backups outside the application data folder. See [`docs/first-use-guide.md`](docs/first-use-guide.md) before using real financial data.
 
-## Previously built artifact checksums
+## Current artifact checksums
 
-These checksums identify the OCR milestone installers built on 8 November 2026. They predate transaction attachments and do not represent the current repository source. Rebuild both packages before distributing this source revision.
+Both unsigned x64 installers were rebuilt on 12 November 2026 from the current source, including transaction attachments.
 
-- MSI (10.96 MiB): `4AD236B0E168585DB0AC19A43DDAB899DDE3F18C951C7A3239585F2CF2A71658`
-- NSIS (9.88 MiB): `124E5D57E3C00991707E3EA0DA73F0006F39531D22FBB27F0E918B912C86F366`
+- MSI (11.58 MiB): `1E669E548DF2DF7D7C74AD48B6F960C5EEF01931D1185E75148815F41D6DEFEC`
+- NSIS (10.50 MiB): `3BACC487A0AA22FFA49F46E03786EDD50E5BD9C31739CC686F74F51E5C65C074`
 
 Build artifacts are in `src-tauri/target/release/bundle/` and are intentionally excluded from source control.
 
