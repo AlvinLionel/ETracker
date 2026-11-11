@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import TransactionsPage from "./TransactionsPage";
 
-const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),eligibleRefunds:vi.fn(),create:vi.fn(),list:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn(),listAttachments:vi.fn(),addAttachment:vi.fn(),openAttachment:vi.fn(),removeAttachment:vi.fn(),confirmAction:vi.fn()}));
+const mocks=vi.hoisted(()=>({accounts:vi.fn(),categories:vi.fn(),eligibleRefunds:vi.fn(),create:vi.fn(),list:vi.fn(),search:vi.fn(),allocations:vi.fn(),update:vi.fn(),void:vi.fn(),reverse:vi.fn(),transfer:vi.fn(),audit:vi.fn(),listAttachments:vi.fn(),addAttachment:vi.fn(),openAttachment:vi.fn(),removeAttachment:vi.fn(),confirmAction:vi.fn()}));
 vi.mock("../accounts/api/accounts",()=>({listActiveAccounts:mocks.accounts}));
-vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,listActiveCategories:mocks.categories,listEligibleRefunds:mocks.eligibleRefunds,updateTransaction:mocks.update,getTransactionAllocations:mocks.allocations,getTransactionAuditHistory:mocks.audit,voidTransaction:mocks.void,reverseTransaction:mocks.reverse,createTransfer:mocks.transfer,listTransactionAttachments:mocks.listAttachments,addTransactionAttachment:mocks.addAttachment,openTransactionAttachment:mocks.openAttachment,removeTransactionAttachment:mocks.removeAttachment}));
+vi.mock("./api/transactions",()=>({createTransaction:mocks.create,listTransactions:mocks.list,searchTransactions:mocks.search,listActiveCategories:mocks.categories,listEligibleRefunds:mocks.eligibleRefunds,updateTransaction:mocks.update,getTransactionAllocations:mocks.allocations,getTransactionAuditHistory:mocks.audit,voidTransaction:mocks.void,reverseTransaction:mocks.reverse,createTransfer:mocks.transfer,listTransactionAttachments:mocks.listAttachments,addTransactionAttachment:mocks.addAttachment,openTransactionAttachment:mocks.openAttachment,removeTransactionAttachment:mocks.removeAttachment}));
 vi.mock("../../shared/confirmAction",()=>({confirmAction:mocks.confirmAction}));
 
 describe("TransactionsPage",()=>{
- beforeEach(()=>{vi.clearAllMocks();mocks.confirmAction.mockResolvedValue(true);vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.eligibleRefunds.mockResolvedValue([{transaction_id:"original",amount_minor:1000,refundable_minor:700,occurred_at:"2026-11-01T09:00:00Z",description:"Shop"}]);mocks.list.mockResolvedValue([]);mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);mocks.listAttachments.mockResolvedValue([]);mocks.addAttachment.mockResolvedValue(null);mocks.openAttachment.mockResolvedValue(undefined);mocks.removeAttachment.mockResolvedValue(undefined);});
+ beforeEach(()=>{vi.clearAllMocks();mocks.confirmAction.mockResolvedValue(true);vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.eligibleRefunds.mockResolvedValue([{transaction_id:"original",amount_minor:1000,refundable_minor:700,occurred_at:"2026-11-01T09:00:00Z",description:"Shop"}]);mocks.list.mockResolvedValue([]);mocks.search.mockImplementation(async()=>{const items=await mocks.list();return {items,total:items.length};});mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);mocks.listAttachments.mockResolvedValue([]);mocks.addAttachment.mockResolvedValue(null);mocks.openAttachment.mockResolvedValue(undefined);mocks.removeAttachment.mockResolvedValue(undefined);});
  it("allows an uncategorized expense",async()=>{
   render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
@@ -103,7 +103,9 @@ describe("TransactionsPage",()=>{
   const create=vi.spyOn(URL,"createObjectURL").mockReturnValue("blob:transactions");
   const revoke=vi.spyOn(URL,"revokeObjectURL").mockImplementation(()=>{});
   render(<TransactionsPage/>);
-  fireEvent.click(await screen.findByRole("button",{name:/Export filtered CSV/}));
+  const exportButton=await screen.findByRole("button",{name:/Export filtered CSV/});
+  await waitFor(()=>expect(exportButton).toBeEnabled());
+  fireEvent.click(exportButton);
   expect(create).toHaveBeenCalledWith(expect.any(Blob));
   expect(revoke).toHaveBeenCalledWith("blob:transactions");
  });

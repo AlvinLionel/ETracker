@@ -297,30 +297,83 @@ impl SqliteTransactionRepository<'_> {
         from: Option<&str>,
         to: Option<&str>,
     ) -> Result<Vec<TransactionRecord>, TransactionRepositoryError> {
+        self.list_page(account_id, from, to, None, None, None, 0, 500)
+            .map(|page| page.items)
+    }
+
+    pub fn list_page(
+        &self,
+        account_id: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+        query: Option<&str>,
+        status: Option<&str>,
+        flow: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<TransactionPage, TransactionRepositoryError> {
         let connection = self
             .database
             .connection()
             .lock()
             .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
-        let mut statement=connection.prepare("SELECT t.id,e.account_id,CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END,t.amount_minor,e.amount_minor,t.currency_code,t.occurred_at,t.description,t.status FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE (?1 IS NULL OR e.account_id=?1) AND (?2 IS NULL OR date(t.occurred_at)>=date(?2)) AND (?3 IS NULL OR date(t.occurred_at)<=date(?3)) ORDER BY datetime(t.occurred_at) DESC,t.created_at DESC").map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
-        statement
-            .query_map(params![account_id, from, to], |r| {
-                Ok(TransactionRecord {
-                    id: r.get(0)?,
-                    account_id: r.get(1)?,
-                    transaction_type: r.get(2)?,
-                    amount_minor: r.get(3)?,
-                    entry_amount_minor: r.get(4)?,
-                    currency_code: r.get(5)?,
-                    occurred_at: r.get(6)?,
-                    description: r.get(7)?,
-                    status: r.get(8)?,
-                })
-            })
+        let pattern =
+            query.map(|value| format!("%{}%", value.replace('%', "\\%").replace('_', "\\_")));
+        let where_clause = "FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN accounts a ON a.id=e.account_id WHERE (?1 IS NULL OR e.account_id=?1) AND (?2 IS NULL OR date(t.occurred_at)>=date(?2)) AND (?3 IS NULL OR date(t.occurred_at)<=date(?3)) AND (?4 IS NULL OR t.status=?4) AND (?5 IS NULL OR t.description LIKE ?5 ESCAPE '\\' OR a.name LIKE ?5 ESCAPE '\\' OR t.source_reference LIKE ?5 ESCAPE '\\') AND (?6 IS NULL OR (?6='income' AND t.transaction_type='income') OR (?6='expense' AND (t.transaction_type='expense' OR EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id))) OR (?6='transfers' AND t.transaction_type='transfer'))";
+        let count_sql = format!("SELECT COUNT(DISTINCT t.id) {where_clause}");
+        let total: i64 = connection
+            .query_row(
+                &count_sql,
+                params![account_id, from, to, status, pattern, flow],
+                |r| r.get(0),
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        let sql = format!(
+            "SELECT t.id,e.account_id,CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END,t.amount_minor,e.amount_minor,t.currency_code,t.occurred_at,t.description,t.status {where_clause} GROUP BY t.id,e.account_id ORDER BY datetime(t.occurred_at) DESC,t.created_at DESC LIMIT ?7 OFFSET ?8"
+        );
+        let mut statement = connection
+            .prepare(&sql)
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        let items = statement
+            .query_map(
+                params![
+                    account_id,
+                    from,
+                    to,
+                    status,
+                    pattern,
+                    flow,
+                    limit.clamp(1, 200) as i64,
+                    offset.min(1_000_000) as i64
+                ],
+                |r| {
+                    Ok(TransactionRecord {
+                        id: r.get(0)?,
+                        account_id: r.get(1)?,
+                        transaction_type: r.get(2)?,
+                        amount_minor: r.get(3)?,
+                        entry_amount_minor: r.get(4)?,
+                        currency_code: r.get(5)?,
+                        occurred_at: r.get(6)?,
+                        description: r.get(7)?,
+                        status: r.get(8)?,
+                    })
+                },
+            )
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?
             .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        Ok(TransactionPage {
+            items,
+            total: total.max(0) as usize,
+        })
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct TransactionPage {
+    pub items: Vec<TransactionRecord>,
+    pub total: usize,
 }
 impl TransactionRepository for SqliteTransactionRepository<'_> {
     fn create(&self, item: &NewTransaction) -> Result<String, TransactionRepositoryError> {

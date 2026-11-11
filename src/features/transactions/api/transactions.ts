@@ -6,6 +6,8 @@ export const voidTransaction=(id:string,reason:string)=>invoke<void>("void_trans
 export const reverseTransaction=(id:string)=>invoke<string>("reverse_transaction",{id});
 export const createTransfer=(request:{from_account_id:string;to_account_id:string;amount_minor:number;fee_minor:number;occurred_at:string;description:string|null})=>invoke<string>("create_transfer",{request});
 export const listTransactions=(accountId:string,from:string,to:string)=>invoke<TransactionRecord[]>("list_transactions",{accountId:accountId||null,from:from||null,to:to||null});
+export type TransactionPage = { items: TransactionRecord[]; total: number };
+export const searchTransactions=(filters:{accountId:string;from:string;to:string;query:string;status:string;flow:string;offset:number;limit:number})=>invoke<TransactionPage>("search_transactions",{accountId:filters.accountId||null,from:filters.from||null,to:filters.to||null,query:filters.query.trim()||null,status:filters.status==="all"?null:filters.status,flow:filters.flow==="all"?null:filters.flow,offset:filters.offset,limit:filters.limit});
 export const listActiveCategories=(categoryType:"income"|"expense")=>invoke<Category[]>("list_active_categories",{categoryType});
 export const getTransactionAuditHistory=(id:string)=>invoke<TransactionAuditRecord[]>("get_transaction_audit_history",{id});
 export const getTransactionAllocations=(id:string)=>invoke<AllocationInput[]>("get_transaction_allocations",{id});

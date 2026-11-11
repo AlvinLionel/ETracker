@@ -9,4 +9,5 @@ pub mod imports;
 pub mod integrity;
 pub mod planning;
 pub mod preferences;
+pub mod search;
 pub mod transactions;

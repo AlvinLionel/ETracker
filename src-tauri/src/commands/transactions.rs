@@ -183,6 +183,42 @@ pub fn list_transactions(
         .list(account_id.as_deref(), from.as_deref(), to.as_deref())
         .map_err(|_| "Transactions could not be loaded.".into())
 }
+
+#[tauri::command]
+pub fn search_transactions(
+    state: State<'_, Database>,
+    account_id: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    query: Option<String>,
+    status: Option<String>,
+    flow: Option<String>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<crate::persistence::transactions::TransactionPage, String> {
+    for date in [&from, &to].into_iter().flatten() {
+        if chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
+            return Err("Enter dates in YYYY-MM-DD format.".into());
+        }
+    }
+    let query = query
+        .map(|s| s.trim().chars().take(100).collect::<String>())
+        .filter(|s| !s.is_empty());
+    let status = status.filter(|s| ["posted", "voided"].contains(&s.as_str()));
+    let flow = flow.filter(|s| ["income", "expense", "transfers"].contains(&s.as_str()));
+    SqliteTransactionRepository::new(state.inner())
+        .list_page(
+            account_id.as_deref(),
+            from.as_deref(),
+            to.as_deref(),
+            query.as_deref(),
+            status.as_deref(),
+            flow.as_deref(),
+            offset.unwrap_or(0),
+            limit.unwrap_or(50),
+        )
+        .map_err(|_| "Transactions could not be searched.".into())
+}
 #[tauri::command]
 pub fn list_active_categories(
     state: State<'_, Database>,

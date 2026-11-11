@@ -35,10 +35,28 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [ledgerResults, setLedgerResults] = useState<{kind:string;id:string;title:string;detail:string;page:string}[]>([]);
+  const [ledgerSearchBusy, setLedgerSearchBusy] = useState(false);
+  const [ledgerSearchError, setLedgerSearchError] = useState("");
   const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Categories", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
   const searchResults = navigationItems.filter((item) => `${item.label} ${item.section}`.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   const now = new Date();
   const calendarQuarter = `Calendar Q${Math.floor(now.getMonth() / 3) + 1} · ${now.getFullYear()}`;
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    setLedgerSearchError("");
+    if (query.length < 2) { setLedgerResults([]); setLedgerSearchBusy(false); return; }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setLedgerSearchBusy(true);
+      invoke<typeof ledgerResults>("search_ledger", { query, limit: 12 })
+        .then((results) => { if (active) setLedgerResults(results); })
+        .catch(() => { if (active) setLedgerSearchError("Ledger search is unavailable."); })
+        .finally(() => { if (active) setLedgerSearchBusy(false); });
+    }, 180);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [searchQuery]);
 
   useEffect(() => {
     let active = true;
@@ -90,7 +108,7 @@ function App() {
         <button type="button" disabled title="Named ledger selection is not implemented" className="hidden min-w-0 items-center gap-2 border-l border-slate-200 pl-4 text-sm text-slate-700 xl:flex">Primary Personal Ledger <ChevronDown size={14}/></button>
         <div className="command-search relative mx-auto hidden max-w-[360px] flex-1 md:block">
           <label className="flex h-8 items-center gap-2 rounded-sm border border-slate-200 bg-violet-50/60 px-2.5"><Search size={16} className="shrink-0 text-slate-500"/><input id="global-command-search" aria-label="Search modules" value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setSearchQuery(event.target.value); setSearchOpen(true); }} onKeyDown={(event) => { if (event.key === "Escape") { setSearchOpen(false); setSearchQuery(""); } if (event.key === "Enter" && searchResults[0]) { setActivePage(searchResults[0].label); setSearchOpen(false); setSearchQuery(""); } }} placeholder="Search ledger, accounts, rules…" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs outline-none"/><kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px]">Ctrl+K</kbd></label>
-          {searchOpen && <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-slate-200 bg-white p-1 shadow-lg">{searchResults.length ? searchResults.slice(0, 6).map((item) => <button key={item.label} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setActivePage(item.label); setSearchOpen(false); setSearchQuery(""); }} className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-xs hover:bg-violet-50"><item.icon size={14}/><span className="flex-1">{item.label}</span><span className="text-slate-400">{item.section}</span></button>) : <p className="px-2 py-2 text-xs text-slate-500">Ledger-wide search requires a backend search command.</p>}<p className="border-t border-slate-100 px-2 py-1.5 text-[10px] text-slate-400">Module navigation only · ledger search not connected</p></div>}
+          {searchOpen && <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[min(70vh,28rem)] overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-lg">{searchQuery.trim().length < 2 ? <><p className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Go to</p>{searchResults.slice(0,6).map((item)=><button key={item.label} type="button" onClick={()=>{setActivePage(item.label);setSearchOpen(false);setSearchQuery("");}} className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-xs hover:bg-violet-50"><item.icon size={14}/><span className="flex-1">{item.label}</span><span className="text-slate-400">{item.section}</span></button>)}</> : <>{ledgerSearchBusy && <p className="px-2 py-2 text-xs text-slate-500">Searching your ledger…</p>}{ledgerSearchError && <p role="alert" className="px-2 py-2 text-xs text-rose-700">{ledgerSearchError}</p>}{!ledgerSearchBusy && !ledgerSearchError && ledgerResults.length===0 && <p className="px-2 py-3 text-xs text-slate-500">No matching ledger records.</p>}{ledgerResults.map((item)=><button key={`${item.kind}-${item.id}`} type="button" onClick={()=>{setActivePage(item.page);setSearchOpen(false);setSearchQuery("");}} className="block w-full rounded-sm px-2 py-2 text-left hover:bg-violet-50"><span className="block truncate text-xs font-semibold">{item.title}</span><span className="mt-0.5 block truncate text-[10px] text-slate-500">{item.kind} · {item.detail}</span></button>)}</>}<p className="border-t border-slate-100 px-2 py-1.5 text-[10px] text-slate-400">Search covers posted transactions, accounts, categories and budget templates.</p></div>}
         </div>
         <span className="ml-auto hidden items-center gap-2 border-l border-slate-200 pl-4 font-mono text-xs text-slate-600 sm:flex"><CalendarDays size={14}/>{calendarQuarter}</span>
       </header>
