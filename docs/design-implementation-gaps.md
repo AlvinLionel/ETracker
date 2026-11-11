@@ -48,7 +48,7 @@ This document records the behavior implied by the nine design screens that does 
 
 - Add allocation rules and execution history for automatic skims, payroll sweeps, and transfer-triggered allocation. Existing transfer linking only records an already-posted transfer.
 - Define supported account yield/rate, compounding, tax, and maturity calculations before displaying yield estimators or projected goal dates beyond the currently stored target date.
-- Savings contribution ledger is implemented for manual contributions and linked transfers. Savings ledger export remains unimplemented.
+- Savings contribution ledger and CSV export are implemented for manual contributions and linked transfers.
 
 ### Analytics
 

@@ -152,3 +152,5 @@ Completed work must be supported by actual implementation and verification rathe
 - Savings contribution ledger and full-filter transaction export: added a persisted contribution history view that excludes linked transfers which are voided or reversed; transaction CSV now exports all matching results across pages up to 10,000 rows. Verified with 84 Rust tests, 11 transaction UI tests, 4 savings UI tests and a successful production build.
 
 - Budget worksheet export: added CSV export for the selected monthly budget, including plan, category, planned amount, posted actual, variance, and currency. Verified with 5 Budgeting UI tests and production frontend build.
+
+- Savings report export: added CSV export for contribution history, including goal, source, date, amount and currency; linked reversed or voided entries remain excluded by the backend query. Verified with 4 Savings UI tests and production build.
