@@ -42,7 +42,7 @@ This document records the behavior implied by the nine design screens that does 
 
 - Add envelope policy fields (caps, rollover, group/category policy), reallocation transfers, rule evaluation, breach decisions/overrides, and audit events for those decisions.
 - Define and persist monthly pacing inputs before showing projected month-end deltas, burn-velocity forecasts, or automated surplus vault behavior.
-- Add a budget report export operation; existing template/period editing is not the same as report generation.
+- Selected monthly plan CSV export is implemented from the persisted worksheet values. Multi-period reporting and print/PDF output remain open.
 
 ### Savings
 
