@@ -114,6 +114,14 @@ pub fn list_savings_goals(state: State<'_, Database>) -> Result<Vec<SavingsGoal>
 }
 
 #[tauri::command]
+pub fn list_savings_contributions(
+    state: State<'_, Database>,
+    goal_id: Option<String>,
+) -> Result<Vec<crate::persistence::planning::SavingsContributionRecord>, String> {
+    SqlitePlanningRepository::new(state.inner()).list_savings_contributions(goal_id.as_deref())
+}
+
+#[tauri::command]
 pub fn create_savings_goal(
     state: State<'_, Database>,
     request: CreateSavingsGoalRequest,

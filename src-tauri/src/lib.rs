@@ -78,6 +78,7 @@ pub fn run() {
             commands::planning::get_budget_period_totals,
             commands::planning::update_budget_period_items,
             commands::planning::list_savings_goals,
+            commands::planning::list_savings_contributions,
             commands::planning::create_savings_goal,
             commands::planning::add_savings_contribution,
             commands::planning::set_savings_goal_status,

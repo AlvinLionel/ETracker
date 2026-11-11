@@ -58,6 +58,18 @@ pub struct SavingsGoal {
     pub account_id: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavingsContributionRecord {
+    pub id: String,
+    pub goal_id: String,
+    pub goal_name: String,
+    pub amount_minor: i64,
+    pub currency_code: String,
+    pub contribution_date: String,
+    pub description: Option<String>,
+    pub source: String,
+}
+
 #[derive(Serialize)]
 pub struct EligibleSavingsTransfer {
     pub transaction_id: String,
@@ -390,6 +402,34 @@ impl<'a> SqlitePlanningRepository<'a> {
                     target_date: r.get(5)?,
                     status: r.get(6)?,
                     account_id: r.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn list_savings_contributions(
+        &self,
+        goal_id: Option<&str>,
+    ) -> Result<Vec<SavingsContributionRecord>, String> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let mut statement = connection.prepare("SELECT c.id,c.goal_id,g.name,c.amount_minor,g.currency_code,c.contribution_date,c.description,CASE WHEN c.transaction_id IS NULL THEN 'manual' ELSE 'linked transfer' END FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id WHERE (?1 IS NULL OR c.goal_id=?1) AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted'))) ORDER BY date(c.contribution_date) DESC,c.created_at DESC LIMIT 1000").map_err(|e| e.to_string())?;
+        statement
+            .query_map([goal_id], |r| {
+                Ok(SavingsContributionRecord {
+                    id: r.get(0)?,
+                    goal_id: r.get(1)?,
+                    goal_name: r.get(2)?,
+                    amount_minor: r.get(3)?,
+                    currency_code: r.get(4)?,
+                    contribution_date: r.get(5)?,
+                    description: r.get(6)?,
+                    source: r.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?

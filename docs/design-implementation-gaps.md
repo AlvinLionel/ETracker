@@ -18,7 +18,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ### Shared Workspace
 
-- Add a global ledger search command that searches transactions, accounts, categories, rules, and saved plans, with clear result types and privacy-preserving limits.
+- Global search covers posted transactions, accounts, active categories, and budget templates with a bounded local result set. Rules remain out of scope because ETracker has no rule model.
 - Add a persisted active-ledger or fiscal-period model before the shell's ledger selector and period controls can switch datasets rather than merely changing labels.
 - Add a report/export service with explicit date, currency, account, and category filters. The current design's general export actions do not all map to an existing report operation.
 
@@ -35,7 +35,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ### Transaction Journal
 
-- Add transaction search by free text/reference, status and flow filters, selectable batch reconciliation, split-transaction editing, and paginated server-side results. Current listing is account/date filtered and does not expose all of those operations.
+- Transaction search now supports free text/reference, status and flow filters, account/date filters, and bounded server-side pagination. Selectable batch reconciliation and dedicated split-edit workflows remain unimplemented.
 - Add transaction CSV export and any audit-integrity/hash snapshot service before showing the design's export or cryptographic audit status.
 
 ### Budgeting
@@ -48,7 +48,7 @@ This document records the behavior implied by the nine design screens that does 
 
 - Add allocation rules and execution history for automatic skims, payroll sweeps, and transfer-triggered allocation. Existing transfer linking only records an already-posted transfer.
 - Define supported account yield/rate, compounding, tax, and maturity calculations before displaying yield estimators or projected goal dates beyond the currently stored target date.
-- Add a savings ledger view and export if those actions are required.
+- Savings contribution ledger is implemented for manual contributions and linked transfers. Savings ledger export remains unimplemented.
 
 ### Analytics
 

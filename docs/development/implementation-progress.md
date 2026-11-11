@@ -146,3 +146,5 @@ Phase A repository tests cover category filtering, archived-category preservatio
 Implementation progress should be updated as meaningful milestones are completed.
 
 Completed work must be supported by actual implementation and verification rather than planned functionality or assumptions.
+
+- Backend UI alignment (11 November 2026): connected global search to a bounded SQLite query; added server-side transaction text/status/flow/date/account filters and pagination; added savings contribution history that excludes voided or reversed linked transfers. Search/journal checkpoint 799219; Rust 84 tests passed, focused frontend tests passed, full frontend 91 tests passed, and production build passed. Savings history is in current verification.
