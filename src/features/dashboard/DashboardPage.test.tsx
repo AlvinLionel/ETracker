@@ -4,20 +4,20 @@ import DashboardPage from "./DashboardPage";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+const dashboardSummary = {
+  currency_code: "KES", balance_minor: 700000, income_minor: 100000,
+  expense_minor: 50000, refund_minor: 10000, net_spending_minor: 40000,
+  accounts: [{ id: "cash", name: "Cash", currency_code: "KES", balance_minor: 700000 }],
+  recent_transactions: [{ id: "tx", account_id: "cash", account_name: "Cash", transaction_type: "expense", amount_minor: 5000, entry_amount_minor: -5000, currency_code: "KES", occurred_at: "2026-11-06T10:00:00Z", description: "Lunch" }],
+  budgets: [{ id: "budget", name: "Groceries", currency_code: "KES", ends_on: "2026-11-30", planned_expense_minor: 10000, actual_expense_minor: 12500 }],
+  savings_goals: [], upcoming_subscriptions: [], import_batches_pending_review: 0, import_batches_with_discrepancy: 0,
+};
 
 describe("DashboardPage", () => {
   beforeEach(() => {
     invoke.mockReset();
-    const dashboard = {
-      currency_code: "KES", balance_minor: 700000, income_minor: 100000,
-      expense_minor: 50000, refund_minor: 10000, net_spending_minor: 40000,
-      accounts: [{ id: "cash", name: "Cash", currency_code: "KES", balance_minor: 700000 }],
-      recent_transactions: [{ id: "tx", account_id: "cash", account_name: "Cash", transaction_type: "expense", amount_minor: 5000, entry_amount_minor: -5000, currency_code: "KES", occurred_at: "2026-11-06T10:00:00Z", description: "Lunch" }],
-      budgets: [{ id: "budget", name: "Groceries", currency_code: "KES", ends_on: "2026-11-30", planned_expense_minor: 10000, actual_expense_minor: 12500 }],
-      savings_goals: [], upcoming_subscriptions: [],
-    };
     invoke.mockImplementation((command: string) => command === "get_dashboard_summary"
-      ? Promise.resolve(dashboard)
+      ? Promise.resolve(dashboardSummary)
       : Promise.resolve({ currencies: ["KES"], trends: [] }));
   });
 
@@ -53,5 +53,17 @@ describe("DashboardPage", () => {
     invoke.mockRejectedValueOnce(new Error("offline"));
     render(<DashboardPage navigate={vi.fn()} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Dashboard information could not be loaded.");
+  });
+
+  it("surfaces unfinished statement imports and reconciliation differences", async () => {
+    invoke.mockImplementation((command: string) => command === "get_dashboard_summary"
+      ? Promise.resolve({ ...dashboardSummary, import_batches_pending_review: 2, import_batches_with_discrepancy: 1 })
+      : Promise.resolve({ currencies: ["KES"], trends: [] }));
+    const navigate = vi.fn();
+    render(<DashboardPage navigate={navigate} />);
+    expect(await screen.findByRole("region", { name: "Statement imports to review" })).toHaveTextContent("2 unfinished workspaces");
+    expect(screen.getByRole("region", { name: "Statement imports to review" })).toHaveTextContent("1 balance difference needs attention");
+    fireEvent.click(screen.getByRole("button", { name: "Review imports" }));
+    expect(navigate).toHaveBeenCalledWith("Imports");
   });
 });

@@ -4,7 +4,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ## Already Backed By The Application
 
-- **Dashboard:** `get_dashboard_summary` and `get_analytics_summary` provide balances, posted activity, accounts, budgets, savings progress, subscriptions, and historical chart data.
+- **Dashboard:** `get_dashboard_summary` and `get_analytics_summary` provide balances, posted activity, accounts, budgets, savings progress, subscriptions, historical chart data, and a count of statement workspaces awaiting review with reconciliation discrepancies.
 - **Accounts:** account create, update, archive, reactivate, balance lookup, and account-list import are implemented.
 - **Transaction journal:** transaction create, edit, transfer, void, reversal, allocation, attachment, audit history, account filtering, and date filtering are implemented.
 - **Imports and reconciliation:** CSV/XLSX/PDF staging, review, duplicate/revision handling, allocation, reconciliation, finalization, and audit logs are implemented.
@@ -24,7 +24,7 @@ This document records the behavior implied by the nine design screens that does 
 
 ### Dashboard
 
-- Add reconciliation summary data and a workflow entry point if the dashboard is to expose the design's global reconcile action. Import-batch reconciliation exists, but it is not the same as reconciling all posted account activity.
+- Dashboard statement-workspace triage is implemented with discrepancy counts and a direct route to Imports. A separate account-wide balance reconciliation workflow remains open; current reconciliation compares a selected statement batch with ledger activity.
 - Account-level yield, sync uptime, liquidity trajectory, and monthly burn pacing require sources and calculation definitions; they must not be inferred from the design mock's sample values.
 
 ### Accounts

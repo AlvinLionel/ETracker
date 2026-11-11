@@ -33,6 +33,8 @@ type Summary = {
   }[];
   savings_goals: { id: string; name: string; currency_code: string; target_amount_minor: number; contributed_minor: number }[];
   upcoming_subscriptions: { id: string; name: string; currency_code: string; amount_minor: number; next_due_date: string }[];
+  import_batches_pending_review: number;
+  import_batches_with_discrepancy: number;
 };
 
 const money = (minor: number, currency: string) => formatCurrency(minor, currency, { maximumFractionDigits: 2 });
@@ -94,6 +96,8 @@ function DashboardPage({ navigate }: { navigate: (page: string) => void }) {
           </article>
         ))}
       </div>
+
+      {data.import_batches_pending_review > 0 && <section aria-label="Statement imports to review" className={`workspace-panel flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4 ${data.import_batches_with_discrepancy ? "border-amber-300 bg-amber-50/70" : "border-emerald-200 bg-emerald-50/50"}`}><div><h2 className="font-semibold">Statement imports to review</h2><p className="workspace-muted mt-1 text-sm">{data.import_batches_pending_review} unfinished workspace{data.import_batches_pending_review === 1 ? "" : "s"}{data.import_batches_with_discrepancy ? ` · ${data.import_batches_with_discrepancy} balance ${data.import_batches_with_discrepancy === 1 ? "difference needs" : "differences need"} attention` : ""}. Review these before posting imported activity.</p></div><button type="button" onClick={() => navigate("Imports")} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold">Review imports</button></section>}
 
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.8fr)_minmax(20rem,0.9fr)]">
         <section className="workspace-panel min-w-0 rounded-lg p-4">

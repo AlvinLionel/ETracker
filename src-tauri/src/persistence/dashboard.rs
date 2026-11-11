@@ -58,6 +58,8 @@ pub struct DashboardSummary {
     pub budgets: Vec<DashboardBudget>,
     pub savings_goals: Vec<DashboardGoal>,
     pub upcoming_subscriptions: Vec<DashboardSubscription>,
+    pub import_batches_pending_review: i64,
+    pub import_batches_with_discrepancy: i64,
 }
 
 pub struct SqliteDashboardRepository<'a> {
@@ -153,6 +155,13 @@ impl<'a> SqliteDashboardRepository<'a> {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| e.to_string())?
         };
+        let (import_batches_pending_review, import_batches_with_discrepancy): (i64, i64) = c
+            .query_row(
+                "SELECT COUNT(*),COALESCE(SUM(CASE WHEN reconciliation_status='discrepancy' THEN 1 ELSE 0 END),0) FROM import_batches WHERE status='review' AND discarded_at IS NULL",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
         let balance: i64 = c
             .query_row("SELECT COALESCE(SUM(e.amount_minor),0) FROM account_entries e JOIN accounts a ON a.id=e.account_id JOIN financial_transactions t ON t.id=e.transaction_id WHERE a.currency_code='KES' AND t.status='posted'", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
@@ -168,6 +177,8 @@ impl<'a> SqliteDashboardRepository<'a> {
             budgets,
             savings_goals,
             upcoming_subscriptions,
+            import_batches_pending_review,
+            import_batches_with_discrepancy,
         })
     }
 }
@@ -208,5 +219,23 @@ mod tests {
                 .iter()
                 .any(|t| t.id == "refund" && t.transaction_type == "refund")
         );
+    }
+
+    #[test]
+    fn dashboard_counts_only_active_import_workspaces_and_reconciliation_discrepancies() {
+        let db = Database::initialize(Path::new(":memory:")).unwrap();
+        let c = db.connection().lock().unwrap();
+        c.execute("INSERT INTO accounts(id,name,account_type,currency_code) VALUES ('cash','Cash','cash','KES')", []).unwrap();
+        c.execute("INSERT INTO import_batches(id,account_id,source_file_name,source_format,status,reconciliation_status) VALUES ('open','cash','open.csv','csv','review','unavailable'),('mismatch','cash','mismatch.csv','csv','review','discrepancy'),('done','cash','done.csv','csv','finalized','reconciled'),('discarded','cash','discarded.csv','csv','review','discrepancy')", []).unwrap();
+        c.execute(
+            "UPDATE import_batches SET discarded_at=CURRENT_TIMESTAMP WHERE id='discarded'",
+            [],
+        )
+        .unwrap();
+        drop(c);
+
+        let summary = SqliteDashboardRepository::new(&db).summary().unwrap();
+        assert_eq!(summary.import_batches_pending_review, 2);
+        assert_eq!(summary.import_batches_with_discrepancy, 1);
     }
 }

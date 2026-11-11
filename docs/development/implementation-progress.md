@@ -158,3 +158,5 @@ Completed work must be supported by actual implementation and verification rathe
 - Portfolio and period-comparison exports: Accounts now exports fresh balances for every active account with account type, institution, currency and timestamp; Analytics compares the chosen date range with the immediately preceding range of equal length and displays changes in income, gross expenses, refunds and net spending. Updated `docs/design-implementation-gaps.md` to distinguish implemented exports from remaining PDF, saved-report and reconciliation work. Focused account and analytics UI tests plus the production build pass.
 
 - Appearance preference persistence: grid opacity and row density now save in the existing local preferences store, validate on write, default safely for existing databases, and apply across app pages and launches. Settings and preference repository regression coverage added.
+
+- Dashboard import triage: the dashboard now shows active statement workspaces awaiting review and highlights how many have reconciliation differences, with a direct link back to Imports. Discarded and finalized batches are excluded from the counts.
