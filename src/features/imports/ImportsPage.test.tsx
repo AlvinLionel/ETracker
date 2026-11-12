@@ -28,6 +28,16 @@ describe("ImportsPage", () => {
     });
   });
 
+  it("uses a single custom file-picker action and keeps the selected filename visible", async () => {
+    render(<ImportsPage />);
+    expect(screen.getByRole("button", { name: "Choose file" })).toBeInTheDocument();
+    expect(screen.queryByText("Local processing · KES")).not.toBeInTheDocument();
+    expect(screen.queryByText("Choose statement file")).not.toBeInTheDocument();
+    const file = new File(["Date,Amount,Memo\n2026-11-01,10.00,Shop"], "November statement.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
+    expect(await screen.findByText("Selected file:", { exact: false })).toHaveTextContent("November statement.csv");
+  });
+
   it("maps a CSV file into a persistent import workspace", async () => {
     render(<ImportsPage />);
     fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });

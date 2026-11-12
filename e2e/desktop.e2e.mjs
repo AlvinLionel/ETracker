@@ -162,34 +162,33 @@ test("creates isolated accounts, posts income and transfers with a separate fee"
   await unlink(budgetPlanPath).catch(() => {});
 
   await navigateTo("Transactions");
-  const transactionForm = (await driver.findElements(By.css("main form")))[0];
-  const transactionSelects = await transactionForm.findElements(By.css("select"));
-  await new Select(transactionSelects[0]).selectByValue("income");
-  await new Select(transactionSelects[1]).selectByVisibleText(`${checking} (KES)`);
-  await transactionForm.findElement(By.css("input[placeholder='0.00']")).sendKeys("125.00");
-  await transactionForm.findElement(By.xpath(".//label[normalize-space()='Description']/input")).sendKeys(incomeDescription);
-  await transactionForm.findElement(By.xpath(".//button[normalize-space()='Save transaction']")).click();
+  await new Select(await driver.findElement(By.css("#transaction-entry select"))).selectByValue("income");
+  const checkingAccountOption = By.xpath(`//form[@id='transaction-entry']//select/option[normalize-space()='${checking} (KES)']`);
+  await driver.wait(until.elementLocated(checkingAccountOption), 15_000);
+  await new Select(await driver.findElement(By.xpath("//form[@id='transaction-entry']//select[.//option[contains(.,' (KES)')]]"))).selectByVisibleText(`${checking} (KES)`);
+  await driver.findElement(By.css("#transaction-entry input[aria-label='Amount']")).sendKeys("125.00");
+  await driver.findElement(By.xpath("//form[@id='transaction-entry']//label[normalize-space()='Description']/input")).sendKeys(incomeDescription);
+  await driver.findElement(By.xpath("//form[@id='transaction-entry']//button[normalize-space()='Save transaction']")).click();
   await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${incomeDescription}']]`)), 15_000);
 
-  await new Select(await driver.findElement(By.css("select[aria-label='From account']"))).selectByVisibleText(checking);
-  await new Select(await driver.findElement(By.css("select[aria-label='To account']"))).selectByVisibleText(savings);
+  await new Select(await driver.findElement(By.css("#transaction-entry select"))).selectByValue("transfer");
+  await new Select(await driver.findElement(By.css("#transaction-entry select[aria-label='From account']"))).selectByVisibleText(`${checking} (KES)`);
+  await new Select(await driver.findElement(By.css("#transaction-entry select[aria-label='To account']"))).selectByVisibleText(`${savings} (KES)`);
   await driver.findElement(By.css("input[aria-label='Transfer amount']")).sendKeys("50.00");
   await driver.findElement(By.css("input[aria-label='Transfer fee']")).sendKeys("2.00");
-  await driver.findElement(By.xpath("//form[.//h2[normalize-space()='Transfer between accounts']]//button[normalize-space()='Save transfer']")).click();
+  await driver.findElement(By.xpath("//form[@id='transaction-entry']//button[normalize-space()='Save transfer']")).click();
   await driver.wait(until.elementLocated(By.xpath("//*[@role='status'][contains(.,'Transfer saved')]")), 15_000);
   await driver.wait(until.elementLocated(By.xpath("//tbody/tr[.//td[normalize-space()='Transfer fee'] and .//td[normalize-space()='expense']]")), 15_000);
 
   await navigateTo("Transactions");
   const expenseDescription = `E2E lunch ${suffix}`;
   const editedExpenseDescription = `E2E lunch edited ${suffix}`;
-  const expenseForm = (await driver.findElements(By.css("main form")))[0];
-  const expenseSelects = await expenseForm.findElements(By.css("select"));
-  await new Select(expenseSelects[0]).selectByValue("expense");
-  await new Select(expenseSelects[1]).selectByVisibleText(`${checking} (KES)`);
-  await expenseForm.findElement(By.css("input[placeholder='0.00']")).sendKeys("10.00");
-  const descriptionInput = expenseForm.findElement(By.xpath(".//label[normalize-space()='Description']/input"));
-  await descriptionInput.sendKeys(expenseDescription);
-  await expenseForm.findElement(By.xpath(".//button[normalize-space()='Save transaction']")).click();
+  await new Select(await driver.findElement(By.css("#transaction-entry select"))).selectByValue("expense");
+  await driver.wait(until.elementLocated(checkingAccountOption), 15_000);
+  await new Select(await driver.findElement(By.xpath("//form[@id='transaction-entry']//select[.//option[contains(.,' (KES)')]]"))).selectByVisibleText(`${checking} (KES)`);
+  await driver.findElement(By.css("#transaction-entry input[aria-label='Amount']")).sendKeys("10.00");
+  await driver.findElement(By.xpath("//form[@id='transaction-entry']//label[normalize-space()='Description']/input")).sendKeys(expenseDescription);
+  await driver.findElement(By.xpath("//form[@id='transaction-entry']//button[normalize-space()='Save transaction']")).click();
   await driver.wait(until.elementLocated(By.xpath(`//tbody/tr[.//td[normalize-space()='${expenseDescription}']]`)), 15_000);
 
   let expenseRow = await driver.findElement(By.xpath(`//tbody/tr[.//td[normalize-space()='${expenseDescription}']]`));

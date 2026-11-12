@@ -88,8 +88,11 @@ describe("TransactionsPage",()=>{
   await waitFor(()=>expect(mocks.confirmAction).toHaveBeenCalled());
   expect(mocks.reverse).not.toHaveBeenCalled();
  });
- it("records an inter-account transfer and its optional fee",async()=>{
+ it("offers transfers in the transaction form and hides transfer-only fields for other types",async()=>{
   render(<TransactionsPage/>);
+  expect(screen.queryByLabelText("From account")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading",{name:"Transfer between accounts"})).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Type"),{target:{value:"transfer"}});
   await screen.findAllByRole("option",{name:"Savings"});
   fireEvent.change(screen.getByLabelText("From account"),{target:{value:"a"}});
   fireEvent.change(screen.getByLabelText("To account"),{target:{value:"b"}});
@@ -97,6 +100,9 @@ describe("TransactionsPage",()=>{
   fireEvent.change(screen.getByLabelText("Transfer fee"),{target:{value:"1.50"}});
   fireEvent.click(screen.getByRole("button",{name:"Save transfer"}));
   await waitFor(()=>expect(mocks.transfer).toHaveBeenCalledWith(expect.objectContaining({from_account_id:"a",to_account_id:"b",amount_minor:2000,fee_minor:150})));
+  fireEvent.change(screen.getByLabelText("Type"),{target:{value:"expense"}});
+  expect(screen.queryByLabelText("From account")).not.toBeInTheDocument();
+  expect(screen.getAllByLabelText(/^Account$/).length).toBeGreaterThan(0);
  });
  it("exports the filtered journal rows as CSV",async()=>{
   mocks.list.mockResolvedValue([{id:"tx",account_id:"a",transaction_type:"expense",amount_minor:1200,currency_code:"KES",occurred_at:"2026-11-06T09:00:00Z",description:"Shop",status:"posted",entry_amount_minor:-1200}]);

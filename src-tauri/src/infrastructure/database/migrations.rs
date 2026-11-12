@@ -5,7 +5,7 @@ struct Migration {
     sql: &'static str,
 }
 
-pub(super) const LATEST_VERSION: i64 = 18;
+pub(super) const LATEST_VERSION: i64 = 19;
 
 const MIGRATIONS: &[Migration] = &[
     Migration {
@@ -80,6 +80,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 18,
         sql: include_str!("../../../migrations/0018_saved_analytics_reports.sql"),
     },
+    Migration {
+        version: 19,
+        sql: include_str!("../../../migrations/0019_flexible_categories_and_subscriptions.sql"),
+    },
 ];
 
 pub(super) fn run(connection: &mut Connection) -> rusqlite::Result<()> {
@@ -96,16 +100,45 @@ pub(super) fn run(connection: &mut Connection) -> rusqlite::Result<()> {
             continue;
         }
 
-        let transaction = connection.transaction()?;
+        let rebuilds_foreign_key_tables = migration.version == 19;
+        if rebuilds_foreign_key_tables {
+            connection.pragma_update(None, "foreign_keys", "OFF")?;
+        }
 
-        transaction.execute_batch(migration.sql)?;
+        let result = (|| {
+            let transaction = connection.transaction()?;
 
-        transaction.execute(
-            "INSERT INTO schema_migrations (version) VALUES (?1)",
-            [migration.version],
-        )?;
+            transaction.execute_batch(migration.sql)?;
 
-        transaction.commit()?;
+            transaction.execute(
+                "INSERT INTO schema_migrations (version) VALUES (?1)",
+                [migration.version],
+            )?;
+
+            transaction.commit()
+        })();
+
+        if rebuilds_foreign_key_tables {
+            connection.pragma_update(None, "foreign_keys", "ON")?;
+        }
+        result?;
+
+        if rebuilds_foreign_key_tables {
+            let violations: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM pragma_foreign_key_check",
+                [],
+                |row| row.get(0),
+            )?;
+            if violations > 0 {
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY),
+                    Some(format!(
+                        "Migration {} left {violations} foreign-key violations",
+                        migration.version
+                    )),
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -166,5 +199,66 @@ mod tests {
                 [],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn flexible_category_and_frequency_migration_preserves_references() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
+        connection.execute_batch("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);").unwrap();
+        for migration in MIGRATIONS.iter().filter(|migration| migration.version < 19) {
+            connection.execute_batch(migration.sql).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO schema_migrations(version) VALUES (?1)",
+                    [migration.version],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO accounts(id,name,account_type) VALUES ('cash','Cash','cash')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO categories(id,name,category_type) VALUES ('food','Food','expense')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('expense','expense',1000,'KES','2026-11-01T00:00:00Z','manual')", []).unwrap();
+        connection.execute("INSERT INTO category_allocations(id,transaction_id,category_id,amount_minor) VALUES ('allocation','expense','food',1000)", []).unwrap();
+        connection.execute("INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('subscription','Music',500,'KES','monthly','2026-11-20')", []).unwrap();
+        connection.execute("INSERT INTO subscription_history(id,subscription_id,previous_values,new_values) VALUES ('history','subscription','{}','{}')", []).unwrap();
+
+        run(&mut connection).unwrap();
+
+        let preserved: i64 = connection.query_row("SELECT COUNT(*) FROM category_allocations WHERE id='allocation' AND category_id='food'", [], |row| row.get(0)).unwrap();
+        assert_eq!(preserved, 1);
+        let history: i64 = connection.query_row("SELECT COUNT(*) FROM subscription_history WHERE id='history' AND subscription_id='subscription'", [], |row| row.get(0)).unwrap();
+        assert_eq!(history, 1);
+        connection.execute("INSERT INTO categories(id,name,category_type) VALUES ('emergency','Emergency','emergency')", []).unwrap();
+        connection.execute("INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('custom','Custom',500,'KES','custom:3:months','2026-11-20')", []).unwrap();
+        assert!(connection
+            .execute(
+                "INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('invalid-custom','Invalid',500,'KES','custom:3x:months','2026-11-20')",
+                [],
+            )
+            .is_err());
+        assert!(connection
+            .execute(
+                "INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('oversized-custom','Invalid',500,'KES','custom:366:months','2026-11-20')",
+                [],
+            )
+            .is_err());
+        let violations: i64 = connection
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(violations, 0);
     }
 }

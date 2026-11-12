@@ -240,8 +240,8 @@ pub fn create_category(
     name: String,
     category_type: String,
 ) -> Result<CategoryRecord, String> {
-    if !matches!(category_type.as_str(), "income" | "expense") {
-        return Err("Choose income or expense for the category.".into());
+    if !matches!(category_type.as_str(), "income" | "expense" | "emergency") {
+        return Err("Choose income, expense or emergency for the category.".into());
     }
     SqliteTransactionRepository::new(state.inner())
         .create_category(&name, &category_type)

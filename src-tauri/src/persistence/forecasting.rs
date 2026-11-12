@@ -237,7 +237,28 @@ impl<'a> SqliteForecastRepository<'a> {
                 "monthly" => *amount,
                 "quarterly" => amount / 3,
                 "yearly" => amount / 12,
-                _ => 0,
+                _ => {
+                    let mut parts = frequency.split(':');
+                    let interval = if parts.next() == Some("custom") {
+                        parts.next().and_then(|value| value.parse::<i64>().ok())
+                    } else {
+                        None
+                    };
+                    let unit = parts.next();
+                    match (
+                        interval.filter(|value| (1..=365).contains(value)),
+                        unit,
+                        parts.next(),
+                    ) {
+                        (Some(count), Some("days"), None) => amount.saturating_mul(30) / count,
+                        (Some(count), Some("weeks"), None) => {
+                            amount.saturating_mul(52) / (12 * count)
+                        }
+                        (Some(count), Some("months"), None) => amount / count,
+                        (Some(count), Some("years"), None) => amount / (12 * count),
+                        _ => 0,
+                    }
+                }
             })
             .fold(0_i64, i64::saturating_add);
         let confidence = if active_months < 3 {
@@ -421,7 +442,7 @@ mod tests {
             let signed = if kind == "income" { amount } else { -amount };
             c.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES (?1,?2,'cash',?3)",params![format!("entry-{id}"),id,signed]).unwrap();
         }
-        c.execute("INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('monthly','Music',9000,'KES','monthly','2026-11-20'),('yearly','Domain',12000,'KES','yearly','2026-11-10')",[]).unwrap();
+        c.execute("INSERT INTO subscriptions(id,name,amount_minor,currency_code,frequency,next_due_date) VALUES ('monthly','Music',9000,'KES','monthly','2026-11-20'),('yearly','Domain',12000,'KES','yearly','2026-11-10'),('custom','Quarterly',6000,'KES','custom:3:months','2026-11-15')",[]).unwrap();
         c.execute("INSERT INTO budget_periods(id,name,currency_code,starts_on,ends_on) VALUES ('future-budget','December','KES','2026-12-01','2026-12-31')",[]).unwrap();
         c.execute("INSERT INTO budget_period_items(id,budget_id,item_type,amount_minor,label) VALUES ('planned-income','future-budget','income',40000,'Salary'),('planned-expense','future-budget','expense',20000,'Household'),('planned-savings','future-budget','savings',5000,'Reserve')",[]).unwrap();
         drop(c);
@@ -490,7 +511,7 @@ mod tests {
         assert_eq!(snapshot.confidence, "limited");
         assert_eq!(snapshot.periods.len(), 2);
         assert_eq!(snapshot.periods[0].predicted_income_minor, 10000);
-        assert_eq!(snapshot.periods[0].predicted_subscription_minor, 10000);
+        assert_eq!(snapshot.periods[0].predicted_subscription_minor, 12000);
         assert_eq!(snapshot.periods[0].planned_income_minor, Some(40000));
         assert!(
             snapshot

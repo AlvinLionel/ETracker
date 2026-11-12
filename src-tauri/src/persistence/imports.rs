@@ -802,7 +802,7 @@ impl ImportRepository for SqliteImportRepository<'_> {
                 return Err(ImportError::InvalidBatch);
             }
             for (category_id, allocation_amount) in allocations {
-                let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)", params![category_id,kind], |r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
+                let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND (category_type=?2 OR (?2='expense' AND category_type='emergency')) AND archived_at IS NULL)", params![category_id,kind], |r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
                 if !valid {
                     return Err(ImportError::InvalidBatch);
                 }
@@ -915,7 +915,7 @@ impl ImportRepository for SqliteImportRepository<'_> {
             return Err(ImportError::InvalidBatch);
         }
         for allocation in allocations {
-            let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)", params![allocation.category_id,kind], |r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
+            let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND (category_type=?2 OR (?2='expense' AND category_type='emergency')) AND archived_at IS NULL)", params![allocation.category_id,kind], |r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
             if !active {
                 return Err(ImportError::InvalidBatch);
             }

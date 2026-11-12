@@ -71,4 +71,13 @@ describe("BudgetingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save template" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("create_budget_template", { request: { name: "November plan", currency_code: "KES", items: [{ item_type: "expense", category_id: "food", label: "Food", amount_minor: 25000 }] } }));
   });
+
+  it("explains how to add a category when none are available to select", async () => {
+    const navigate = vi.fn();
+    mocks.categories.mockResolvedValue([]);
+    render(<BudgetingPage navigate={navigate} initialMonth="2026-11" />);
+    expect(await screen.findByLabelText("Month")).toHaveValue("2026-11");
+    fireEvent.click(await screen.findByRole("button", { name: "Open Categories" }));
+    expect(navigate).toHaveBeenCalledWith("Categories");
+  });
 });

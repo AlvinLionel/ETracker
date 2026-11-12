@@ -9,6 +9,7 @@ vi.mock("../accounts/api/accounts", () => ({ listActiveAccounts: mocks.accounts 
 describe("SavingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mocks.accounts.mockResolvedValue([]);
     mocks.invoke.mockImplementation(async (command: string) => command === "list_savings_goals" ? [{ id: "goal", name: "Emergency fund", target_amount_minor: 100000, contributed_minor: 12500, currency_code: "KES", target_date: null, status: "active", account_id: null }] : command === "list_eligible_savings_transfers" ? [] : "created");
   });
@@ -38,5 +39,16 @@ describe("SavingsPage", () => {
     fireEvent.change(await screen.findByLabelText("Eligible transfer"), { target: { value: "transfer" } });
     fireEvent.click(screen.getByRole("button", { name: "Link selected transfer" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("add_savings_transfer", { goalId: "goal", transactionId: "transfer" }));
+  });
+  it("saves monthly allocation suggestions without creating financial activity", async () => {
+    render(<SavingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Configure allocation engine" }));
+    fireEvent.change(await screen.findByLabelText("Monthly allocation amount"), { target: { value: "100.00" } });
+    fireEvent.change(screen.getByLabelText("Allocation percentage for Emergency fund"), { target: { value: "100" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save monthly suggestions" }));
+    expect(await screen.findByText(/Monthly suggestions saved on this device/)).toHaveTextContent(/do not create transfers/);
+    expect(JSON.parse(localStorage.getItem("etracker.savings-allocation-suggestions") ?? "{}")).toEqual({ monthly_amount_minor: 10000, allocations: [{ goal_id: "goal", percentage: 100 }] });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("add_savings_contribution", expect.anything());
+    expect(mocks.invoke).not.toHaveBeenCalledWith("create_transfer", expect.anything());
   });
 });

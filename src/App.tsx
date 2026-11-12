@@ -12,7 +12,7 @@ import DashboardPage from "./features/dashboard/DashboardPage";
 import SettingsPage from "./features/settings/SettingsPage";
 import CategoriesPage from "./features/transactions/CategoriesPage";
 import { applyAppearancePreferences, type ThemePreference } from "./features/settings/theme";
-import { Activity, CalendarDays, ChartNoAxesCombined, ChevronDown, Download, Landmark, LayoutDashboard, Moon, Monitor, PanelLeftClose, PiggyBank, Repeat2, Search, Settings2, Sun, Tags, TrendingUp, WalletCards } from "lucide-react";
+import { Activity, CalendarDays, ChartNoAxesCombined, Download, Landmark, LayoutDashboard, Moon, Monitor, PanelLeftClose, PiggyBank, Repeat2, Search, Settings2, Sun, Tags, TrendingUp, WalletCards } from "lucide-react";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview", icon: LayoutDashboard },
@@ -34,6 +34,10 @@ function App() {
   const [appearance, setAppearance] = useState<{ grid_opacity: number; row_density: "compact" | "standard" | "comfortable" }>({ grid_opacity: 5, row_density: "standard" });
   const [themeError, setThemeError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [planningMonth, setPlanningMonth] = useState(() => {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [ledgerResults, setLedgerResults] = useState<{kind:string;id:string;title:string;detail:string;page:string}[]>([]);
@@ -42,6 +46,7 @@ function App() {
   const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Categories", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
   const searchResults = navigationItems.filter((item) => `${item.label} ${item.section}`.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   const now = new Date();
+  const planningMonthLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(new Date(`${planningMonth}-01T00:00:00`));
   const calendarQuarter = `Calendar Q${Math.floor(now.getMonth() / 3) + 1} · ${now.getFullYear()}`;
 
   useEffect(() => {
@@ -107,7 +112,7 @@ function App() {
           <span className="hidden h-5 w-px bg-slate-200 sm:block" />
           <span className="hidden items-center gap-2 rounded-sm bg-violet-50 px-2 py-1 font-mono text-xs font-medium text-slate-800 sm:inline-flex"><span className="h-2 w-2 rounded-full bg-emerald-700" />Tauri · KES</span>
         </div>
-        <button type="button" disabled title="Named ledger selection is not implemented" className="hidden min-w-0 items-center gap-2 border-l border-slate-200 pl-4 text-sm text-slate-700 xl:flex">Primary Personal Ledger <ChevronDown size={14}/></button>
+        <span title="ETracker currently uses one local ledger on this device." className="hidden min-w-0 items-center border-l border-slate-200 pl-4 text-sm text-slate-700 xl:flex">Primary Personal Ledger</span>
         <div className="command-search relative mx-auto hidden max-w-[360px] flex-1 md:block">
           <label className="flex h-8 items-center gap-2 rounded-sm border border-slate-200 bg-violet-50/60 px-2.5"><Search size={16} className="shrink-0 text-slate-500"/><input id="global-command-search" aria-label="Search modules" value={searchQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setSearchQuery(event.target.value); setSearchOpen(true); }} onKeyDown={(event) => { if (event.key === "Escape") { setSearchOpen(false); setSearchQuery(""); } if (event.key === "Enter" && searchResults[0]) { setActivePage(searchResults[0].label); setSearchOpen(false); setSearchQuery(""); } }} placeholder="Search ledger, accounts, rules…" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs outline-none"/><kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px]">Ctrl+K</kbd></label>
           {searchOpen && <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[min(70vh,28rem)] overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-lg">{searchQuery.trim().length < 2 ? <><p className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Go to</p>{searchResults.slice(0,6).map((item)=><button key={item.label} type="button" onClick={()=>{setActivePage(item.label);setSearchOpen(false);setSearchQuery("");}} className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-xs hover:bg-violet-50"><item.icon size={14}/><span className="flex-1">{item.label}</span><span className="text-slate-400">{item.section}</span></button>)}</> : <>{ledgerSearchBusy && <p className="px-2 py-2 text-xs text-slate-500">Searching your ledger…</p>}{ledgerSearchError && <p role="alert" className="px-2 py-2 text-xs text-rose-700">{ledgerSearchError}</p>}{!ledgerSearchBusy && !ledgerSearchError && ledgerResults.length===0 && <p className="px-2 py-3 text-xs text-slate-500">No matching ledger records.</p>}{ledgerResults.map((item)=><button key={`${item.kind}-${item.id}`} type="button" onClick={()=>{setActivePage(item.page);setSearchOpen(false);setSearchQuery("");}} className="block w-full rounded-sm px-2 py-2 text-left hover:bg-violet-50"><span className="block truncate text-xs font-semibold">{item.title}</span><span className="mt-0.5 block truncate text-[10px] text-slate-500">{item.kind} · {item.detail}</span></button>)}</>}<p className="border-t border-slate-100 px-2 py-1.5 text-[10px] text-slate-400">Search covers posted transactions, accounts, categories and budget templates.</p></div>}
@@ -120,7 +125,7 @@ function App() {
         <div className={`flex h-[68px] shrink-0 items-center border-b border-slate-200 ${sidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"}`}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-700 text-lg font-bold text-white">E</div>
           {!sidebarCollapsed && <><div className="min-w-0 flex-1"><h1 className="text-base font-bold tracking-tight">ETracker</h1><p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-700">Precision Tracker</p></div><button type="button" title="Collapse navigation" aria-label="Collapse navigation" onClick={() => setSidebarCollapsed(true)} className="rounded-sm p-1.5 text-slate-600"><PanelLeftClose size={18}/></button></>}
-          {sidebarCollapsed && <button type="button" title="Expand navigation" aria-label="Expand navigation" onClick={() => setSidebarCollapsed(false)} className="sr-only"><PanelLeftClose size={18}/></button>}
+          {sidebarCollapsed && <button type="button" title="Expand navigation" aria-label="Expand navigation" onClick={() => setSidebarCollapsed(false)} className="rounded-sm p-1.5 text-slate-600"><PanelLeftClose size={18}/></button>}
         </div>
 
         <nav aria-label="Primary navigation" className={`min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain py-5 ${sidebarCollapsed ? "px-2" : "px-3"}`}>
@@ -176,7 +181,7 @@ function App() {
       {/* Main workspace */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="app-context-bar flex min-h-14 shrink-0 items-center justify-between gap-3 border-b px-4 sm:px-5">
-          <div className="flex min-w-0 items-center gap-3"><span className="text-sm text-slate-600">Ledger</span><span className="text-slate-300">/</span><div className="min-w-0"><p className="truncate text-[10px] text-slate-500">{activePage} / Workspace</p><h2 className="truncate text-sm font-semibold">{activePage === "Accounts" ? "Account management" : ["Budgeting", "Savings", "Subscriptions"].includes(activePage) ? "Financial planning" : activePage === "Transactions" ? "Transaction management" : activePage === "Imports" ? "Statement imports" : activePage}</h2></div><span className="hidden h-5 w-px bg-slate-200 sm:block"/><button type="button" disabled title="Fiscal-period selection is not implemented" className="hidden items-center gap-2 rounded-sm border border-slate-200 bg-violet-50/60 px-2.5 py-1.5 font-mono text-xs text-slate-700 sm:flex"><CalendarDays size={14}/>{new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(now)}<ChevronDown size={12}/></button></div>
+          <div className="flex min-w-0 items-center gap-3"><span className="text-sm text-slate-600">Ledger</span><span className="text-slate-300">/</span><div className="min-w-0"><p className="truncate text-[10px] text-slate-500">{activePage} / Workspace</p><h2 className="truncate text-sm font-semibold">{activePage === "Accounts" ? "Account management" : ["Budgeting", "Savings", "Subscriptions"].includes(activePage) ? "Financial planning" : activePage === "Transactions" ? "Transaction management" : activePage === "Imports" ? "Statement imports" : activePage}</h2></div><span className="hidden h-5 w-px bg-slate-200 sm:block"/><label className="hidden items-center gap-2 rounded-sm border border-slate-200 bg-violet-50/60 px-2.5 py-1.5 font-mono text-xs text-slate-700 sm:flex"><CalendarDays size={14}/><span>{planningMonthLabel}</span><input aria-label="Planning month" type="month" value={planningMonth} onChange={(event) => setPlanningMonth(event.target.value)} className="w-28 border-0 bg-transparent p-0 text-xs outline-none"/></label></div>
           <div className="flex shrink-0 items-center gap-2"><button type="button" title="Open statement import reconciliation" onClick={() => setActivePage("Imports")} className="hidden items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 py-2 text-xs font-semibold sm:inline-flex">Reconcile statement</button><button type="button" onClick={() => setActivePage("Transactions")} className="rounded-sm bg-violet-700 px-3 py-2 text-xs font-semibold text-white">+ Add transaction</button></div>
         </div>
 
@@ -200,7 +205,7 @@ function App() {
         </nav>
 
         <main className={`flex-1 px-3 py-4 sm:px-5 lg:px-6 ${activePage === "Dashboard" ? "app-dashboard-main" : ""}`}>
-          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage navigate={setActivePage} /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
+          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage navigate={setActivePage} /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage initialMonth={planningMonth} navigate={setActivePage} /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage navigate={setActivePage} /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
         </main>
       </div>
       </div>

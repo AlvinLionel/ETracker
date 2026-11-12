@@ -41,8 +41,8 @@ describe("SettingsPage", () => {
       : command === "list_subscriptions" ? Promise.resolve([])
         : Promise.resolve({ integrity_messages: ["ok"], foreign_key_violations: [] }));
     render(<SettingsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Check local data" }));
-    expect(await screen.findByText("The local database passed both checks.")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Check saved data" }));
+    expect(await screen.findByText("Your saved data passed the check. No problems were found.")).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("check_database_integrity");
   });
 
@@ -52,8 +52,9 @@ describe("SettingsPage", () => {
       : command === "list_subscriptions" ? Promise.resolve([])
         : Promise.resolve({ integrity_messages: ["ok"], foreign_key_violations: ["account_entries row Some(3) references accounts (constraint 0)"] }));
     render(<SettingsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Check local data" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check saved data" }));
     expect(await screen.findByText(/Avoid editing affected records/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("View technical details"));
     expect(screen.getByText(/references accounts/)).toBeInTheDocument();
   });
 
@@ -155,7 +156,7 @@ describe("SettingsPage", () => {
     const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:diagnostics");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     render(<SettingsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Download diagnostic report" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save support report" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_diagnostic_report"));
     expect(create).toHaveBeenCalled();
     expect(await screen.findByRole("status")).toHaveTextContent(/Privacy-safe diagnostic report downloaded/);

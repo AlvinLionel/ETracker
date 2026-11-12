@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirmAction } from "../../shared/confirmAction";
 
-type Category = { id: string; name: string; category_type: "income" | "expense"; is_system: boolean };
+type Category = { id: string; name: string; category_type: "income" | "expense" | "emergency"; is_system: boolean };
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -32,7 +32,7 @@ export default function CategoriesPage() {
     try {
       await invoke("create_category", { name: normalizedName, categoryType });
       setName("");
-      setMessage(`${categoryType === "expense" ? "Expense" : "Income"} category created.`);
+      setMessage(`${categoryType === "expense" ? "Expense" : categoryType === "emergency" ? "Emergency" : "Income"} category created.`);
       await refresh();
     } catch (reason) {
       setError(typeof reason === "string" ? reason : "Category could not be created.");
@@ -58,7 +58,7 @@ export default function CategoriesPage() {
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
     <form onSubmit={createCategory} className="workspace-panel grid gap-4 rounded-xl p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
       <label className="text-sm font-medium">Category name<input aria-label="Category name" required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2" /></label>
-      <label className="text-sm font-medium">Category type<select aria-label="Category type" value={categoryType} onChange={(event) => setCategoryType(event.target.value as Category["category_type"])} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+      <label className="text-sm font-medium">Category type<select aria-label="Category type" value={categoryType} onChange={(event) => setCategoryType(event.target.value as Category["category_type"])} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2"><option value="expense">Expense</option><option value="income">Income</option><option value="emergency">Emergency</option></select></label>
       <button disabled={busy} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : "Add category"}</button>
     </form>
     <section className="workspace-panel rounded-xl p-5 sm:p-6">

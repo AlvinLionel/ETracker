@@ -28,9 +28,15 @@ describe("application navigation shell", () => {
     expect(await screen.findByText("Dashboard test content")).toBeInTheDocument();
     const now = new Date();
     expect(screen.getByText(`Calendar Q${Math.floor(now.getMonth() / 3) + 1} · ${now.getFullYear()}`)).toBeInTheDocument();
+    const planningMonth = screen.getByLabelText("Planning month");
+    fireEvent.change(planningMonth, { target: { value: "2026-11" } });
+    expect(planningMonth).toHaveValue("2026-11");
     expect(screen.getByRole("button", { name: "Reconcile statement" })).toHaveAttribute("title", "Open statement import reconciliation");
     expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const compactNavigation = screen.getByRole("navigation", { name: "Compact navigation" });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand navigation" }));
+    expect(screen.getByRole("button", { name: "Collapse navigation" })).toBeInTheDocument();
     const compactLabels = within(compactNavigation).getAllByRole("button").map((button) => button.textContent);
     expect(compactLabels.indexOf("Imports")).toBeLessThan(compactLabels.indexOf("Transactions"));
     expect(compactLabels.indexOf("Categories")).toBeLessThan(compactLabels.indexOf("Transactions"));

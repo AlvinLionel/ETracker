@@ -225,7 +225,7 @@ impl SqliteTransactionRepository<'_> {
             .lock()
             .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
         let mut statement = connection.prepare(
-            "SELECT id,name,category_type,is_system FROM categories WHERE archived_at IS NULL AND (?1 IS NULL OR category_type=?1) ORDER BY is_system DESC, lower(name)"
+            "SELECT id,name,category_type,is_system FROM categories WHERE archived_at IS NULL AND (?1 IS NULL OR category_type=?1 OR (?1='expense' AND category_type='emergency')) ORDER BY is_system DESC, lower(name)"
         ).map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
         statement
             .query_map([category_type], |row| {
@@ -249,7 +249,7 @@ impl SqliteTransactionRepository<'_> {
         let name = name.trim();
         if name.is_empty()
             || name.chars().count() > 100
-            || !matches!(category_type, "income" | "expense")
+            || !matches!(category_type, "income" | "expense" | "emergency")
         {
             return Err(TransactionRepositoryError::InvalidCategory);
         }
@@ -403,7 +403,7 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
             return Err(TransactionRepositoryError::CurrencyMismatch);
         }
         for allocation in &item.allocations {
-            let valid:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)",[&allocation.category_id,item.transaction_type.as_str()],|r|r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
+            let valid:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND (category_type=?2 OR (?2='expense' AND category_type='emergency')) AND archived_at IS NULL)",[&allocation.category_id,item.transaction_type.as_str()],|r|r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
             if !valid {
                 return Err(TransactionRepositoryError::InvalidCategory);
             }
@@ -479,7 +479,7 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         };
         for allocation in &item.allocations {
             let valid: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM categories c WHERE c.id=?1 AND c.category_type=?2 AND (c.archived_at IS NULL OR EXISTS(SELECT 1 FROM category_allocations ca WHERE ca.transaction_id=?3 AND ca.category_id=c.id AND ca.amount_minor=?4)))",
+                "SELECT EXISTS(SELECT 1 FROM categories c WHERE c.id=?1 AND (c.category_type=?2 OR (?2='expense' AND c.category_type='emergency')) AND (c.archived_at IS NULL OR EXISTS(SELECT 1 FROM category_allocations ca WHERE ca.transaction_id=?3 AND ca.category_id=c.id AND ca.amount_minor=?4)))",
                 params![allocation.category_id, item.transaction_type.as_str(), id, allocation.amount_minor],
                 |r| r.get(0),
             ).map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
@@ -775,6 +775,27 @@ mod tests {
     }
 
     #[test]
+    fn emergency_category_can_categorize_an_expense() {
+        let db = db();
+        account(&db, "a");
+        db.connection().lock().unwrap().execute(
+            "INSERT INTO categories(id,name,category_type) VALUES ('emergency','Emergency','emergency')",
+            [],
+        ).unwrap();
+        let mut transaction = input("a", TransactionType::Expense);
+        transaction.allocations = vec![Allocation {
+            category_id: "emergency".into(),
+            amount_minor: 1200,
+        }];
+        let repository = SqliteTransactionRepository::new(&db);
+        let id = repository.create(&transaction).unwrap();
+        assert_eq!(
+            repository.allocations(&id).unwrap()[0].category_id,
+            "emergency"
+        );
+    }
+
+    #[test]
     fn transaction_failure_rolls_back_header_and_entry() {
         let db = db();
         account(&db, "a");
@@ -841,14 +862,16 @@ mod tests {
                 [],
             )
             .unwrap();
+            c.execute("INSERT INTO categories(id,name,category_type) VALUES ('emergency','Emergency','emergency')", []).unwrap();
             c.execute("INSERT INTO categories(id,name,category_type,archived_at) VALUES ('old','Old','expense',CURRENT_TIMESTAMP)", []).unwrap();
         }
         let repository = SqliteTransactionRepository::new(&db);
         let expenses = repository.list_active_categories(Some("expense")).unwrap();
-        assert_eq!(expenses.len(), 1);
+        assert_eq!(expenses.len(), 2);
         assert_eq!(expenses[0].id, "food");
+        assert_eq!(expenses[1].id, "emergency");
         let all = repository.list_active_categories(None).unwrap();
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.len(), 3);
     }
 
     #[test]
@@ -859,6 +882,10 @@ mod tests {
         assert_eq!(category.name, "Food");
         assert_eq!(category.category_type, "expense");
         assert!(!category.is_system);
+        let emergency = repository
+            .create_category("Medical reserve", "emergency")
+            .unwrap();
+        assert_eq!(emergency.category_type, "emergency");
         assert!(matches!(
             repository.create_category("  ", "expense"),
             Err(TransactionRepositoryError::InvalidCategory)

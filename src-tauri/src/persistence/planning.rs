@@ -711,7 +711,7 @@ impl<'a> SqlitePlanningRepository<'a> {
             }
         }
         if let Some(category_id) = &item.category_id {
-            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type='expense' AND archived_at IS NULL)", [category_id], |r| r.get(0)).map_err(|e| e.to_string())?;
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type IN ('expense','emergency') AND archived_at IS NULL)", [category_id], |r| r.get(0)).map_err(|e| e.to_string())?;
             if !valid {
                 return Err("Select an active expense category.".into());
             }
@@ -737,7 +737,7 @@ impl<'a> SqlitePlanningRepository<'a> {
             }
         }
         if let Some(category_id) = &item.category_id {
-            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type='expense' AND archived_at IS NULL)", [category_id], |r| r.get(0)).map_err(|e| e.to_string())?;
+            let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type IN ('expense','emergency') AND archived_at IS NULL)", [category_id], |r| r.get(0)).map_err(|e| e.to_string())?;
             if !valid {
                 return Err("Select an active expense category.".into());
             }
@@ -806,12 +806,30 @@ fn validate_subscription(item: &SubscriptionInput) -> Result<(), String> {
     {
         return Err("Enter a three-letter currency code.".into());
     }
-    if !["weekly", "monthly", "quarterly", "yearly"].contains(&item.frequency.as_str()) {
+    if !["weekly", "monthly", "quarterly", "yearly"].contains(&item.frequency.as_str())
+        && parse_custom_frequency(&item.frequency).is_none()
+    {
         return Err("Choose a supported billing frequency.".into());
     }
     chrono::NaiveDate::parse_from_str(&item.next_due_date, "%Y-%m-%d")
         .map_err(|_| "Enter a valid next due date.")?;
     Ok(())
+}
+
+fn parse_custom_frequency(frequency: &str) -> Option<(u32, &str)> {
+    let mut parts = frequency.split(':');
+    if parts.next()? != "custom" {
+        return None;
+    }
+    let interval = parts.next()?.parse::<u32>().ok()?;
+    let unit = parts.next()?;
+    if parts.next().is_some()
+        || !(1..=365).contains(&interval)
+        || !matches!(unit, "days" | "weeks" | "months" | "years")
+    {
+        return None;
+    }
+    Some((interval, unit))
 }
 
 fn validate_items(connection: &rusqlite::Connection, items: &[PlannedItem]) -> Result<(), String> {
@@ -830,7 +848,7 @@ fn validate_items(connection: &rusqlite::Connection, items: &[PlannedItem]) -> R
         }
         match (&item.category_id, expected) {
             (Some(id), Some(kind)) => {
-                let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND category_type=?2 AND archived_at IS NULL)", params![id,kind], |r| r.get(0)).map_err(|e| e.to_string())?;
+                let valid: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND (category_type=?2 OR (?2='expense' AND category_type='emergency')) AND archived_at IS NULL)", params![id,kind], |r| r.get(0)).map_err(|e| e.to_string())?;
                 if !valid {
                     return Err("Select an active category matching the planned item type.".into());
                 }
@@ -1272,5 +1290,32 @@ mod tests {
         assert_eq!(changes, 2);
         assert_eq!(transactions, 3);
         assert_eq!(linked, 1);
+    }
+
+    #[test]
+    fn validates_and_persists_custom_subscription_frequencies() {
+        let database = database();
+        let repository = SqlitePlanningRepository::new(&database);
+        let subscription = SubscriptionInput {
+            name: "Quarterly service".into(),
+            description: None,
+            amount_minor: 2_400,
+            currency_code: "KES".into(),
+            frequency: "custom:3:months".into(),
+            next_due_date: "2026-12-01".into(),
+            account_id: None,
+            category_id: None,
+        };
+        let id = repository.create_subscription(&subscription).unwrap();
+        assert_eq!(repository.list_subscriptions().unwrap()[0].id, id);
+        assert_eq!(
+            repository.list_subscriptions().unwrap()[0].frequency,
+            "custom:3:months"
+        );
+        let invalid = SubscriptionInput {
+            frequency: "custom:0:months".into(),
+            ..subscription
+        };
+        assert!(repository.create_subscription(&invalid).is_err());
     }
 }
