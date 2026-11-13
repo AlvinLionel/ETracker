@@ -33,6 +33,16 @@ describe("SavingsPage", () => {
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("add_savings_contribution", expect.objectContaining({ request: expect.objectContaining({ goal_id: "goal", amount_minor: 2550 }) })));
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_transaction", expect.anything());
   });
+  it("records a savings withdrawal through the ledger-backed withdrawal command", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => command === "list_savings_goals" ? [{ id: "goal", name: "Emergency fund", target_amount_minor: 100000, contributed_minor: 12500, currency_code: "KES", target_date: null, status: "active", account_id: "savings" }] : command === "list_eligible_savings_transfers" ? [] : "transaction");
+    render(<SavingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Withdraw" }));
+    fireEvent.change(await screen.findByLabelText("Withdrawal amount (KES)"), { target: { value: "25.50" } });
+    fireEvent.click(screen.getByRole("button", { name: "Record withdrawal" }));
+
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("withdraw_savings_goal", expect.objectContaining({ request: expect.objectContaining({ goal_id: "goal", amount_minor: 2550 }) })));
+    expect(await screen.findByText(/recorded as an expense transaction/)).toBeInTheDocument();
+  });
   it("links an existing incoming transfer as savings", async () => {
     mocks.invoke.mockImplementation(async (command: string) => command === "list_savings_goals" ? [{ id: "goal", name: "Emergency fund", target_amount_minor: 100000, contributed_minor: 0, currency_code: "KES", target_date: null, status: "active", account_id: "savings" }] : command === "list_eligible_savings_transfers" ? [{ transaction_id: "transfer", amount_minor: 5000, occurred_at: "2026-11-06T10:00:00Z", description: "Monthly transfer" }] : "created");
     render(<SavingsPage />);

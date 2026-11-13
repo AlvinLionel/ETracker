@@ -1,4 +1,6 @@
 use crate::infrastructure::database::{Database, LATEST_SCHEMA_VERSION, run_migrations};
+use crate::infrastructure::security::DataKey;
+use crate::persistence::attachments::{decrypt_attachment, encrypt_attachment};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pbkdf2::{pbkdf2_hmac, sha2::Sha256 as PbkdfSha256};
@@ -166,6 +168,7 @@ fn valid_stored_name(value: &str) -> bool {
 fn collect_attachments(
     connection: &Connection,
     root: &Path,
+    encryption_key: Option<&[u8; 32]>,
 ) -> Result<Vec<BackupAttachment>, String> {
     let table_exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='transaction_attachments')",
@@ -212,8 +215,12 @@ fn collect_attachments(
         if total > MAX_BACKUP_ATTACHMENTS_BYTES {
             return Err("Attachments exceed the 100 MiB backup limit. Remove files or create a smaller backup.".into());
         }
-        let bytes = fs::read(&file_path)
+        let stored_bytes = fs::read(&file_path)
             .map_err(|_| "A transaction attachment could not be read for backup.")?;
+        let bytes = match encryption_key {
+            Some(key) => decrypt_attachment(&stored_bytes, key)?,
+            None => stored_bytes,
+        };
         if bytes.len() as i64 != expected_size
             || format!("{:x}", Sha256::digest(&bytes)) != expected_hash
         {
@@ -334,11 +341,16 @@ pub fn create_encrypted_backup(
         .connection()
         .lock()
         .map_err(|_| "Database unavailable")?;
+    let encryption_key = database.data_key().map(DataKey::attachment_key);
     let database_bytes = connection
         .serialize(MAIN_DB)
         .map_err(|e| format!("Could not create database snapshot: {e}"))?
         .to_vec();
-    let attachments = collect_attachments(&connection, &app_data_dir.join("attachments"))?;
+    let attachments = collect_attachments(
+        &connection,
+        &app_data_dir.join("attachments"),
+        encryption_key.as_ref(),
+    )?;
     drop(connection);
     let plaintext = encode_payload(database_bytes, attachments)?;
     let encrypted = encrypt_snapshot(&plaintext, passphrase)?;
@@ -444,47 +456,60 @@ pub fn restore_encrypted_backup(
 
     let attachments_root = app_data_dir.join("attachments");
     let old_names = current_attachment_names(database)?;
-    let mut rollback =
-        install_attachment_files(app_data_dir, &attachments_root, &payload.attachments)?;
-    let mut connection = match database.connection().lock() {
-        Ok(connection) => connection,
-        Err(_) => {
+    let attachment_key = database.data_key().map(DataKey::attachment_key);
+    let mut rollback = install_attachment_files(
+        app_data_dir,
+        &attachments_root,
+        &payload.attachments,
+        attachment_key.as_ref(),
+    )?;
+    if database.data_key().is_some() {
+        if let Err(error) = database.replace_encrypted_database(&source) {
             rollback.restore();
-            return Err("Database unavailable".into());
+            return Err(format!("Could not restore the encrypted database: {error}"));
         }
-    };
-    let backup = match Backup::new(&source, &mut connection) {
-        Ok(backup) => backup,
-        Err(error) => {
+    } else {
+        let mut connection = match database.connection().lock() {
+            Ok(connection) => connection,
+            Err(_) => {
+                rollback.restore();
+                return Err("Database unavailable".into());
+            }
+        };
+        let backup = match Backup::new(&source, &mut connection) {
+            Ok(backup) => backup,
+            Err(error) => {
+                rollback.restore();
+                return Err(format!("Could not prepare database restore: {error}"));
+            }
+        };
+        if let Err(error) = backup.run_to_completion(5, std::time::Duration::from_millis(250), None)
+        {
+            drop(backup);
+            drop(connection);
             rollback.restore();
-            return Err(format!("Could not prepare database restore: {error}"));
+            return Err(format!("Could not restore the database: {error}"));
         }
-    };
-    if let Err(error) = backup.run_to_completion(5, std::time::Duration::from_millis(250), None) {
         drop(backup);
+        if let Err(error) = connection.pragma_update(None, "journal_mode", "WAL") {
+            drop(connection);
+            rollback.finish(&old_names, &payload.attachments);
+            return Err(format!(
+                "Database restored, but WAL mode could not be re-enabled: {error}"
+            ));
+        }
+        if let Err(error) = connection.execute(
+            "DELETE FROM import_source_files WHERE expires_at <= CURRENT_TIMESTAMP",
+            [],
+        ) {
+            drop(connection);
+            rollback.finish(&old_names, &payload.attachments);
+            return Err(format!(
+                "Backup restored, but expired import source files could not be cleaned up: {error}"
+            ));
+        }
         drop(connection);
-        rollback.restore();
-        return Err(format!("Could not restore the database: {error}"));
     }
-    drop(backup);
-    if let Err(error) = connection.pragma_update(None, "journal_mode", "WAL") {
-        drop(connection);
-        rollback.finish(&old_names, &payload.attachments);
-        return Err(format!(
-            "Database restored, but WAL mode could not be re-enabled: {error}"
-        ));
-    }
-    if let Err(error) = connection.execute(
-        "DELETE FROM import_source_files WHERE expires_at <= CURRENT_TIMESTAMP",
-        [],
-    ) {
-        drop(connection);
-        rollback.finish(&old_names, &payload.attachments);
-        return Err(format!(
-            "Backup restored, but expired import source files could not be cleaned up: {error}"
-        ));
-    }
-    drop(connection);
     rollback.finish(&old_names, &payload.attachments);
     Ok(())
 }
@@ -555,12 +580,23 @@ fn install_attachment_files(
     app_data_dir: &Path,
     root: &Path,
     attachments: &[BackupAttachment],
+    encryption_key: Option<&[u8; 32]>,
 ) -> Result<AttachmentRollback, String> {
     fs::create_dir_all(root).map_err(|_| "Attachment storage is unavailable.")?;
     let stage = app_data_dir.join(format!(".attachments-restore-{}", Uuid::new_v4()));
     fs::create_dir_all(&stage).map_err(|_| "Could not prepare attachment restore.")?;
     for item in attachments {
-        if let Err(error) = fs::write(stage.join(&item.stored_name), &item.bytes) {
+        let bytes = match encryption_key {
+            Some(key) => match encrypt_attachment(&item.bytes, key) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let _ = fs::remove_dir_all(&stage);
+                    return Err(error);
+                }
+            },
+            None => item.bytes.clone(),
+        };
+        if let Err(error) = fs::write(stage.join(&item.stored_name), bytes) {
             let _ = fs::remove_dir_all(&stage);
             return Err(format!("Could not stage a restored attachment: {error}"));
         }
@@ -606,8 +642,12 @@ fn install_attachment_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        infrastructure::security::DataKey, persistence::attachments::SqliteAttachmentRepository,
+    };
     use std::{
         fs,
+        io::Read,
         path::{Path, PathBuf},
     };
 
@@ -751,6 +791,96 @@ mod tests {
             fs::read(destination_data.join("attachments").join(restored_name)).unwrap(),
             contents
         );
+        fs::remove_dir_all(source_data).unwrap();
+        fs::remove_dir_all(destination_data).unwrap();
+    }
+
+    #[test]
+    fn encrypted_database_backup_restores_without_plaintext_files() {
+        let source_path = TestDatabase::new();
+        let source =
+            Database::initialize_encrypted(&source_path.0, DataKey::from_bytes([41; 32])).unwrap();
+        let source_data =
+            std::env::temp_dir().join(format!("etracker-encrypted-backup-{}", Uuid::new_v4()));
+        fs::create_dir_all(&source_data).unwrap();
+        source.connection().lock().unwrap().execute(
+            "INSERT INTO accounts(id,name,account_type,currency_code) VALUES ('preserved','Preserved cash','cash','KES')",
+            [],
+        ).unwrap();
+        source.connection().lock().unwrap().execute(
+            "INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('receipt-transaction','expense',1200,'KES','2026-11-08T10:00:00Z','manual')",
+            [],
+        ).unwrap();
+        let input = source_data.join("receipt.png");
+        let attachment_bytes = b"\x89PNG\r\n\x1a\nconfidential receipt";
+        fs::write(&input, attachment_bytes).unwrap();
+        let attachment = SqliteAttachmentRepository::new(&source, &source_data)
+            .add("receipt-transaction", &input)
+            .unwrap();
+        let encoded = create_encrypted_backup(&source, &source_data, PASSPHRASE).unwrap();
+
+        let destination_path = TestDatabase::new();
+        let destination =
+            Database::initialize_encrypted(&destination_path.0, DataKey::from_bytes([41; 32]))
+                .unwrap();
+        let destination_data =
+            std::env::temp_dir().join(format!("etracker-encrypted-restore-{}", Uuid::new_v4()));
+        fs::create_dir_all(&destination_data).unwrap();
+        destination.connection().lock().unwrap().execute(
+            "INSERT INTO accounts(id,name,account_type,currency_code) VALUES ('old','Old cash','cash','KES')",
+            [],
+        ).unwrap();
+
+        restore_encrypted_backup(&destination, &destination_data, &encoded, PASSPHRASE).unwrap();
+
+        let restored: bool = destination
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id='preserved')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let old: bool = destination
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id='old')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(restored);
+        assert!(!old);
+
+        let records = SqliteAttachmentRepository::new(&destination, &destination_data)
+            .list("receipt-transaction")
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].damaged);
+        let opened = SqliteAttachmentRepository::new(&destination, &destination_data)
+            .file_path(&attachment.id)
+            .unwrap();
+        assert_eq!(fs::read(opened).unwrap(), attachment_bytes);
+        let stored_path = destination_data
+            .join("attachments")
+            .join(format!("{}.png", attachment.id));
+        let stored_bytes = fs::read(stored_path).unwrap();
+        assert!(
+            !stored_bytes
+                .windows(attachment_bytes.len())
+                .any(|window| window == attachment_bytes)
+        );
+        let mut header = [0; 16];
+        fs::File::open(&destination_path.0)
+            .unwrap()
+            .read_exact(&mut header)
+            .unwrap();
+        assert!(!header.starts_with(b"SQLite format 3\0"));
+
         fs::remove_dir_all(source_data).unwrap();
         fs::remove_dir_all(destination_data).unwrap();
     }

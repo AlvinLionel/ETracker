@@ -3,7 +3,7 @@
 **Document ID:** DOC-004  
 **Version:** 0.2  
 **Status:** Revised Draft  
-**Last Updated:** 4 November 2026
+**Last Updated:** 13 November 2026
 
 ---
 
@@ -39,13 +39,13 @@ The database must:
 
 ### 1.3 Database Technology
 
-**Provisional database:** SQLite.
+**Database:** SQLCipher (SQLite-compatible).
 
-The database will be stored locally on the user's device.
+The encrypted database will be stored locally on the user's device. A random key is protected using current-user Windows DPAPI. Legacy plaintext databases are migrated during startup; migration and recovery behavior must be verified before release.
 
 The Rust backend will manage authoritative database operations.
 
-The exact SQLite library, migration framework and supporting dependencies remain subject to technology evaluation.
+Attachments are stored separately and encrypted with AES-256-GCM. Encrypted backups include a consistent database snapshot and attachment data, protected with the user-selected passphrase. Losing the Windows profile or protected key requires restoring from an encrypted backup.
 
 ---
 
@@ -747,7 +747,7 @@ Proposed fields:
 | description | Optional description |
 | created_at | Creation timestamp |
 
-The final representation of manual savings records requires careful implementation so that manually recording a contribution does not create an artificial account movement.
+Manual contributions are goal records only and do not create an artificial account movement. A withdrawal from an active goal linked to an active account creates an expense transaction and account entry atomically, is limited by both the available goal balance and account balance, and reduces the goal's saved balance. Voiding or reversing the withdrawal restores the goal balance; withdrawal transactions cannot be edited independently.
 
 ### 9.3 Three Separate Savings Measures
 

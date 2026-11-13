@@ -1,4 +1,4 @@
-use infrastructure::database::Database;
+use infrastructure::{database::Database, security::DataKey};
 use tauri::Manager;
 
 mod application;
@@ -43,6 +43,7 @@ pub fn run() {
             commands::attachments::add_transaction_attachment,
             commands::attachments::open_transaction_attachment,
             commands::attachments::remove_transaction_attachment,
+            commands::attachments::cleanup_temporary_attachment_views,
             commands::transactions::create_transaction,
             commands::transactions::update_transaction,
             commands::transactions::void_transaction,
@@ -84,6 +85,7 @@ pub fn run() {
             commands::planning::list_savings_contributions,
             commands::planning::create_savings_goal,
             commands::planning::add_savings_contribution,
+            commands::planning::withdraw_savings_goal,
             commands::planning::set_savings_goal_status,
             commands::planning::list_eligible_savings_transfers,
             commands::planning::add_savings_transfer,
@@ -108,7 +110,40 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
 
             let database_path = app_data_dir.join("etracker.db");
-            let database = Database::initialize(&database_path)?;
+            let key_path = app_data_dir.join("etracker.key");
+            let key = DataKey::load_or_create(&key_path, &database_path)
+                .map_err(std::io::Error::other)?;
+            let database = Database::initialize_encrypted(&database_path, key)
+                .map_err(std::io::Error::other)?;
+            if let Err(error) = crate::persistence::diagnostics::record_diagnostic_event(
+                &database,
+                crate::persistence::diagnostics::DiagnosticEventCode::AppStarted,
+            ) {
+                eprintln!("A redacted app-start event could not be recorded: {error}");
+            }
+            {
+                let attachments = crate::persistence::attachments::SqliteAttachmentRepository::new(
+                    &database,
+                    &app_data_dir,
+                );
+                attachments
+                    .migrate_to_encrypted()
+                    .map_err(std::io::Error::other)?;
+                attachments
+                    .cleanup_temporary_decrypted_files()
+                    .map_err(std::io::Error::other)?;
+            }
+            if let Err(error) =
+                crate::persistence::diagnostics::cleanup_expired_diagnostic_events(&database)
+            {
+                return Err(std::io::Error::other(error).into());
+            }
+            if let Err(error) = crate::persistence::diagnostics::record_diagnostic_event(
+                &database,
+                crate::persistence::diagnostics::DiagnosticEventCode::AttachmentStorageReady,
+            ) {
+                eprintln!("A redacted storage-ready event could not be recorded: {error}");
+            }
 
             let _ = crate::persistence::forecasting::SqliteForecastRepository::new(&database)
                 .generate_scheduled_if_due();

@@ -65,3 +65,12 @@ pub fn remove_transaction_attachment(
 ) -> Result<(), String> {
     SqliteAttachmentRepository::new(state.inner(), &app_data_dir(&app)?).remove(&attachment_id)
 }
+
+#[tauri::command]
+pub fn cleanup_temporary_attachment_views(
+    state: State<'_, Database>,
+    app: AppHandle,
+) -> Result<(), String> {
+    SqliteAttachmentRepository::new(state.inner(), &app_data_dir(&app)?)
+        .cleanup_temporary_decrypted_files()
+}

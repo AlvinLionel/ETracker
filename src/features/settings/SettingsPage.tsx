@@ -9,7 +9,7 @@ import { Bell, FileText, HardDrive, Palette, ShieldCheck } from "lucide-react";
 type Preferences = { subscription_reminders_enabled: boolean; subscription_reminder_days: number; theme: "system" | "light" | "dark"; grid_opacity: number; row_density: "compact" | "standard" | "comfortable" };
 type Subscription = { id: string; name: string; amount_minor: number; currency_code: string; frequency: string; next_due_date: string; status: string };
 type IntegrityReport = { integrity_messages: string[]; foreign_key_violations: string[] };
-type DiagnosticReport = { app_version: string; operating_system: string; architecture: string; sqlite_version: string; schema_version: number; latest_supported_schema_version: number; database_integrity: "passed" | "issues_found"; foreign_key_check: "passed" | "issues_found" };
+type DiagnosticReport = { app_version: string; operating_system: string; architecture: string; sqlite_version: string; schema_version: number; latest_supported_schema_version: number; database_integrity: "passed" | "issues_found"; foreign_key_check: "passed" | "issues_found"; diagnostic_retention_days: number; recent_events: { event_code: string; occurred_at: string }[] };
 const money = (minor: number, currency: string) => formatCurrency(minor, currency, { maximumFractionDigits: 2 });
 const defaultPreferences: Preferences = { subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" };
 const settingsSections = [
@@ -43,6 +43,7 @@ export default function SettingsPage() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreComplete, setRestoreComplete] = useState(false);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
   const [activeSection, setActiveSection] = useState("Reminders");
 
   useEffect(() => {
@@ -87,6 +88,18 @@ export default function SettingsPage() {
     finally { setChecking(false); }
   }
 
+  async function cleanupTemporaryAttachments() {
+    setAttachmentCleanupBusy(true); setError(""); setMessage("");
+    try {
+      await invoke("cleanup_temporary_attachment_views");
+      setMessage("Temporary decrypted document copies were removed.");
+    } catch {
+      setError("Temporary document copies could not all be removed. Close any documents open in another app and try again.");
+    } finally {
+      setAttachmentCleanupBusy(false);
+    }
+  }
+
   async function exportDiagnostics() {
     setDiagnosticsBusy(true); setError(""); setMessage("");
     try {
@@ -96,7 +109,7 @@ export default function SettingsPage() {
       const link = document.createElement("a");
       link.href = url; link.download = `ETracker_diagnostics_${new Date().toISOString().slice(0, 10)}.json`; link.click();
       URL.revokeObjectURL(url);
-      setMessage("Privacy-safe diagnostic report downloaded. It contains software and database health details, not financial records.");
+      setMessage("Support report saved. It includes app and database health plus redacted app events; it does not include financial records and is not sent automatically.");
     } catch { setError("A diagnostic report could not be created."); }
     finally { setDiagnosticsBusy(false); }
   }
@@ -197,8 +210,9 @@ export default function SettingsPage() {
       <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Create backup</h3><label className="block text-sm">Passphrase (at least 12 characters)<input aria-label="Backup passphrase" type="password" autoComplete="new-password" value={backupPassphrase} onChange={(event) => setBackupPassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Confirm passphrase<input aria-label="Confirm backup passphrase" type="password" autoComplete="new-password" value={backupConfirmation} onChange={(event) => setBackupConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={backupBusy || backupPassphrase.length < 12 || backupPassphrase !== backupConfirmation} onClick={exportBackup} className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{backupBusy ? "Creating backup…" : import.meta.env.MODE === "e2e" ? "Download encrypted backup" : "Save encrypted backup"}</button></div>
       <div className="space-y-3 rounded-lg bg-slate-50 p-4"><h3 className="text-sm font-semibold">Restore backup</h3><p className="text-sm text-slate-600">Restoring replaces all current data with the selected backup. The backup is validated before the current database is changed.</p><label className="block text-sm">Encrypted backup file<input aria-label="Encrypted backup file" type="file" accept=".etracker-backup,application/octet-stream" onChange={(event) => { setRestoreFile(event.target.files?.[0] ?? null); setRestoreComplete(false); }} className="mt-1 block w-full max-w-md text-sm" /></label><label className="block text-sm">Backup passphrase<input aria-label="Restore passphrase" type="password" autoComplete="current-password" value={restorePassphrase} onChange={(event) => setRestorePassphrase(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><label className="block text-sm">Type RESTORE to confirm replacement<input aria-label="Restore confirmation" value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} className="mt-1 block w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2" /></label><button type="button" disabled={restoreBusy || !restoreFile || restorePassphrase.length < 12 || restoreConfirmation !== "RESTORE"} onClick={restoreBackup} className="rounded-md bg-rose-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{restoreBusy ? "Validating and restoring…" : "Replace current data"}</button>{restoreComplete && <button type="button" onClick={() => window.location.reload()} className="ml-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium">Reload ETracker</button>}</div>
     </section>
+    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Temporary document copies</h2><p className="mt-1 text-sm text-slate-600">Opening an encrypted attachment in another app creates a temporary decrypted copy on this device. ETracker removes these copies the next time it starts. Close any open documents before removing copies now.</p><button type="button" disabled={attachmentCleanupBusy} onClick={cleanupTemporaryAttachments} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{attachmentCleanupBusy ? "Removing temporary copies…" : "Remove temporary copies now"}</button></section>
     <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Check your saved data</h2><p className="mt-1 text-sm text-slate-600">This quick check looks for problems reading your local records or links between them. It does not change or upload your data.</p><button type="button" disabled={checking} onClick={checkIntegrity} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{checking ? "Checking your data…" : "Check saved data"}</button>{integrity && <div role="status" className="mt-3 text-sm">{integrity.integrity_messages.length === 1 && integrity.integrity_messages[0].toLowerCase() === "ok" && integrity.foreign_key_violations.length === 0 ? <p className="text-emerald-800">Your saved data passed the check. No problems were found.</p> : <div className="text-rose-700"><p>We found a problem with some saved data. Avoid editing affected records and contact support for help.</p><details className="mt-2"><summary className="cursor-pointer font-medium">View technical details</summary><div className="mt-2 space-y-1 break-all text-xs">{integrity.integrity_messages.map((item) => <p key={item}>{item}</p>)}{integrity.foreign_key_violations.map((item) => <p key={item}>{item}</p>)}</div></details></div>}</div>}</section>
-    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Share app information with support</h2><p className="mt-1 text-sm text-slate-600">Save a small report with the app version and a basic health check. It does not include your transactions, balances, account names, or statement files, and ETracker does not send it anywhere. You choose whether to share the downloaded file.</p><button type="button" disabled={diagnosticsBusy} onClick={exportDiagnostics} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{diagnosticsBusy ? "Preparing support report…" : "Save support report"}</button></section>
+    <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Share app information with support</h2><p className="mt-1 text-sm text-slate-600">Save a report with app details, a basic data check, and up to 100 recent app events from the last 30 days. Events use fixed labels only and do not contain transactions, balances, account names, file names, or statement contents. ETracker does not send the report; you decide whether to share the downloaded file.</p><button type="button" disabled={diagnosticsBusy} onClick={exportDiagnostics} className="mt-3 rounded-md border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-50">{diagnosticsBusy ? "Preparing support report…" : "Save support report"}</button></section>
       </div>
     </div>
   </section>;

@@ -16,11 +16,15 @@ Create an encrypted backup from **Settings**, choose a save location separate fr
 
 On Windows, ETracker stores its database under the current user's roaming application-data directory for `com.etracker.app`. Keep this folder intact when updating or uninstalling if you want to preserve the local profile.
 
+The working database is encrypted with SQLCipher. Its random encryption key is protected for the current Windows user with DPAPI. Attachments are encrypted separately. Keep the Windows account and profile available; if the protected key is lost, restore from an encrypted backup. Opening an attachment in another application creates a temporary decrypted copy, which ETracker removes at next startup or when you use the cleanup control in Settings.
+
+Savings withdrawals from an active goal are recorded as expenses from its linked account and reduce the goal's saved balance. Voiding or reversing the expense restores the amount to the goal balance.
+
 ## Current limits
 
 - Statement mappings are generic; institution-specific bank and mobile-money parsers have not been verified against real statement samples.
 - PDF text, including OCR output, is staged as uncertain lines. OCR currently supports English printed text; inspect every result and correct errors before finalizing.
-- ETracker does not encrypt its working database at rest. Use Windows device encryption and protect the Windows account.
+- The database key is tied to the current Windows user; an encrypted backup is required to recover data if that key or Windows profile is lost. Temporary copies opened in external applications are not guaranteed to be physically erased from SSDs or filesystem snapshots.
 - Installers are currently unsigned. Windows may show an unknown-publisher prompt.
 - Only Windows x64 packages are produced. The supported OS floor, installation/upgrade behavior, native backup file prompts, offline desktop behavior and accessibility review have not all been manually verified.
 - Budget and forecast entries created in this version use KES; legacy records in other currencies are kept separate without conversion.

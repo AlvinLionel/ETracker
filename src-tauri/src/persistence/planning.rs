@@ -1,6 +1,6 @@
 use crate::infrastructure::database::Database;
 use chrono::Datelike;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -68,6 +68,7 @@ pub struct SavingsContributionRecord {
     pub contribution_date: String,
     pub description: Option<String>,
     pub source: String,
+    pub status: String,
 }
 
 #[derive(Serialize)]
@@ -390,7 +391,7 @@ impl<'a> SqlitePlanningRepository<'a> {
             .connection()
             .lock()
             .map_err(|_| "Database is unavailable")?;
-        let mut statement = connection.prepare("SELECT g.id,g.name,g.target_amount_minor,COALESCE(SUM(c.amount_minor),0),g.currency_code,g.target_date,g.status,g.account_id FROM savings_goals g LEFT JOIN savings_contributions c ON c.goal_id=g.id AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted'))) GROUP BY g.id ORDER BY CASE g.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,g.created_at DESC").map_err(|e| e.to_string())?;
+        let mut statement = connection.prepare("SELECT g.id,g.name,g.target_amount_minor,COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c WHERE c.goal_id=g.id AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')))),0)-COALESCE((SELECT SUM(w.amount_minor) FROM savings_withdrawals w JOIN financial_transactions t ON t.id=w.transaction_id WHERE w.goal_id=g.id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')),0),g.currency_code,g.target_date,g.status,g.account_id FROM savings_goals g ORDER BY CASE g.status WHEN 'active' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,g.created_at DESC").map_err(|e| e.to_string())?;
         statement
             .query_map([], |r| {
                 Ok(SavingsGoal {
@@ -418,7 +419,7 @@ impl<'a> SqlitePlanningRepository<'a> {
             .connection()
             .lock()
             .map_err(|_| "Database is unavailable")?;
-        let mut statement = connection.prepare("SELECT c.id,c.goal_id,g.name,c.amount_minor,g.currency_code,c.contribution_date,c.description,CASE WHEN c.transaction_id IS NULL THEN 'manual' ELSE 'linked transfer' END FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id WHERE (?1 IS NULL OR c.goal_id=?1) AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted'))) ORDER BY date(c.contribution_date) DESC,c.created_at DESC LIMIT 1000").map_err(|e| e.to_string())?;
+        let mut statement = connection.prepare("SELECT id,goal_id,goal_name,amount_minor,currency_code,contribution_date,description,source,status FROM (SELECT c.id,c.goal_id,g.name AS goal_name,c.amount_minor,g.currency_code,c.contribution_date,c.description,CASE WHEN c.transaction_id IS NULL THEN 'manual' ELSE 'linked transfer' END AS source,'posted' AS status FROM savings_contributions c JOIN savings_goals g ON g.id=c.goal_id WHERE c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')) UNION ALL SELECT w.id,w.goal_id,g.name,-w.amount_minor,g.currency_code,w.withdrawal_date,w.description,'withdrawal',CASE WHEN t.status='voided' THEN 'voided' WHEN EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted') THEN 'reversed' ELSE 'posted' END FROM savings_withdrawals w JOIN savings_goals g ON g.id=w.goal_id JOIN financial_transactions t ON t.id=w.transaction_id) WHERE (?1 IS NULL OR goal_id=?1) ORDER BY date(contribution_date) DESC,id DESC LIMIT 1000").map_err(|e| e.to_string())?;
         statement
             .query_map([goal_id], |r| {
                 Ok(SavingsContributionRecord {
@@ -430,6 +431,7 @@ impl<'a> SqlitePlanningRepository<'a> {
                     contribution_date: r.get(5)?,
                     description: r.get(6)?,
                     source: r.get(7)?,
+                    status: r.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -574,6 +576,106 @@ impl<'a> SqlitePlanningRepository<'a> {
         }
         connection.execute("INSERT INTO savings_contributions(id,goal_id,amount_minor,contribution_date,description) VALUES (?1,?2,?3,?4,?5)", params![Uuid::new_v4().to_string(),goal_id,amount_minor,date,description.map(str::trim).filter(|v| !v.is_empty())]).map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    pub fn withdraw_savings_goal(
+        &self,
+        goal_id: &str,
+        amount_minor: i64,
+        date: &str,
+        description: Option<&str>,
+    ) -> Result<String, String> {
+        if amount_minor <= 0 {
+            return Err("Savings withdrawal must be positive.".into());
+        }
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| "Enter a valid withdrawal date.")?;
+        let mut connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| "Database is unavailable")?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let (goal_name, currency, account_id, status): (String, String, Option<String>, String) =
+            tx.query_row(
+                "SELECT name,currency_code,account_id,status FROM savings_goals WHERE id=?1",
+                [goal_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("The savings goal no longer exists.")?;
+        if status != "active" {
+            return Err("Only an active savings goal can be withdrawn from.".into());
+        }
+        let account_id =
+            account_id.ok_or("Link an account to this savings goal before withdrawing.")?;
+        let account_valid: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1 AND archived_at IS NULL AND currency_code=?2)",
+                params![account_id, currency],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !account_valid {
+            return Err("The linked savings account is unavailable.".into());
+        }
+        let goal_balance: i64 = tx
+            .query_row(
+                "SELECT COALESCE((SELECT SUM(c.amount_minor) FROM savings_contributions c WHERE c.goal_id=?1 AND (c.transaction_id IS NULL OR EXISTS(SELECT 1 FROM financial_transactions t WHERE t.id=c.transaction_id AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')))),0)-COALESCE((SELECT SUM(w.amount_minor) FROM savings_withdrawals w JOIN financial_transactions t ON t.id=w.transaction_id WHERE w.goal_id=?1 AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')),0)",
+                [goal_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if amount_minor > goal_balance {
+            return Err("The withdrawal cannot exceed the goal's available savings.".into());
+        }
+        let account_balance: i64 = tx
+            .query_row(
+                "SELECT COALESCE(SUM(e.amount_minor),0) FROM account_entries e JOIN financial_transactions t ON t.id=e.transaction_id WHERE e.account_id=?1 AND t.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions r WHERE r.reversal_of_transaction_id=t.id AND r.status='posted')",
+                [&account_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if account_balance < amount_minor {
+            return Err("The linked account does not have enough available funds.".into());
+        }
+        let transaction_id = Uuid::new_v4().to_string();
+        let description = description
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("Savings withdrawal: {goal_name}"));
+        let occurred_at = format!("{date}T12:00:00Z");
+        tx.execute(
+            "INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,description,source_type) VALUES (?1,'expense',?2,?3,?4,?5,'manual')",
+            params![transaction_id, amount_minor, currency, occurred_at, description],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES (?1,?2,?3,?4)",
+            params![
+                Uuid::new_v4().to_string(),
+                transaction_id,
+                account_id,
+                -amount_minor
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO savings_withdrawals(id,goal_id,transaction_id,amount_minor,withdrawal_date,description) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![Uuid::new_v4().to_string(), goal_id, transaction_id, amount_minor, date, description],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'created',?3)",
+            params![Uuid::new_v4().to_string(), transaction_id, serde_json::json!({"type":"savings_withdrawal","amount_minor":amount_minor,"goal_id":goal_id}).to_string()],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(transaction_id)
     }
 
     pub fn set_savings_goal_status(&self, goal_id: &str, status: &str) -> Result<(), String> {
@@ -893,6 +995,11 @@ fn insert_items(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        application::transactions::TransactionRepository,
+        domain::transactions::{NewTransaction, TransactionType},
+        persistence::transactions::SqliteTransactionRepository,
+    };
     use std::path::Path;
 
     fn database() -> Database {
@@ -1163,6 +1270,148 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
             .unwrap();
         assert_eq!((transactions, entries), (0, 0));
+    }
+
+    #[test]
+    fn savings_withdrawals_change_goal_and_account_balances_and_follow_void_reversal_status() {
+        let database = database();
+        {
+            let connection = database.connection().lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO accounts(id,name,account_type,currency_code) VALUES ('savings','Savings','bank','KES')",
+                    [],
+                )
+                .unwrap();
+            connection.execute(
+                "INSERT INTO financial_transactions(id,transaction_type,amount_minor,currency_code,occurred_at,source_type) VALUES ('funding','income',20000,'KES','2026-11-01T12:00:00Z','manual')",
+                [],
+            ).unwrap();
+            connection.execute(
+                "INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES ('funding-entry','funding','savings',20000)",
+                [],
+            ).unwrap();
+        }
+        let repository = SqlitePlanningRepository::new(&database);
+        let goal = repository
+            .create_savings_goal("Emergency fund", 30_000, "KES", None, None, Some("savings"))
+            .unwrap();
+        repository
+            .add_savings_contribution(&goal, 10_000, "2026-11-02", None)
+            .unwrap();
+
+        assert!(
+            repository
+                .withdraw_savings_goal(&goal, 10_001, "2026-11-03", None)
+                .is_err()
+        );
+        let withdrawal = repository
+            .withdraw_savings_goal(&goal, 4_000, "2026-11-03", Some("Repair"))
+            .unwrap();
+        assert_eq!(
+            repository.list_savings_goals().unwrap()[0].contributed_minor,
+            6_000
+        );
+        let entry: i64 = database
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT amount_minor FROM account_entries WHERE transaction_id=?1",
+                [&withdrawal],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(entry, -4_000);
+        let account_balance: i64 = database
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COALESCE(SUM(e.amount_minor),0) FROM account_entries e JOIN financial_transactions t ON t.id=e.transaction_id WHERE t.status='posted'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(account_balance, 16_000);
+        assert!(
+            SqliteTransactionRepository::new(&database)
+                .update(
+                    &withdrawal,
+                    &NewTransaction {
+                        account_id: "savings".into(),
+                        transaction_type: TransactionType::Expense,
+                        amount_minor: 3_000,
+                        currency_code: "KES".into(),
+                        occurred_at: "2026-11-03T12:00:00Z".into(),
+                        description: Some("Changed amount".into()),
+                        notes: None,
+                        allocations: Vec::new(),
+                    },
+                )
+                .is_err()
+        );
+
+        SqliteTransactionRepository::new(&database)
+            .reverse(&withdrawal)
+            .unwrap();
+        assert_eq!(
+            repository.list_savings_goals().unwrap()[0].contributed_minor,
+            10_000
+        );
+        let account_balance: i64 = database
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COALESCE(SUM(e.amount_minor),0) FROM account_entries e JOIN financial_transactions t ON t.id=e.transaction_id WHERE t.status='posted'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(account_balance, 20_000);
+        let reversed = repository.list_savings_contributions(Some(&goal)).unwrap();
+        assert_eq!(
+            reversed
+                .iter()
+                .find(|item| item.source == "withdrawal")
+                .unwrap()
+                .status,
+            "reversed"
+        );
+
+        let voided = repository
+            .withdraw_savings_goal(&goal, 1_000, "2026-11-04", None)
+            .unwrap();
+        SqliteTransactionRepository::new(&database)
+            .void(&voided, "Entered in error")
+            .unwrap();
+        assert_eq!(
+            repository.list_savings_goals().unwrap()[0].contributed_minor,
+            10_000
+        );
+        let account_balance: i64 = database
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COALESCE(SUM(e.amount_minor),0) FROM account_entries e JOIN financial_transactions t ON t.id=e.transaction_id WHERE t.status='posted'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(account_balance, 20_000);
+        let history = repository.list_savings_contributions(Some(&goal)).unwrap();
+        assert!(
+            history
+                .iter()
+                .any(|item| item.source == "withdrawal" && item.status == "reversed")
+        );
+        assert!(
+            history
+                .iter()
+                .any(|item| item.source == "withdrawal" && item.status == "voided")
+        );
     }
 
     #[test]

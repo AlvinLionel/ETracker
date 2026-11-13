@@ -10,6 +10,12 @@ Built with a local-first approach, ETracker is designed to keep core financial f
 
 ETracker is a local-first personal finance workspace. It supports accounts, transaction entry and audit history, receipt/document attachments, transfers, statement imports with review and reconciliation, editable monthly budget plans, savings and subscriptions, analytics, forecasts, encrypted backup and recovery, and light/dark themes. CSV, Excel and PDF statements can be staged locally; password-protected PDFs can be unlocked in the import workspace, and image-only pages use bundled offline English OCR. Imported PDF rows remain uncertain until reviewed. Institution-specific statement parsers are not available yet.
 
+Planning includes custom subscription intervals (1–365 days, weeks, months or years) and emergency expense categories. Transfers are created from the transaction form, with transfer-only account and fee fields. Forecasts can be saved as budget templates or exported as CSV. Savings allocation suggestions are previews only: they do not move money or create ledger entries. The month selector sets the month for a new budget; it is not a global date filter.
+
+Savings withdrawals are recorded as expense transactions against a goal's linked account and reduce the goal balance. Voiding or reversing a withdrawal restores the tracked goal balance. The local database is encrypted with SQLCipher using a random key protected by the current Windows user's DPAPI; attachment files use AES-GCM. Encrypted, passphrase-protected backups are the recovery path if the Windows profile or local key is lost. Opening an attachment in an external app creates a temporary decrypted copy, removed at the next app start or through Settings. Physical erasure of old file-system blocks cannot be guaranteed.
+
+The app also keeps a local, allowlisted diagnostics event history for up to 30 days. A support report can include recent event labels and timestamps, but not financial records or free-form event details; ETracker does not send the report.
+
 ## Technology Stack
 
 | Component | Technology |
@@ -18,7 +24,7 @@ ETracker is a local-first personal finance workspace. It supports accounts, tran
 | Frontend | React, TypeScript |
 | Backend | Rust |
 | Styling | Tailwind CSS |
-| Database | SQLite |
+| Database | SQLite with SQLCipher encryption at rest |
 | Build tooling | Vite, Cargo |
 
 ## Getting Started
@@ -28,6 +34,7 @@ ETracker is a local-first personal finance workspace. It supports accounts, tran
 - Node.js and npm
 - Rust and Cargo
 - Microsoft C++ Build Tools
+- Strawberry Perl (for the vendored SQLCipher/OpenSSL build)
 - Microsoft Edge WebView2 Runtime
 
 ### Installation
@@ -71,8 +78,22 @@ The Windows desktop end-to-end workflow uses Edge WebDriver. Install the matchin
 On a Windows build machine with the Rust and Node prerequisites above, run:
 
 ```powershell
+winget install --id StrawberryPerl.StrawberryPerl --exact
+```
+
+Open a new PowerShell window and confirm Strawberry Perl and the required module are available:
+
+```powershell
+perl -MLocale::Maketext::Simple -e "print 'Perl build dependency ready'"
+```
+
+Then build the installers:
+
+```powershell
 .\node_modules\.bin\tauri.cmd build --bundles msi,nsis
 ```
+
+The release build uses vendored OpenSSL for SQLCipher and requires Strawberry Perl, including the `Locale::Maketext::Simple` module. Perl bundled with Git for Windows or MSYS2 is not a substitute. If `winget` requires elevation, approve the installer prompt or use the configured Windows CI/release workflow, which installs Strawberry Perl automatically. Do not set `OPENSSL_NO_VENDOR` for distributable builds.
 
 The x64 MSI and NSIS installers are written under `src-tauri/target/release/bundle/`. They are currently unsigned. Read the [first-use guide](docs/first-use-guide.md) before importing personal financial data or restoring a backup.
 

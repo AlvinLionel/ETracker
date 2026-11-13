@@ -46,6 +46,13 @@ describe("SettingsPage", () => {
     expect(invoke).toHaveBeenCalledWith("check_database_integrity");
   });
 
+  it("removes temporary decrypted document copies on request", async () => {
+    render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove temporary copies now" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("cleanup_temporary_attachment_views"));
+    expect(await screen.findByText(/Temporary decrypted document copies were removed/)).toBeInTheDocument();
+  });
+
   it("shows a diagnostic report when the database has broken references", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
       ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
@@ -152,13 +159,13 @@ describe("SettingsPage", () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
       ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })
       : command === "list_subscriptions" ? Promise.resolve([])
-        : command === "get_diagnostic_report" ? Promise.resolve({ app_version: "0.1.0", operating_system: "windows", architecture: "x86_64", sqlite_version: "3.50.0", schema_version: 14, latest_supported_schema_version: 14, database_integrity: "passed", foreign_key_check: "passed" }) : Promise.resolve());
+        : command === "get_diagnostic_report" ? Promise.resolve({ app_version: "0.1.0", operating_system: "windows", architecture: "x86_64", sqlite_version: "3.50.0", schema_version: 21, latest_supported_schema_version: 21, database_integrity: "passed", foreign_key_check: "passed", diagnostic_retention_days: 30, recent_events: [{ event_code: "app_started", occurred_at: "2026-11-12 10:00:00" }] }) : Promise.resolve());
     const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:diagnostics");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     render(<SettingsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Save support report" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_diagnostic_report"));
     expect(create).toHaveBeenCalled();
-    expect(await screen.findByRole("status")).toHaveTextContent(/Privacy-safe diagnostic report downloaded/);
+    expect(await screen.findByRole("status")).toHaveTextContent(/Support report saved/);
   });
 });

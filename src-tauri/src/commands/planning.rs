@@ -34,6 +34,14 @@ pub struct SavingsContributionRequest {
     pub description: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct SavingsWithdrawalRequest {
+    pub goal_id: String,
+    pub amount_minor: i64,
+    pub withdrawal_date: String,
+    pub description: Option<String>,
+}
+
 #[tauri::command]
 pub fn list_budget_templates(state: State<'_, Database>) -> Result<Vec<BudgetTemplate>, String> {
     SqlitePlanningRepository::new(state.inner()).list_templates()
@@ -162,6 +170,19 @@ pub fn add_savings_contribution(
         &request.goal_id,
         request.amount_minor,
         &request.contribution_date,
+        request.description.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn withdraw_savings_goal(
+    state: State<'_, Database>,
+    request: SavingsWithdrawalRequest,
+) -> Result<String, String> {
+    SqlitePlanningRepository::new(state.inner()).withdraw_savings_goal(
+        &request.goal_id,
+        request.amount_minor,
+        &request.withdrawal_date,
         request.description.as_deref(),
     )
 }

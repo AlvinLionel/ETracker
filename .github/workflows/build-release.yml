@@ -26,6 +26,14 @@ jobs:
       - name: Set up stable Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Strawberry Perl for vendored SQLCipher
+        shell: pwsh
+        run: |
+          choco install strawberryperl --yes --no-progress
+          Add-Content -Path $env:GITHUB_PATH -Value 'C:\Strawberry\perl\bin'
+          $env:PATH = 'C:\Strawberry\perl\bin;' + $env:PATH
+          perl -MLocale::Maketext::Simple -e "print 'Perl build dependency ready'"
+
       - name: Install frontend dependencies
         run: npm ci
 

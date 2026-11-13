@@ -3,7 +3,7 @@
 **Document ID:** DOC-007  
 **Version:** 0.3
 **Status:** Implemented baseline — preview release verification in progress
-**Last Updated:** 8 November 2026
+**Last Updated:** 13 November 2026
 
 ---
 
@@ -57,7 +57,7 @@ It does not define a cloud-hosted deployment for the initial release.
 
 ETracker will initially be deployed as a local desktop application.
 
-The provisional technology direction is:
+The implemented technology direction is:
 
 | Component | Proposed technology |
 |---|---|
@@ -65,10 +65,10 @@ The provisional technology direction is:
 | Frontend | React |
 | Frontend language | TypeScript |
 | Backend | Rust |
-| Database | SQLite |
+| Database | SQLCipher (SQLite-compatible) |
 | Styling | Tailwind CSS |
 
-These technologies remain provisional until the project validates the development environment, integration requirements and packaging process.
+The frontend is React with TypeScript and the backend is Rust. The database is SQLCipher with a key protected by current-user Windows DPAPI. Release packaging and clean-profile installation still require final verification.
 
 ### 2.2 Local-First Operation
 
@@ -165,6 +165,8 @@ The installation process should:
 - Initialize the database on first launch.
 - Apply required schema migrations.
 - Provide a clear completion or failure message.
+
+Building the Windows release requires the Rust and Tauri toolchains, Node.js, the Windows native build prerequisites, and Perl for vendored OpenSSL used by SQLCipher. CI and release workflows install Strawberry Perl.
 
 ### 4.3 First Launch
 
@@ -355,7 +357,7 @@ Backups contain sensitive financial information.
 
 The application must communicate the importance of protecting backup files.
 
-Backups use AES-256-GCM with a random salt and nonce; PBKDF2-HMAC-SHA256 derives keys with 600,000 iterations. Passphrases must contain at least 12 characters and are never stored. A lost passphrase cannot be recovered. The current database remains unencrypted at rest.
+Backups use AES-256-GCM with a random salt and nonce; PBKDF2-HMAC-SHA256 derives keys with 600,000 iterations. Passphrases must contain at least 12 characters and are never stored. A lost passphrase cannot be recovered. The live SQLCipher database key is protected using current-user Windows DPAPI. Attachments are AES-GCM encrypted at rest; opening one externally creates a temporary decrypted copy that is removed on next startup or by the Settings cleanup action. Physical erasure of old filesystem blocks or SSD snapshots cannot be guaranteed.
 
 ---
 
@@ -444,7 +446,7 @@ Diagnostic messages should provide enough information to investigate failures wi
 
 ### 9.5 Log Retention
 
-Persistent application logging is not currently enabled, so no persistent log retention or rotation policy has been selected. Settings can create a user-requested diagnostic JSON download with app/platform versions, schema/SQLite versions and redacted database health status. It excludes financial records and is not transmitted by ETracker. The report is not retained by the application.
+The app stores only a bounded, allowlisted diagnostic event history in the encrypted local database; events contain fixed codes rather than free-form or financial data and expire after 30 days. Settings can create a user-requested support report with environment/database health and up to 100 recent events. It excludes financial records, is not transmitted by ETracker, and is retained only where the user saves it.
 
 ### 9.6 Import Logs
 
@@ -779,7 +781,7 @@ The exact synchronization architecture must be designed and approved separately 
 | DM-005 | Backup format and retention | Approved: manual encrypted exports, user-managed retention (`DB-030`) |
 | DM-006 | Backup encryption | Approved: passphrase-based authenticated encryption (`DB-030`) |
 | DM-007 | Database migration framework | Implemented with versioned SQLite migrations; rollback after page-copy failure remains unguaranteed |
-| DM-008 | Log retention and diagnostic export | Redacted local export implemented (`DB-031`); persistent logging/retention pending |
+| DM-008 | Log retention and diagnostic export | Allowlisted local events retained for 30 days; user-requested report export (`DB-031`) |
 | DM-009 | Release branch and tagging policy | Approved: SemVer, `vMAJOR.MINOR.PATCH`, 0.x preview (`DB-036`) |
 | DM-010 | Stable release cadence | No fixed cadence for 0.x preview; release only at verified milestones (`DB-036`) |
 | DM-011 | External AI credential handling | Pending security design |

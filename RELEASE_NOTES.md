@@ -9,15 +9,10 @@ This first usable preview provides local accounts, transaction history and audit
 
 Both packages are unsigned. Keep encrypted backups outside the application data folder. See [`docs/first-use-guide.md`](docs/first-use-guide.md) before using real financial data.
 
-## Current artifact checksums
+## Current artifact status
 
-Both unsigned x64 installers were rebuilt on 12 November 2026 from the current source, including transaction attachments.
-
-- MSI (11.58 MiB): `1E669E548DF2DF7D7C74AD48B6F960C5EEF01931D1185E75148815F41D6DEFEC`
-- NSIS (10.50 MiB): `3BACC487A0AA22FFA49F46E03786EDD50E5BD9C31739CC686F74F51E5C65C074`
-
-Build artifacts are in `src-tauri/target/release/bundle/` and are intentionally excluded from source control.
+The source now encrypts the live database and attachments at rest. The last local bundle attempt used the machine's dynamic OpenSSL libraries and produced an executable that depends on `libcrypto-3-x64.dll`, which the bundle does not include. Those packages are not suitable for distribution and are not listed with release checksums. The default vendored OpenSSL build needs Perl with `Locale::Maketext::Simple`; the Windows CI and release workflows install Strawberry Perl for that build. Rebuild and record hashes only after the default Windows workflow succeeds.
 
 ## Known limits
 
-Provider-specific statement parsing, database-at-rest encryption, signed installers, automated updates and verified install/upgrade behavior are not included. Scanned PDFs use bundled offline English OCR, and every extracted line still requires review. Windows support beyond the tested Windows x64 build environment and native backup file dialogs still need verification. Current release verification details are tracked in [`docs/development/known-issues.md`](docs/development/known-issues.md).
+Provider-specific statement parsing, signed installers, automated updates and verified install/upgrade behavior are not included. Scanned PDFs use bundled offline English OCR, and every extracted line still requires review. Windows support beyond the tested Windows x64 build environment and native backup file dialogs still need verification. Current release verification details are tracked in [`docs/development/known-issues.md`](docs/development/known-issues.md).

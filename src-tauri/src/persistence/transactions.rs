@@ -25,6 +25,7 @@ pub struct TransactionRecord {
     pub occurred_at: String,
     pub description: Option<String>,
     pub status: String,
+    pub is_savings_withdrawal: bool,
 }
 #[derive(serde::Serialize)]
 pub struct CategoryRecord {
@@ -329,7 +330,7 @@ impl SqliteTransactionRepository<'_> {
             )
             .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
         let sql = format!(
-            "SELECT t.id,e.account_id,CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END,t.amount_minor,e.amount_minor,t.currency_code,t.occurred_at,t.description,t.status {where_clause} GROUP BY t.id,e.account_id ORDER BY datetime(t.occurred_at) DESC,t.created_at DESC LIMIT ?7 OFFSET ?8"
+            "SELECT t.id,e.account_id,CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN 'refund' ELSE t.transaction_type END,t.amount_minor,e.amount_minor,t.currency_code,t.occurred_at,t.description,t.status,EXISTS(SELECT 1 FROM savings_withdrawals w WHERE w.transaction_id=t.id) {where_clause} GROUP BY t.id,e.account_id ORDER BY datetime(t.occurred_at) DESC,t.created_at DESC LIMIT ?7 OFFSET ?8"
         );
         let mut statement = connection
             .prepare(&sql)
@@ -357,6 +358,7 @@ impl SqliteTransactionRepository<'_> {
                         occurred_at: r.get(6)?,
                         description: r.get(7)?,
                         status: r.get(8)?,
+                        is_savings_withdrawal: r.get(9)?,
                     })
                 },
             )
@@ -448,6 +450,16 @@ impl TransactionRepository for SqliteTransactionRepository<'_> {
         };
         let has_refunds: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM refund_transactions rf JOIN financial_transactions r ON r.id=rf.transaction_id WHERE rf.original_expense_transaction_id=?1 AND r.status='posted' AND NOT EXISTS(SELECT 1 FROM financial_transactions rv WHERE rv.reversal_of_transaction_id=r.id AND rv.status='posted'))", [id], |r| r.get(0)).map_err(|e|TransactionRepositoryError::Database(e.to_string()))?;
         if has_refunds {
+            return Err(TransactionRepositoryError::NotEditable);
+        }
+        let is_savings_withdrawal: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM savings_withdrawals WHERE transaction_id=?1)",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|e| TransactionRepositoryError::Database(e.to_string()))?;
+        if is_savings_withdrawal {
             return Err(TransactionRepositoryError::NotEditable);
         }
         if source != "manual" || kind != item.transaction_type.as_str() {

@@ -783,12 +783,15 @@ The application stores financial records and retained statement source files loc
 - Encrypt backups with AES-256-GCM and derive the encryption key using PBKDF2-HMAC-SHA256 with 600,000 iterations, a random per-backup salt and nonce. Require a passphrase of at least 12 characters. Never save or transmit the passphrase; a forgotten passphrase cannot be recovered.
 - Restore only after authenticating and validating the database. Apply supported older migrations to an isolated in-memory copy, reject unsupported future schemas, run integrity and foreign-key checks, then replace the current database.
 - Backup files include all database contents, including statement source files still within their retention period. Users are responsible for storing and deleting downloaded backups safely.
+- Encrypt the live database with SQLCipher using a random key protected by current-user Windows DPAPI. Encrypt attachment files with AES-GCM. Migrate legacy plaintext data on startup; an encrypted backup is the recovery route if the Windows profile or protected key is lost.
+- Before database replacement, preserve a validated rollback copy and recover an interrupted replacement at startup. Attachment files are re-encrypted on restore.
+- Opening an attachment in an external application creates a temporary decrypted copy, removed at next startup or through Settings. Physical erasure from filesystem snapshots or SSD blocks is not guaranteed.
 
 ### Rationale and implications
 - Authenticated encryption protects downloaded copies against disclosure and tampering.
 - Isolated validation and migration ensure invalid files and unsupported schemas are rejected before replacement begins.
 - Backups and restores currently buffer the database in memory and pass base64 data over local IPC; large database behavior requires desktop validation and may need a streaming/size-limit design.
-- Local database encryption at rest and a guaranteed rollback after a low-level failure during SQLite page replacement are not provided by this workflow and require release review.
+- Clean-profile installation, upgrade and restore still require release verification. Temporary cleartext viewer copies cannot be guaranteed to be physically erased from SSDs or snapshots.
 
 ---
 
@@ -799,10 +802,10 @@ The application stores financial records and retained statement source files loc
 **Related documents:** DOC-005, DOC-006, DOC-007
 
 ### Decision
-Settings may create a user-requested local JSON report containing application/platform versions, SQLite/schema versions, and redacted database integrity and foreign-key status. The report excludes transaction, account, category, statement and personal data; it is downloaded locally and never transmitted by ETracker. Do not persist diagnostic logs until a separate logging and retention policy is approved.
+The encrypted local database may retain up to 100 recent diagnostic events from a fixed allowlist, with automatic cleanup after 30 days. Events use fixed codes and timestamps only; do not record free-form, financial, account, statement, attachment or personal data. Settings may create a user-requested local JSON support report containing application/platform versions, SQLite/schema versions, redacted database integrity and foreign-key status, and recent allowlisted events. The report is saved only where the user chooses and is never transmitted by ETracker.
 
 ### Rationale and implications
-This offers useful first-line support details while limiting sensitive data exposure. It does not replace detailed local integrity results, operational logs, or desktop workflow verification.
+This offers useful first-line support details while limiting sensitive data exposure. It does not replace detailed local integrity results or desktop workflow verification.
 
 ---
 
@@ -839,6 +842,61 @@ Use PDF.js to render image-only PDF pages and Tesseract.js with its bundled Engl
 - A real Edge desktop workflow verified OCR of a generated scanned statement fixture and staging as uncertain text.
 - Recognition quality varies with scan resolution, orientation, contrast and language; users must inspect every result. Provider-specific field extraction remains separate work.
 - Bundled worker/model assets increase installer size and must be regenerated from locked npm dependencies during development and release builds.
+
+---
+
+## DB-038 — Savings withdrawal ledger behavior
+
+**Status:** Approved and implemented
+
+**Date:** 13 November 2026
+
+**Related documents:** DOC-002, DOC-004, DOC-006
+
+### Decision
+Withdrawals are permitted only from active goals linked to active, same-currency accounts. A withdrawal creates an expense transaction and negative account entry atomically, cannot exceed either the goal's available saved balance or the linked account balance, and reduces the goal's actual savings. Voiding or reversing the expense restores the amount to the goal balance. A withdrawal transaction cannot be edited independently of its goal linkage.
+
+### Rationale and implications
+- Goal withdrawals must reflect real cash movement in both the ledger and account balance.
+- Reuse ordinary transaction void/reversal behavior to preserve audit history and consistent balances.
+- Manual contributions remain goal-only records; they do not create an account movement.
+
+---
+
+## DB-039 — Encrypt local financial data at rest
+
+**Status:** Approved and implemented
+
+**Date:** 13 November 2026
+
+**Related documents:** DOC-004, DOC-007
+
+### Decision
+Encrypt the live Windows database with SQLCipher using a random key protected by current-user DPAPI. Encrypt managed attachment bytes with AES-256-GCM. Migrate legacy plaintext database and attachment data at startup without replacing existing encrypted data when the protected key is missing or invalid. Encrypted passphrase backups are the recovery route if the Windows profile or protected key is lost. Before backup restore replaces the current database, preserve and validate a rollback copy; recover an interrupted replacement at startup. Opening an attachment in an external application may create a temporary decrypted copy, removed at next startup or through Settings. Do not promise physical erasure from filesystem snapshots or SSD blocks.
+
+### Rationale and implications
+- Protect local financial data at rest while retaining offline operation and avoiding a service-managed key.
+- Tie key access to the current Windows user; make encrypted backup recovery requirements explicit.
+- Legacy migration and backup restore must preserve recoverability and never treat a missing key as authorization to overwrite an existing encrypted database.
+- External viewers require plaintext input; temporary files reduce exposure but cannot guarantee physical erasure.
+
+---
+
+## DB-040 — Initial reporting basis and fiscal year
+
+**Status:** Approved
+
+**Date:** 13 November 2026
+
+**Related documents:** DOC-002, DOC-004, DOC-007
+
+### Decision
+Use KES as the initial reporting currency, cash-basis accounting for actuals, and a fiscal year starting 1 January. Preserve records in other currencies without conversion or cross-currency aggregation. The initial release uses the fixed January start; user-selectable fiscal-year starts are not part of this release.
+
+### Rationale and implications
+- Keep initial reporting consistent with the KES planning and forecasting scope.
+- Cash-basis actuals are derived from posted ledger transactions rather than accrued obligations.
+- January aligns the fiscal year with the calendar year and the current calendar-quarter navigation.
 
 ---
 
@@ -1155,7 +1213,6 @@ The following matters require additional research, technical validation or expli
 | PEND-001 | Final physical SQLite schema and relationships | High | DOC-004 |
 | PEND-002 | Institution-specific statement normalization | High | DOC-004 |
 | PEND-004 | Treatment of pending transactions in reconciliation | High | DOC-004 |
-| PEND-007 | Exact savings-goal, contribution and ledger relationship | Medium | DOC-004 |
 
 ## 8.2 User interface and experience
 
@@ -1185,7 +1242,6 @@ The following matters require additional research, technical validation or expli
 |---|---|---|---|
 | PEND-021 | Supported Windows versions | High | DOC-007 |
 | PEND-023 | Code signing and integrity verification | Medium | DOC-007 |
-| PEND-028 | Persistent diagnostic logging and retention policy | Medium | DOC-007 |
 | PEND-031 | Secure storage and handling of optional AI credentials | High | DOC-003, DOC-007 |
 
 ---
