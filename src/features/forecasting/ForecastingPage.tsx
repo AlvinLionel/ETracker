@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listActiveAccounts } from "../accounts/api/accounts";
 import { listActiveCategories } from "../transactions/api/transactions";
 import { MetricCard } from "../../shared/ui/MetricCard";
-import { StatusChip } from "../../shared/ui/StatusChip";
 import { formatMoney as formatCurrency } from "../../shared/formatMoney";
 import { serializeCsv } from "../analytics/csv";
 import { evaluateForecast, generateForecast, getForecastSchedule, listForecasts, setForecastSchedule, type ForecastSnapshot } from "./api/forecasting";
@@ -86,7 +85,7 @@ export default function ForecastingPage({ navigate }: { navigate?: (page: string
     } catch { setError("The scenario report could not be prepared."); }
   }
   return <section className="forecast-screen space-y-5">
-    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="workspace-accent font-mono text-xs font-semibold uppercase tracking-[0.1em]">Ledger / Insights / Forecasting &amp; scenarios</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Financial Forecasting &amp; What-If Ledger Engine</h1><p className="workspace-muted mt-2 max-w-3xl text-sm">Local estimates use completed history, active subscriptions, and saved budget context. Forecasts do not change transactions or balances.</p></div><StatusChip tone="warning">Local deterministic estimate</StatusChip></header>
+    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="workspace-accent font-mono text-xs font-semibold uppercase tracking-[0.1em]">Ledger / Insights / Forecasting &amp; scenarios</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Financial Forecasting &amp; What-If Ledger Engine</h1><p className="workspace-muted mt-2 max-w-3xl text-sm">Local estimates use completed history, active subscriptions, and saved budget context. Forecasts do not change transactions or balances.</p></div></header>
     <section className="workspace-panel grid items-end gap-3 rounded-lg p-4 sm:grid-cols-[1fr_1fr_auto]">
       <label className="text-xs font-semibold">Currency<select aria-label="Forecast currency" value={currency} onChange={(event) => setCurrency(event.target.value)} className="mt-1 block w-full rounded-md border px-3 py-2 text-sm">{currencies.map((item) => <option key={item}>{item}</option>)}</select></label>
       <fieldset className="min-w-0"><legend className="text-xs font-semibold">Forecast horizon</legend><div className="mt-1 flex flex-wrap gap-1" role="group" aria-label="Forecast length">{[1, 3, 6, 12].map((value) => <button key={value} type="button" aria-pressed={months === value} onClick={() => setMonths(value)} className={`rounded-sm border px-3 py-2 text-xs font-semibold ${months === value ? "border-violet-300 bg-violet-50 text-violet-800" : "border-slate-200 bg-white text-slate-600"}`}>{value} mo</button>)}</div></fieldset>

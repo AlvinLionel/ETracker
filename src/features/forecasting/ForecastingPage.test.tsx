@@ -12,6 +12,7 @@ describe("ForecastingPage",()=>{
   beforeEach(()=>{invoke.mockReset();invoke.mockImplementation((command:string,args?:{categoryType?:string})=>command==="list_forecasts"?Promise.resolve([forecast]):command==="get_forecast_schedule"?Promise.resolve({enabled:false,currency_code:"KES",period_months:3}):command==="set_forecast_schedule"?Promise.resolve(true):command==="list_active_accounts"?Promise.resolve([{id:"cash",name:"Cash",account_type:"cash",currency_code:"KES",institution_name:null,notes:null,created_at:"",updated_at:"",archived_at:null}]):command==="list_active_categories"?Promise.resolve(args?.categoryType==="income"?[{id:"salary",name:"Salary",category_type:"income"}]:[{id:"food",name:"Food",category_type:"expense"}]):Promise.resolve("new-snapshot"));});
   it("generates snapshots from user choices and evaluates completed periods",async()=>{
     render(<ForecastingPage/>);
+    expect(screen.queryByText("Local deterministic estimate")).not.toBeInTheDocument();
     expect(await screen.findByText("KES · 1-month forecast")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Deterministic ending balance and monthly cash flow forecast" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: /Exact deterministic forecast values/ })).toHaveTextContent("Jan 20");

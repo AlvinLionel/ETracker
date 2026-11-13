@@ -119,7 +119,8 @@ describe("ImportsPage", () => {
     render(<ImportsPage />);
     fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["%PDF-1.5 fixture"], "agenda.pdf", { type: "application/pdf" })] } });
-    await screen.findByText(/Selectable text is extracted directly/);
+    await screen.findByText("agenda.pdf");
+    expect(screen.queryByText(/Selectable text is extracted directly/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/does not appear to contain bank or mobile-money statement activity/i);
     expect(mocks.invoke).not.toHaveBeenCalledWith("create_import_batch", expect.anything());
@@ -225,7 +226,8 @@ describe("ImportsPage", () => {
     fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
     const file = new File(["%PDF-1.5 fixture"], "statement.pdf", { type: "application/pdf" });
     fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [file] } });
-    expect(await screen.findByText(/Selectable text is extracted directly/)).toBeInTheDocument();
+    await screen.findByText("statement.pdf");
+    expect(screen.queryByText(/Selectable text is extracted directly/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_extracted_text", { batchId: "pdf-batch", pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"] }));
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
@@ -247,6 +249,7 @@ describe("ImportsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
 
     expect(await screen.findByLabelText("PDF password")).toBeInTheDocument();
+    expect(screen.queryByText(/The password is used only to unlock this file/)).not.toBeInTheDocument();
     expect(await screen.findByRole("status")).toHaveTextContent(/Enter its password below to continue extraction/);
     fireEvent.change(screen.getByLabelText("PDF password"), { target: { value: "statement-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Unlock PDF and continue" }));
