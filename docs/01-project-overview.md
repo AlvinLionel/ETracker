@@ -385,7 +385,7 @@ Technology decisions should prioritize:
 - Suitable ecosystem support.
 - Long-term extensibility.
 
-PDF.js is used for local text extraction and rendering; Tesseract.js with the bundled English model is used for offline OCR on image-only PDF pages. OCR output remains uncertain and requires user review. Spreadsheet parsers are selected for CSV and Excel imports; provider-specific statement normalization remains deferred until representative sanitized files are available.
+PDF.js is used for local text extraction and rendering; Tesseract.js with the bundled English model is used for offline OCR on image-only PDF pages. OCR output remains uncertain and requires user review. Spreadsheet parsers are selected for CSV and Excel imports. A local table-aware parser stages dated rows from the supported M-PESA PDF layout; normalization for additional provider-specific formats remains deferred.
 
 ## 12. Development Approach
 

@@ -397,9 +397,9 @@ Each transaction’s Documents action opens a compact attachment panel. Users ca
 
 ### 7.1 Purpose
 
-The imports workspace is the primary way to build historical spending records from account statements. It manages statement uploads, extraction, validation, duplicate detection, correction, reconciliation and finalization. Desktop E2E now covers correction, opening/closing balance reconciliation and refusing to finalize an invalid row. Manual transaction entry remains available for cash activity and items missing from statements.
+The imports workspace is the primary way to build historical spending records from account statements. It manages statement uploads, extraction, direction and duplicate checks, optional correction, reusable category rules and one-step posting. The user sees the number of eligible and excluded rows and confirms before eligible transactions are added. Statement balance reconciliation is not part of this workflow. Manual transaction entry remains available for cash activity and items missing from statements.
 
-Accepted statement files are CSV, Excel workbooks (.xls and .xlsx), and selectable-text PDF. The UI recognizes common date, amount, and description header names and preselects likely fields; users can change the mapping. Excel users choose a worksheet and header row. Formula-derived values in mapped date or amount cells require correction in staged review. Each uploaded file is saved as its own named workspace, preserving the source filename.
+Accepted statement files are CSV, Excel workbooks (.xls and .xlsx), and PDF. The UI recognizes common date, amount, money-in, money-out and description headers and preselects likely fields; users can change the mapping. Money-in rows become income and money-out rows become expenses. Signed amounts use their sign; an unsigned generic amount without direction evidence stays uncertain rather than being guessed. Excel users choose a worksheet and header row. Formula-derived values in mapped date or amount cells require correction before they can be imported. Each uploaded file is saved as its own named workspace, preserving the source filename.
 
 Spreadsheet headings that look like a budget plan or account list are identified and blocked from the transaction workflow so planned amounts or account balances cannot be posted as spending. Budget plans can be loaded from CSV or Excel into the budget-template editor for review and correction before saving. Account lists can be loaded from CSV or Excel in Accounts; name, type, institution and optional KES opening balance are reviewed before creation. Account numbers are ignored, duplicate name/institution pairs are excluded, and non-KES rows are rejected. Bank and mobile-money statements use generic field mapping; institution-specific normalization still depends on verified sample files.
 
@@ -407,25 +407,23 @@ Each saved workspace provides access to its original uploaded file for 90 days a
 
 When creating an import, the user may select a finalized statement from the same account as the prior version. The workspace displays row-by-row comparison and requires an explicit action for every changed or uncertain match: keep the original, use the revised row, or merge compatible descriptive details. Choosing revised values for a manually edited imported transaction is an explicit instruction to reverse the old posted entry and apply the revised record; the comparison flags this case before finalization. Identical rows are retained from the prior version and excluded from new postings.
 
-Selectable PDF text is extracted locally with the bundled PDF.js library and appears as uncertain page-and-line records for correction and review. Image-only pages are rendered locally and processed with the bundled English Tesseract.js model; OCR progress is shown, but every resulting line remains uncertain and must be reviewed. If a PDF is password-protected, the user can enter its password in the current workspace and continue extraction; the password is not sent to the backend or saved. The PDF workflow accepts up to 200 pages per file and an extracted-text limit of 100 MiB. Scanned pages in other languages may be inaccurate because only English is bundled.
+Selectable PDF text is extracted locally with the bundled PDF.js library. For the supported M-PESA table layout, the importer detects date, detail, status and money columns, ignores running balances, and stages dated transaction rows. Completed rows with exactly one non-zero Paid In or Withdrawn value are typed as income or expense and can be included in the one-step import. Unrecognized PDF layouts fall back to uncertain page-and-line records. Image-only pages are rendered locally and processed with the bundled English Tesseract.js model; OCR progress is shown, but every resulting line remains uncertain until corrected. If a PDF is password-protected, the user can enter its password in the current workspace and continue extraction; the password is not sent to the backend or saved. The PDF workflow accepts up to 200 pages per file and an extracted-text limit of 100 MiB. Scanned pages in other languages may be inaccurate because only English is bundled.
+
+Category rules are global to the local workspace. Each rule creates or reuses an income or expense category and matches one or more user-entered phrases against the transaction description. Matching is case-insensitive; the longest phrase wins. Equally specific matches to different categories and descriptions with no match remain uncategorized. A rule only assigns a category; it does not change direction.
 
 It is a critical financial workflow and must provide transparency throughout processing.
 
 ### 7.2 Import Workflow
 
-The proposed user journey is:
+The user journey is:
 
 1. Select account.
 2. Upload statement or supported file.
-3. Inspect file and statement information.
-4. Extract transaction records.
-5. Review extracted records.
-6. Resolve validation errors and uncertain records.
-7. Review duplicate candidates.
-8. Complete reconciliation where available.
-9. Review the complete import summary.
-10. Confirm finalization.
-11. View the completed import record.
+3. Optionally add or edit global automatic category rules.
+4. Inspect the detected fields and extract transaction records.
+5. Review the ready and excluded row summaries, correcting rows only when needed.
+6. Confirm the single Import action to post eligible records; invalid, unclear-direction and possible-duplicate rows stay unposted.
+7. View the completed import record and processing log.
 
 ### 7.3 Import Workspace Layout
 

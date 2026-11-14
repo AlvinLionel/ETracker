@@ -900,6 +900,26 @@ Use KES as the initial reporting currency, cash-basis accounting for actuals, an
 
 ---
 
+## DB-041 — Header-aware local PDF table import
+
+**Status:** Implemented
+
+**Date:** 13 November 2026
+
+**Related documents:** DOC-002, DOC-003, DOC-004
+
+### Decision
+When selectable PDF text contains recognizable table headers for date/time, details and transaction amounts, detect the columns from their page positions and stage only dated rows with a clear transaction amount. For the supported M-PESA layout, use Paid In or Withdrawn values and never use the Balance column as a transaction amount. Infer income or expense only when a Completed row has exactly one non-zero Paid In or Withdrawn value. Such rows remain pending until the user explicitly bulk-confirms eligible, unmatched records; ambiguous rows and possible duplicates stay in individual review. Confirmation does not post transactions; only finalization does. Categories remain optional. If table structure is not recognized, retain the generic uncertain PDF text-review path.
+
+### Rationale and implications
+- M-PESA statements contain explanatory text, summaries and running balances alongside transaction rows; staging every text line or taking the last number can create incorrect records.
+- Table parsing runs locally on extracted PDF text. Passwords are not sent to Rust, persisted or logged.
+- Rows without a clear table amount are not staged and are counted in the import result.
+- Non-Completed or direction-ambiguous rows remain uncertain; possible duplicates are never bulk-confirmed.
+- Additional bank and provider layouts still require representative verification; this does not add live synchronization.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances

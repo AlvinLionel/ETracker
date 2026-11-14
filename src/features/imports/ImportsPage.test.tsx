@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ImportsPage from "./ImportsPage";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn(), pdfText: vi.fn(), confirmAction: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), accounts: vi.fn(), pdfText: vi.fn(), confirmAction: vi.fn(), saveDialog: vi.fn(), writeFile: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ save: mocks.saveDialog }));
+vi.mock("@tauri-apps/plugin-fs", () => ({ writeFile: mocks.writeFile }));
 vi.mock("../accounts/api/accounts", () => ({ listActiveAccounts: mocks.accounts }));
 vi.mock("./pdfText", () => ({ extractPdfTextPages: mocks.pdfText }));
 vi.mock("../../shared/confirmAction", () => ({ confirmAction: mocks.confirmAction }));
@@ -13,9 +15,13 @@ describe("ImportsPage", () => {
     vi.clearAllMocks();
     mocks.pdfText.mockResolvedValue({ pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
     mocks.confirmAction.mockResolvedValue(true);
+    mocks.saveDialog.mockResolvedValue("C:\\Users\\Test\\statement.csv");
+    mocks.writeFile.mockResolvedValue(undefined);
     mocks.accounts.mockResolvedValue([{ id: "a", name: "Main", currency_code: "KES" }]);
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "list_import_category_rules") return Promise.resolve([]);
+      if (command === "list_active_categories") return Promise.resolve([]);
       if (command === "csv_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
       if (command === "csv_rows") return Promise.resolve([["Date", "Amount", "Memo"], ["2026-11-01", "10.00", "Shop"]]);
       if (command === "create_import_batch") return Promise.resolve("batch-1");
@@ -49,7 +55,7 @@ describe("ImportsPage", () => {
     fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "day_month_year_slash" } });
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_csv_import", expect.objectContaining({
-      request: expect.objectContaining({ batch_id: "batch-1", date_column: "Date", amount_column: "Amount", date_format: "day_month_year_slash" }),
+      request: expect.objectContaining({ batch_id: "batch-1", date_column: "Date", amount_column: "Amount", positive_amount_type: "unknown", date_format: "day_month_year_slash" }),
     })));
     expect(mocks.invoke).toHaveBeenCalledWith("create_import_batch", { request: expect.objectContaining({ source_file_contents: expect.any(Array) }) });
     expect(await screen.findByRole("status")).toHaveTextContent("2 staged rows");
@@ -233,6 +239,35 @@ describe("ImportsPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("1 PDF text lines for manual review");
   });
 
+  it("stages only detected PDF table rows and reports the mapped statement headers", async () => {
+    mocks.pdfText.mockResolvedValue({
+      pages: ["M-PESA statement\nCompletion Time Details Paid In Withdrawn Balance\n2026-11-01 10:00:00 Shop 25.00"],
+      ocrPageNumbers: [],
+      table: {
+        headers: ["Completion Time", "Details", "Paid In", "Withdrawn", "Balance"],
+        rows: [{ pageNumber: 1, date: "2026-11-01 10:00:00", description: "Shop", amount: "-25.00", transactionType: "expense" }],
+      },
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "create_import_batch") return Promise.resolve("pdf-table-batch");
+      if (command === "stage_pdf_table_rows") return Promise.resolve(1);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File(["%PDF-1.5 fixture"], "statement.pdf", { type: "application/pdf" })] } });
+    await screen.findByText("statement.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_pdf_table_rows", {
+      batchId: "pdf-table-batch",
+      pages: ["2026-11-01 10:00:00 Shop -25.00"],
+      rowTransactionTypes: ["expense"],
+    }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Detected statement columns: Completion Time, Details, Paid In, Withdrawn, Balance");
+  });
+
   it("keeps an encrypted PDF import open until its password unlocks extraction", async () => {
     mocks.pdfText.mockRejectedValueOnce("password-required").mockResolvedValueOnce({ pages: ["M-PESA statement\n2026-11-01 Grocery shop 12.50"], ocrPageNumbers: [] });
     mocks.invoke.mockImplementation((command: string) => {
@@ -287,6 +322,7 @@ describe("ImportsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("compare_import_revision", { batchId: "new-batch" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("create_import_batch", { request: expect.objectContaining({ revision_of_batch_id: "old-batch" }) }));
+    expect(await screen.findByRole("heading", { name: "Revised statement comparison" })).toBeInTheDocument();
     fireEvent.click((await screen.findAllByRole("button", { name: "Records" }))[0]);
     expect(await screen.findByRole("heading", { name: "Revised statement comparison" })).toBeInTheDocument();
     expect(screen.getByText("modified")).toBeInTheDocument();
@@ -303,7 +339,7 @@ describe("ImportsPage", () => {
       return Promise.resolve([]);
     });
     render(<ImportsPage />);
-    expect(await screen.findByText(/Import statements, review parsed rows, reconcile balances/)).toBeInTheDocument();
+    expect(await screen.findByText(/Create category rules, import a statement/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
     expect(screen.getByRole("navigation", { name: "Import workspace views" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Logs" }));
@@ -325,13 +361,13 @@ describe("ImportsPage", () => {
     expect(await screen.findByText("Corrected merchant")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
     expect(screen.getByLabelText("Description")).toHaveValue("Corrected merchant");
+    fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("correct_import_record", {
+      request: { record_id: "row-1", normalized_date: "2026-11-05T00:00:00Z", amount_minor: 1250, transaction_type: "expense", description: "Corrected merchant" },
+    }));
   });
 
   it("downloads the retained original statement file", async () => {
-    const createObjectURL = vi.fn(() => "blob:source-file");
-    const revokeObjectURL = vi.fn();
-    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
       if (command === "get_import_source_file") return Promise.resolve([65, 66, 67]);
@@ -342,12 +378,26 @@ describe("ImportsPage", () => {
     });
     render(<ImportsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Download source" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("get_import_source_file", { batchId: "batch-1" }));
-    expect(createObjectURL).toHaveBeenCalled();
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:source-file");
-    expect(anchorClick).toHaveBeenCalled();
-    anchorClick.mockRestore();
-    vi.unstubAllGlobals();
+    await waitFor(() => expect(mocks.writeFile).toHaveBeenCalledWith("C:\\Users\\Test\\statement.csv", new Uint8Array([65, 66, 67])));
+    expect(mocks.invoke).toHaveBeenCalledWith("get_import_source_file", { batchId: "batch-1" });
+    expect(mocks.saveDialog).toHaveBeenCalledWith({
+      defaultPath: "statement.csv",
+      filters: [{ name: "Statement file", extensions: ["csv"] }],
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("Original statement saved to the selected location.");
+  });
+
+  it("does not write a source file when the save dialog is cancelled", async () => {
+    mocks.saveDialog.mockResolvedValue(null);
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
+      if (command === "get_import_source_file") return Promise.resolve([65, 66, 67]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Download source" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Source file save cancelled");
+    expect(mocks.writeFile).not.toHaveBeenCalled();
   });
 
   it("requires confirmation before discarding an unfinished workspace", async () => {
@@ -361,6 +411,62 @@ describe("ImportsPage", () => {
     expect(mocks.confirmAction).toHaveBeenCalledWith(expect.stringContaining("90-day retention period"));
   });
 
+  it("imports eligible rows together after one explicit confirmation", async () => {
+    const batch = { id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now", revision_of_batch_id: null };
+    const record = { id: "row-1", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Shop", normalized_description: "Shop", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "pending", allocations: [] };
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([batch]);
+      if (command === "list_staged_import_records") return Promise.resolve([record]);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      if (command === "finalize_import_batch") return Promise.resolve(1);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Records" }));
+    const reviewToggle = await screen.findByText(/Review rows \(optional\)/);
+    expect(reviewToggle.closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "Import now" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("finalize_import_batch", { batchId: "batch-1" }));
+    expect(mocks.confirmAction).toHaveBeenCalledWith(expect.stringContaining("Import 1 eligible transaction"));
+  });
+
+  it("explains how ready, duplicate, and review rows affect the import count", async () => {
+    const batch = { id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now", revision_of_batch_id: null };
+    const records = [
+      { id: "ready", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Shop", normalized_description: "Shop", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "pending", allocations: [] },
+      { id: "duplicate", source_row_reference: "3", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Shop", normalized_description: "Shop", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "probable", review_status: "pending", allocations: [] },
+      { id: "unclear", source_row_reference: "4", original_date: "bad date", normalized_date: null, original_description: "Unknown", normalized_description: "Unknown", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: null, validation_status: "uncertain", duplicate_status: "unmatched", review_status: "pending", allocations: [] },
+    ];
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([batch]);
+      if (command === "list_staged_import_records") return Promise.resolve(records);
+      if (command === "list_import_logs") return Promise.resolve([]);
+      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Records" }));
+
+    const summary = await screen.findByLabelText("Import row summary");
+    expect(summary).toHaveTextContent("1 ready to import");
+    expect(summary).toHaveTextContent("1 of those will be uncategorized");
+    expect(summary).toHaveTextContent("1 possible duplicate is withheld");
+    expect(summary).toHaveTextContent("1 row needs date, amount, or direction review");
+  });
+
+  it("shows a clear error if the discard confirmation dialog fails", async () => {
+    mocks.confirmAction.mockRejectedValueOnce(new Error("dialog permission denied"));
+    mocks.invoke.mockImplementation((command: string) => command === "list_import_batches"
+      ? Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }])
+      : Promise.resolve([]));
+    render(<ImportsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The confirmation dialog could not be opened");
+    expect(mocks.invoke).not.toHaveBeenCalledWith("discard_import_batch", expect.anything());
+  });
+
   it("keeps an unfinished workspace when discard is declined", async () => {
     mocks.confirmAction.mockResolvedValue(false);
     mocks.invoke.mockImplementation((command: string) => command === "list_import_batches"
@@ -372,46 +478,84 @@ describe("ImportsPage", () => {
     expect(mocks.invoke).not.toHaveBeenCalledWith("discard_import_batch", expect.anything());
   });
 
-  it("submits statement balances for reconciliation", async () => {
+  it("imports without requiring a statement balance check", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([{ id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" }]);
-      if (command === "list_staged_import_records") return Promise.resolve([]);
+      if (command === "list_staged_import_records") return Promise.resolve([{ id: "row-1", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Shop", normalized_description: "Shop", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "pending", allocations: [] }]);
       if (command === "list_import_logs") return Promise.resolve([]);
-      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
-      if (command === "reconcile_import_batch") return Promise.resolve({ opening_balance_minor: 10000, closing_balance_minor: 8750, expected_closing_balance_minor: 8750, difference_minor: 0, outcome: "reconciled", explanation: "Balances match." });
+      if (command === "finalize_import_batch") return Promise.resolve(1);
       return Promise.resolve([]);
     });
     render(<ImportsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
-    fireEvent.change(screen.getByLabelText("Opening balance"), { target: { value: "100.00" } });
-    fireEvent.change(screen.getByLabelText("Closing balance"), { target: { value: "87.50" } });
-    fireEvent.click(screen.getByRole("button", { name: "Check balances" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("reconcile_import_batch", { request: { batch_id: "batch-1", opening_balance_minor: 10000, closing_balance_minor: 8750 } }));
+    expect(screen.queryByText("Statement balance check")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Import 1 transaction" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("finalize_import_batch", { batchId: "batch-1" }));
   });
 
-  it("saves confirmed split category allocations for a staged expense", async () => {
+  it("creates a reusable category rule from phrases", async () => {
+    let rules: { category_id: string; category_name: string; category_type: "expense"; match_text: string }[] = [];
+    mocks.invoke.mockImplementation((command: string, args?: { categoryName?: string; categoryType?: "income" | "expense"; matchTexts?: string[] }) => {
+      if (command === "list_import_category_rules") return Promise.resolve(rules);
+      if (command === "save_import_category_rule") {
+        rules = (args?.matchTexts ?? []).map(match_text => ({ category_id: "food", category_name: args?.categoryName ?? "Food", category_type: "expense", match_text }));
+        return Promise.resolve(rules);
+      }
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "list_active_categories") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(screen.getByLabelText("Rule category name"), { target: { value: "Food" } });
+    fireEvent.change(screen.getByLabelText("Description phrases"), { target: { value: "inland hotel\nhope traders" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("save_import_category_rule", {
+      categoryId: null,
+      categoryName: "Food",
+      categoryType: "expense",
+      matchTexts: ["inland hotel", "hope traders"],
+    }));
+    expect(await screen.findByText("inland hotel, hope traders")).toBeInTheDocument();
+  });
+
+  it("previews automatic categorization and omits per-row category controls", async () => {
     const batch = { id: "batch-1", account_id: "a", source_file_name: "statement.csv", source_format: "csv", status: "review", reconciliation_status: "unavailable", created_at: "now" };
-    const record = { id: "row-1", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Shop", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "pending", allocations: [] };
-    mocks.invoke.mockImplementation((command: string, args?: { categoryType?: string }) => {
+    const record = { id: "row-1", source_row_reference: "2", original_date: "2026-11-05", normalized_date: "2026-11-05T00:00:00Z", original_description: "Inland Hotel", normalized_description: "Inland Hotel", original_amount: "12.50", normalized_amount_minor: 1250, transaction_type: "expense", validation_status: "valid", duplicate_status: "unmatched", review_status: "pending", allocations: [] };
+    mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([batch]);
+      if (command === "list_import_category_rules") return Promise.resolve([{ category_id: "food", category_name: "Food", category_type: "expense", match_text: "hotel" }]);
       if (command === "list_staged_import_records") return Promise.resolve([record]);
       if (command === "list_import_logs") return Promise.resolve([]);
-      if (command === "get_import_reconciliation") return Promise.resolve({ opening_balance_minor: null, closing_balance_minor: null, expected_closing_balance_minor: null, difference_minor: null, outcome: "unavailable", explanation: "No statement balances provided." });
-      if (command === "list_active_categories") return Promise.resolve(args?.categoryType === "expense" ? [{ id: "food", name: "Food", category_type: "expense" }, { id: "home", name: "Home", category_type: "expense" }] : []);
-      return Promise.resolve(undefined);
+      return Promise.resolve([]);
     });
     render(<ImportsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Records" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Categories" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add split" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add split" }));
-    const selectors = screen.getAllByLabelText("Category");
-    fireEvent.change(selectors[0], { target: { value: "food" } });
-    fireEvent.change(selectors[1], { target: { value: "home" } });
-    const amounts = screen.getAllByLabelText("Amount");
-    fireEvent.change(amounts[amounts.length - 2], { target: { value: "7.00" } });
-    fireEvent.change(amounts[amounts.length - 1], { target: { value: "5.50" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save categories" }));
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("set_import_record_allocations", { request: { record_id: "row-1", allocations: [{ category_id: "food", amount_minor: 700 }, { category_id: "home", amount_minor: 550 }] } }));
+    expect(await screen.findByText("Food")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Categories" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Statement balance check")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import 1 transaction" })).toBeInTheDocument();
+  });
+
+  it("maps distinct money-in and money-out columns when staging", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "list_import_category_rules") return Promise.resolve([]);
+      if (command === "list_active_categories") return Promise.resolve([]);
+      if (command === "csv_headers") return Promise.resolve(["Date", "Paid In", "Withdrawn", "Details"]);
+      if (command === "csv_rows") return Promise.resolve([["Date", "Paid In", "Withdrawn", "Details"], ["2026-11-01", "10.00", "", "Salary"], ["2026-11-02", "", "3.00", "Shop"]]);
+      if (command === "create_import_batch") return Promise.resolve("batch-1");
+      if (command === "stage_csv_import") return Promise.resolve(2);
+      if (command === "list_staged_import_records" || command === "list_import_logs") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+    fireEvent.change(await screen.findByLabelText("Account"), { target: { value: "a" } });
+    const contents = "Date,Paid In,Withdrawn,Details\n2026-11-01,10.00,,Salary\n2026-11-02,,3.00,Shop";
+    fireEvent.change(screen.getByLabelText("Statement file"), { target: { files: [new File([contents], "statement.csv", { type: "text/csv" })] } });
+    await screen.findByLabelText("Money in column");
+    fireEvent.click(screen.getByRole("button", { name: "Create import workspace" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("stage_csv_import", expect.objectContaining({
+      request: expect.objectContaining({ incoming_amount_column: "Paid In", outgoing_amount_column: "Withdrawn", positive_amount_type: "income" }),
+    })));
   });
 });

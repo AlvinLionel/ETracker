@@ -1148,7 +1148,7 @@ Technology selection must consider:
 
 ### 15.2 Specialist Libraries
 
-PDF.js handles local text extraction and rendering. Tesseract.js and its bundled English trained data support offline OCR in the frontend worker. The import workflow stages text as uncertain page/line records; provider-specific field normalization remains separate and requires verified samples.
+PDF.js handles local text extraction and rendering. Tesseract.js and its bundled English trained data support offline OCR in the frontend worker. The import workflow stages PDF results as uncertain records. A local table-aware extractor detects headers and transaction rows for the supported M-PESA PDF layout, excluding running-balance values from transaction amounts; other provider-specific field normalization remains separate.
 
 Selection should use representative real-world financial documents.
 

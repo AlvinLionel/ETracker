@@ -89,6 +89,7 @@ pub trait ImportRepository {
         description: Option<&str>,
     ) -> Result<(), ImportError>;
     fn review_record(&self, record_id: &str, keep: bool) -> Result<(), ImportError>;
+    fn confirm_valid_records(&self, batch_id: &str) -> Result<usize, ImportError>;
     fn finalize(&self, batch_id: &str) -> Result<usize, ImportError>;
     fn record_failure(
         &self,
@@ -149,6 +150,9 @@ impl<R: ImportRepository> ImportService<R> {
     }
     pub fn review_record(&self, id: &str, keep: bool) -> Result<(), ImportError> {
         self.repository.review_record(id, keep)
+    }
+    pub fn confirm_valid_records(&self, id: &str) -> Result<usize, ImportError> {
+        self.repository.confirm_valid_records(id)
     }
     pub fn finalize(&self, id: &str) -> Result<usize, ImportError> {
         self.repository.finalize(id)

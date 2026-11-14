@@ -23,4 +23,6 @@ public/ocr/
 *.njsproj
 *.sln
 *.sw?
+
 *.txt
+*.pdf

@@ -5,8 +5,8 @@ use crate::{
     },
     infrastructure::database::Database,
     persistence::imports::{
-        ImportBatchRecord, ImportLogRecord, ImportRevisionChangeRecord, SqliteImportRepository,
-        StagedImportRecord,
+        ImportBatchRecord, ImportCategoryRuleRecord, ImportLogRecord, ImportRevisionChangeRecord,
+        SqliteImportRepository, StagedImportRecord,
     },
 };
 use serde::Deserialize;
@@ -26,6 +26,8 @@ pub struct StageCsvRequest {
     pub date_column: String,
     pub description_column: Option<String>,
     pub amount_column: String,
+    pub incoming_amount_column: Option<String>,
+    pub outgoing_amount_column: Option<String>,
     pub positive_amount_type: String,
     pub date_format: String,
 }
@@ -38,6 +40,8 @@ pub struct StageXlsxRequest {
     pub date_column: String,
     pub description_column: Option<String>,
     pub amount_column: String,
+    pub incoming_amount_column: Option<String>,
+    pub outgoing_amount_column: Option<String>,
     pub positive_amount_type: String,
     pub date_format: String,
 }
@@ -92,6 +96,15 @@ pub fn review_import_record(
         .map_err(|_| "The staged record could not be reviewed.".into())
 }
 #[tauri::command]
+pub fn confirm_valid_import_records(
+    state: State<'_, Database>,
+    batch_id: String,
+) -> Result<usize, String> {
+    ImportService::new(SqliteImportRepository::new(state.inner()))
+        .confirm_valid_records(&batch_id)
+        .map_err(|_| "Valid, non-duplicate records could not be confirmed.".into())
+}
+#[tauri::command]
 pub fn finalize_import_batch(
     state: State<'_, Database>,
     batch_id: String,
@@ -104,10 +117,10 @@ pub fn finalize_import_batch(
                 &batch_id,
                 None,
                 "finalize",
-                "Import finalization was blocked or rolled back",
-                "Resolve validation, duplicate review and reconciliation issues, then try again.",
+                "Import could not be completed or was rolled back",
+                "Check the workspace records and activity log; only valid, direction-classified, non-duplicate records are imported automatically.",
             );
-            Err("This import cannot be finalized. Resolve invalid, uncertain, duplicate, or reconciliation issues first.".into())
+            Err("The import could not be completed. Check that the workspace contains valid, direction-classified transactions and review its activity log.".into())
         }
     }
 }
@@ -222,6 +235,43 @@ pub fn create_import_batch(
         })
 }
 #[tauri::command]
+pub fn list_import_category_rules(
+    state: State<'_, Database>,
+) -> Result<Vec<ImportCategoryRuleRecord>, String> {
+    SqliteImportRepository::new(state.inner())
+        .list_category_rules()
+        .map_err(|_| "Import category rules could not be loaded.".into())
+}
+#[tauri::command]
+pub fn save_import_category_rule(
+    state: State<'_, Database>,
+    category_id: Option<String>,
+    category_name: String,
+    category_type: String,
+    match_texts: Vec<String>,
+) -> Result<Vec<ImportCategoryRuleRecord>, String> {
+    SqliteImportRepository::new(state.inner())
+        .save_category_rule(
+            category_id.as_deref(),
+            &category_name,
+            &category_type,
+            &match_texts,
+        )
+        .map_err(|_| {
+            "Check the category name, type, and phrases. Each phrase can belong to only one category of that type."
+                .into()
+        })
+}
+#[tauri::command]
+pub fn delete_import_category_rule(
+    state: State<'_, Database>,
+    category_id: String,
+) -> Result<(), String> {
+    SqliteImportRepository::new(state.inner())
+        .delete_category_rule(&category_id)
+        .map_err(|_| "The import category rule could not be removed.".into())
+}
+#[tauri::command]
 pub fn get_import_source_file(
     state: State<'_, Database>,
     batch_id: String,
@@ -324,7 +374,13 @@ pub fn stage_csv_import(
         date_format: request.date_format,
     };
     let repository = SqliteImportRepository::new(state.inner());
-    match repository.stage_csv(&request.batch_id, &request.contents, &mapping) {
+    match repository.stage_csv_with_directions(
+        &request.batch_id,
+        &request.contents,
+        &mapping,
+        request.incoming_amount_column.as_deref(),
+        request.outgoing_amount_column.as_deref(),
+    ) {
         Ok(count) => Ok(count),
         Err(_) => {
             let _ = ImportService::new(repository).record_failure(
@@ -351,12 +407,14 @@ pub fn stage_xlsx_import(
         date_format: request.date_format,
     };
     let repository = SqliteImportRepository::new(state.inner());
-    match repository.stage_xlsx(
+    match repository.stage_xlsx_with_directions(
         &request.batch_id,
         request.contents,
         &request.sheet_name,
         request.header_row,
         &mapping,
+        request.incoming_amount_column.as_deref(),
+        request.outgoing_amount_column.as_deref(),
     ) {
         Ok(count) => Ok(count),
         Err(ImportError::WorkbookTooLarge) => {
@@ -403,4 +461,15 @@ pub fn stage_pdf_extracted_text(
             Err("PDF text could not be staged. The original source file is still available.".into())
         }
     }
+}
+#[tauri::command]
+pub fn stage_pdf_table_rows(
+    state: State<'_, Database>,
+    batch_id: String,
+    pages: Vec<String>,
+    row_transaction_types: Vec<Option<String>>,
+) -> Result<usize, String> {
+    SqliteImportRepository::new(state.inner())
+        .stage_pdf_table_pages(&batch_id, pages, row_transaction_types)
+        .map_err(|_| "Detected PDF table rows could not be staged for review.".into())
 }

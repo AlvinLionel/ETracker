@@ -20,6 +20,15 @@ function makePage(text: string) {
   };
 }
 
+function makePositionedPage(items: { str: string; x: number; y: number }[]) {
+  return {
+    getTextContent: vi.fn().mockResolvedValue({ items: items.map(({ str, x, y }) => ({ str, transform: [1, 0, 0, 1, x, y] })) }),
+    getViewport: vi.fn(({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale })),
+    render: vi.fn().mockReturnValue({ promise: Promise.resolve() }),
+    cleanup: vi.fn(),
+  };
+}
+
 describe("extractPdfTextPages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -59,5 +68,60 @@ describe("extractPdfTextPages", () => {
   it("reports an OCR failure without pretending a page was extracted", async () => {
     mocks.createWorker.mockRejectedValue(new Error("missing local model"));
     await expect(extractPdfTextPages(new Uint8Array([1]))).rejects.toBe("ocr-failed");
+  });
+
+  it("detects PDF table headers and extracts only dated rows with their transaction amounts", async () => {
+    const page = makePositionedPage([
+      { str: "Receipt No.", x: 51, y: 508 },
+      { str: "Completion Time", x: 111, y: 508 },
+      { str: "Details", x: 216, y: 508 },
+      { str: "Transaction Status", x: 282, y: 508 },
+      { str: "Paid In", x: 373, y: 508 },
+      { str: "Withdrawn", x: 436, y: 508 },
+      { str: "Balance", x: 510, y: 508 },
+      { str: "ABC1234567", x: 38, y: 498 },
+      { str: "2026-10-31 14:43:07", x: 108, y: 498 },
+      { str: "Airtime Purchase", x: 177, y: 498 },
+      { str: "Completed successfully", x: 282, y: 498 },
+      { str: "-15.00", x: 468, y: 498 },
+      { str: "985.00", x: 536, y: 498 },
+      { str: "Purchase reference", x: 177, y: 492 },
+      { str: "DEF1234567", x: 38, y: 482 },
+      { str: "2026-10-30 13:45:28", x: 108, y: 482 },
+      { str: "Cash received", x: 177, y: 482 },
+      { str: "Completed", x: 282, y: 482 },
+      { str: "20.00", x: 400, y: 482 },
+      { str: "1005.00", x: 536, y: 482 },
+      { str: "GHI1234567", x: 38, y: 466 },
+      { str: "2026-10-29 12:00:00", x: 108, y: 466 },
+      { str: "Shop", x: 177, y: 466 },
+      { str: "Completed", x: 282, y: 466 },
+      { str: "0.00", x: 400, y: 466 },
+      { str: "-7.50", x: 468, y: 466 },
+      { str: "997.50", x: 536, y: 466 },
+      { str: "JKL1234567", x: 38, y: 450 },
+      { str: "2026-10-28 11:00:00", x: 108, y: 450 },
+      { str: "Unsuccessful payment", x: 177, y: 450 },
+      { str: "Failed", x: 282, y: 450 },
+      { str: "5.00", x: 468, y: 450 },
+      { str: "992.50", x: 536, y: 450 },
+      { str: "Statement Verification Code", x: 44, y: 88 },
+    ]);
+    mocks.getDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1, getPage: () => page }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await extractPdfTextPages(new Uint8Array([1, 2, 3]));
+
+    expect(result.table).toEqual({
+      headers: ["Receipt No.", "Completion Time", "Details", "Transaction Status", "Paid In", "Withdrawn", "Balance"],
+      rows: [
+        { pageNumber: 1, date: "2026-10-31 14:43:07", description: "Airtime Purchase Purchase reference", amount: "-15.00", transactionType: "expense" },
+        { pageNumber: 1, date: "2026-10-30 13:45:28", description: "Cash received", amount: "20.00", transactionType: "income" },
+        { pageNumber: 1, date: "2026-10-29 12:00:00", description: "Shop", amount: "-7.50", transactionType: "expense" },
+        { pageNumber: 1, date: "2026-10-28 11:00:00", description: "Unsuccessful payment Status: Failed", amount: "5.00", transactionType: null },
+      ],
+    });
   });
 });

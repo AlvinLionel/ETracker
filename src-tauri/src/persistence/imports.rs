@@ -29,6 +29,36 @@ fn parse_import_date(value: &str, format: &str) -> Option<String> {
         .ok()
         .map(|date| format!("{}T00:00:00Z", date))
 }
+fn best_import_category_rule<'a>(
+    rules: &'a [(String, String, String)],
+    description: &str,
+    transaction_type: &str,
+) -> Option<&'a str> {
+    let description = description.to_lowercase();
+    let matching = rules
+        .iter()
+        .filter(|(_, rule_type, term)| {
+            rule_type == transaction_type && description.contains(&term.to_lowercase())
+        })
+        .collect::<Vec<_>>();
+    let longest = matching
+        .iter()
+        .map(|(_, _, term)| term.chars().count())
+        .max()?;
+    let best = matching
+        .into_iter()
+        .filter(|(_, _, term)| term.chars().count() == longest)
+        .collect::<Vec<_>>();
+    let category_ids = best
+        .iter()
+        .map(|(category_id, _, _)| category_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    if category_ids.len() == 1 {
+        best.first().map(|(category_id, _, _)| category_id.as_str())
+    } else {
+        None
+    }
+}
 pub struct SqliteImportRepository<'a> {
     database: &'a Database,
 }
@@ -534,7 +564,7 @@ impl ImportRepository for SqliteImportRepository<'_> {
         };
         tx.execute("UPDATE imported_records SET normalized_date=?1,normalized_amount_minor=?2,transaction_type=?3,normalized_description=?4,validation_status='valid',review_status='corrected' WHERE id=?5",params![date,amount_minor,kind,description,record_id]).map_err(|e|ImportError::Database(e.to_string()))?;
         let duplicate: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM imported_records r JOIN import_batches b ON b.id=r.batch_id JOIN accounts a ON a.id=b.account_id JOIN financial_transactions t ON t.transaction_type=r.transaction_type JOIN account_entries e ON e.transaction_id=t.id AND e.account_id=a.id WHERE r.id=?1 AND t.status='posted' AND t.currency_code=a.currency_code AND t.amount_minor=?2 AND date(t.occurred_at)=date(?3)) OR EXISTS(SELECT 1 FROM imported_records r JOIN imported_records other ON other.batch_id=r.batch_id AND other.id<>r.id WHERE r.id=?1 AND other.validation_status='valid' AND other.normalized_amount_minor=?2 AND other.transaction_type=?4 AND date(other.normalized_date)=date(?3))",
+            "SELECT EXISTS(SELECT 1 FROM imported_records r JOIN import_batches b ON b.id=r.batch_id JOIN accounts a ON a.id=b.account_id JOIN financial_transactions t ON t.transaction_type=r.transaction_type JOIN account_entries e ON e.transaction_id=t.id AND e.account_id=a.id WHERE r.id=?1 AND t.status='posted' AND t.currency_code=a.currency_code AND t.amount_minor=?2 AND date(t.occurred_at)=date(?3) AND lower(trim(COALESCE(t.description,'')))=lower(trim(COALESCE(r.normalized_description,'')))) OR EXISTS(SELECT 1 FROM imported_records r JOIN imported_records other ON other.batch_id=r.batch_id AND other.id<>r.id WHERE r.id=?1 AND other.validation_status='valid' AND other.normalized_amount_minor=?2 AND other.transaction_type=?4 AND date(other.normalized_date)=date(?3) AND lower(trim(COALESCE(other.normalized_description,'')))=lower(trim(COALESCE(r.normalized_description,''))))",
             params![record_id, amount_minor, date, kind], |r| r.get(0),
         ).map_err(|e| ImportError::Database(e.to_string()))?;
         if duplicate {
@@ -614,6 +644,43 @@ impl ImportRepository for SqliteImportRepository<'_> {
             .map_err(|e| ImportError::Database(e.to_string()))?;
         Ok(())
     }
+    fn confirm_valid_records(&self, batch_id: &str) -> Result<usize, ImportError> {
+        let mut c = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = c
+            .transaction()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        let reviewable: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1 AND status='review' AND revision_of_batch_id IS NULL)",
+                [batch_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if !reviewable {
+            return Err(ImportError::InvalidBatch);
+        }
+        let changed = tx
+            .execute(
+                "UPDATE imported_records SET review_status='confirmed',duplicate_status='confirmed_new' WHERE batch_id=?1 AND validation_status='valid' AND review_status='pending' AND duplicate_status='unmatched'",
+                [batch_id],
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        if changed > 0 {
+            tx.execute(
+                "INSERT INTO import_logs(id,batch_id,stage,severity,message,corrective_action) VALUES (?1,?2,'review','INFO',?3,'Ambiguous and possible-duplicate rows were left for individual review.')",
+                params![Uuid::new_v4().to_string(),batch_id,format!("Bulk confirmed {changed} valid, non-duplicate records")],
+            )
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        }
+        tx.commit()
+            .map_err(|e| ImportError::Database(e.to_string()))?;
+        Ok(changed)
+    }
+
     fn finalize(&self, batch_id: &str) -> Result<usize, ImportError> {
         let mut c = self
             .database
@@ -623,18 +690,18 @@ impl ImportRepository for SqliteImportRepository<'_> {
         let tx = c
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| ImportError::Database(e.to_string()))?;
-        let batch: Option<(String, String, String, Option<String>)> = tx
+        let batch: Option<(String, String, Option<String>)> = tx
             .query_row(
-                "SELECT account_id,status,reconciliation_status,revision_of_batch_id FROM import_batches WHERE id=?1",
+                "SELECT account_id,status,revision_of_batch_id FROM import_batches WHERE id=?1",
                 [batch_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .map_err(|e| ImportError::Database(e.to_string()))?;
-        let Some((account_id, status, reconciliation, revision_of_batch_id)) = batch else {
+        let Some((account_id, status, revision_of_batch_id)) = batch else {
             return Err(ImportError::InvalidBatch);
         };
-        if status != "review" || reconciliation == "discrepancy" {
+        if status != "review" {
             return Err(ImportError::InvalidBatch);
         }
         let active: bool = tx
@@ -646,6 +713,33 @@ impl ImportRepository for SqliteImportRepository<'_> {
             .map_err(|e| ImportError::Database(e.to_string()))?;
         if !active {
             return Err(ImportError::InvalidBatch);
+        }
+        if revision_of_batch_id.is_none() {
+            let imported = tx
+                .execute(
+                    "UPDATE imported_records SET review_status='confirmed',duplicate_status='confirmed_new' WHERE batch_id=?1 AND review_status='pending' AND validation_status='valid' AND transaction_type IN ('income','expense') AND duplicate_status='unmatched'",
+                    [batch_id],
+                )
+                .map_err(|e| ImportError::Database(e.to_string()))?;
+            let excluded = tx
+                .execute(
+                    "UPDATE imported_records SET review_status='skipped',duplicate_status='skip' WHERE batch_id=?1 AND review_status<>'skipped' AND (validation_status<>'valid' OR transaction_type NOT IN ('income','expense') OR duplicate_status NOT IN ('unmatched','confirmed_new'))",
+                    [batch_id],
+                )
+                .map_err(|e| ImportError::Database(e.to_string()))?;
+            if imported > 0 || excluded > 0 {
+                tx.execute(
+                    "INSERT INTO import_logs(id,batch_id,stage,severity,message,corrective_action) VALUES (?1,?2,'review',?3,?4,?5)",
+                    params![
+                        Uuid::new_v4().to_string(),
+                        batch_id,
+                        if excluded > 0 { "WARNING" } else { "INFO" },
+                        format!("Prepared {imported} eligible transactions; excluded {excluded} invalid, uncertain, or possible-duplicate rows"),
+                        "Only valid, direction-classified, unmatched rows are imported automatically. Excluded rows are kept in the workspace history and are not posted.",
+                    ],
+                )
+                .map_err(|e| ImportError::Database(e.to_string()))?;
+            }
         }
         if revision_of_batch_id.is_some() {
             let unresolved_changes: i64 = tx
@@ -669,7 +763,13 @@ impl ImportRepository for SqliteImportRepository<'_> {
                 return Err(ImportError::InvalidBatch);
             }
         }
-        let unresolved:i64=tx.query_row("SELECT COUNT(*) FROM imported_records WHERE batch_id=?1 AND (validation_status<>'valid' OR review_status='pending' OR (duplicate_status='probable' AND review_status NOT IN ('confirmed','skipped','corrected')))",[batch_id],|r|r.get(0)).map_err(|e|ImportError::Database(e.to_string()))?;
+        let unresolved: i64 = if revision_of_batch_id.is_some() {
+            tx.query_row("SELECT COUNT(*) FROM imported_records WHERE batch_id=?1 AND (validation_status<>'valid' OR review_status='pending' OR (duplicate_status='probable' AND review_status NOT IN ('confirmed','skipped','corrected')))", [batch_id], |row| row.get(0))
+                .map_err(|e| ImportError::Database(e.to_string()))?
+        } else {
+            tx.query_row("SELECT COUNT(*) FROM imported_records WHERE batch_id=?1 AND review_status<>'skipped' AND (validation_status<>'valid' OR review_status='pending' OR transaction_type NOT IN ('income','expense') OR duplicate_status NOT IN ('unmatched','confirmed_new'))", [batch_id], |row| row.get(0))
+                .map_err(|e| ImportError::Database(e.to_string()))?
+        };
         if unresolved > 0 {
             return Err(ImportError::InvalidBatch);
         }
@@ -767,6 +867,21 @@ impl ImportRepository for SqliteImportRepository<'_> {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| ImportError::Database(e.to_string()))?
         };
+        if rows.is_empty() && revision_of_batch_id.is_none() {
+            return Err(ImportError::InvalidBatch);
+        }
+        let rules: Vec<(String, String, String)> = {
+            let mut statement = tx
+                .prepare(
+                    "SELECT r.category_id,r.category_type,r.match_text FROM import_category_rule_terms r JOIN categories c ON c.id=r.category_id WHERE c.archived_at IS NULL ORDER BY length(r.match_text) DESC,r.created_at,r.id",
+                )
+                .map_err(|e| ImportError::Database(e.to_string()))?;
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .map_err(|e| ImportError::Database(e.to_string()))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| ImportError::Database(e.to_string()))?
+        };
         let currency: String = tx
             .query_row(
                 "SELECT currency_code FROM accounts WHERE id=?1",
@@ -786,6 +901,20 @@ impl ImportRepository for SqliteImportRepository<'_> {
             let signed = if kind == "income" { *amount } else { -*amount };
             tx.execute("INSERT INTO account_entries(id,transaction_id,account_id,amount_minor) VALUES (?1,?2,?3,?4)",params![Uuid::new_v4().to_string(),id,account_id,signed]).map_err(|e|ImportError::Database(e.to_string()))?;
             tx.execute("INSERT INTO transaction_audit_log(id,transaction_id,action,new_values) VALUES (?1,?2,'created',?3)",params![Uuid::new_v4().to_string(),id,serde_json::json!({"source":"import","batch_id":batch_id,"record_id":record_id,"amount_minor":amount,"transaction_type":kind,"occurred_at":date}).to_string()]).map_err(|e|ImportError::Database(e.to_string()))?;
+            if let Some(description) = description {
+                if let Some(category_id) = best_import_category_rule(&rules, description, kind) {
+                    tx.execute(
+                        "DELETE FROM imported_record_allocations WHERE imported_record_id=?1",
+                        [record_id],
+                    )
+                    .map_err(|e| ImportError::Database(e.to_string()))?;
+                    tx.execute(
+                        "INSERT INTO imported_record_allocations(id,imported_record_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)",
+                        params![Uuid::new_v4().to_string(),record_id,category_id,amount],
+                    )
+                    .map_err(|e| ImportError::Database(e.to_string()))?;
+                }
+            }
             let allocations: Vec<(String, i64)> = {
                 let mut statement = tx.prepare("SELECT a.category_id,a.amount_minor FROM imported_record_allocations a WHERE a.imported_record_id=?1 ORDER BY a.category_id").map_err(|e|ImportError::Database(e.to_string()))?;
                 statement
@@ -1070,7 +1199,166 @@ pub struct ImportLogRecord {
     pub record_id: Option<String>,
     pub corrective_action: Option<String>,
 }
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ImportCategoryRuleRecord {
+    pub category_id: String,
+    pub category_name: String,
+    pub category_type: String,
+    pub match_text: String,
+}
 impl SqliteImportRepository<'_> {
+    pub fn list_category_rules(&self) -> Result<Vec<ImportCategoryRuleRecord>, ImportError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT r.category_id,c.name,r.category_type,r.match_text FROM import_category_rule_terms r JOIN categories c ON c.id=r.category_id WHERE c.archived_at IS NULL ORDER BY c.name COLLATE NOCASE,r.category_type,r.match_text COLLATE NOCASE",
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        statement
+            .query_map([], |row| {
+                Ok(ImportCategoryRuleRecord {
+                    category_id: row.get(0)?,
+                    category_name: row.get(1)?,
+                    category_type: row.get(2)?,
+                    match_text: row.get(3)?,
+                })
+            })
+            .map_err(|error| ImportError::Database(error.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| ImportError::Database(error.to_string()))
+    }
+
+    pub fn save_category_rule(
+        &self,
+        category_id: Option<&str>,
+        category_name: &str,
+        category_type: &str,
+        match_texts: &[String],
+    ) -> Result<Vec<ImportCategoryRuleRecord>, ImportError> {
+        let name = category_name.trim();
+        if name.is_empty()
+            || name.chars().count() > 100
+            || !matches!(category_type, "income" | "expense")
+            || match_texts.is_empty()
+            || match_texts.len() > 50
+        {
+            return Err(ImportError::InvalidBatch);
+        }
+        let mut normalized = Vec::new();
+        let mut unique = std::collections::HashSet::new();
+        for value in match_texts {
+            let term = value.trim();
+            let key = term.to_lowercase();
+            if term.is_empty() || term.chars().count() > 100 {
+                return Err(ImportError::InvalidBatch);
+            }
+            if unique.insert(key) {
+                normalized.push(term.to_string());
+            }
+        }
+        if normalized.is_empty() {
+            return Err(ImportError::InvalidBatch);
+        }
+
+        let mut connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        let id = if let Some(category_id) = category_id {
+            let active_type: Option<String> = transaction
+                .query_row(
+                    "SELECT category_type FROM categories WHERE id=?1 AND archived_at IS NULL",
+                    [category_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| ImportError::Database(error.to_string()))?;
+            if active_type.as_deref() != Some(category_type) {
+                return Err(ImportError::InvalidBatch);
+            }
+            transaction
+                .execute(
+                    "UPDATE categories SET name=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+                    params![name, category_id],
+                )
+                .map_err(|error| ImportError::Database(error.to_string()))?;
+            category_id.to_string()
+        } else {
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT id FROM categories WHERE lower(name)=lower(?1) AND category_type=?2 AND archived_at IS NULL",
+                    params![name, category_type],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| ImportError::Database(error.to_string()))?;
+            if let Some(id) = existing {
+                id
+            } else {
+                let id = Uuid::new_v4().to_string();
+                transaction
+                    .execute(
+                        "INSERT INTO categories(id,name,category_type,is_system) VALUES (?1,?2,?3,0)",
+                        params![id, name, category_type],
+                    )
+                    .map_err(|error| ImportError::Database(error.to_string()))?;
+                id
+            }
+        };
+        transaction
+            .execute(
+                "DELETE FROM import_category_rule_terms WHERE category_id=?1",
+                [&id],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        for term in normalized {
+            let conflict: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM import_category_rule_terms WHERE category_type=?1 AND lower(match_text)=lower(?2) AND category_id<>?3)",
+                    params![category_type, term, id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| ImportError::Database(error.to_string()))?;
+            if conflict {
+                return Err(ImportError::InvalidBatch);
+            }
+            transaction
+                .execute(
+                    "INSERT INTO import_category_rule_terms(id,category_id,category_type,match_text) VALUES (?1,?2,?3,?4)",
+                    params![Uuid::new_v4().to_string(), id, category_type, term],
+                )
+                .map_err(|error| ImportError::Database(error.to_string()))?;
+        }
+        transaction
+            .commit()
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        drop(connection);
+        self.list_category_rules()
+    }
+
+    pub fn delete_category_rule(&self, category_id: &str) -> Result<(), ImportError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        connection
+            .execute(
+                "DELETE FROM import_category_rule_terms WHERE category_id=?1",
+                [category_id],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        Ok(())
+    }
+
     pub fn get_reconciliation(&self, batch_id: &str) -> Result<ImportReconciliation, ImportError> {
         let c = self
             .database
@@ -1112,6 +1400,11 @@ impl SqliteImportRepository<'_> {
             .lock()
             .map_err(|_| ImportError::ConnectionPoisoned)?;
         refresh_source_retention(&c, batch_id)?;
+        c.execute(
+            "UPDATE imported_records AS candidate SET duplicate_status=CASE WHEN EXISTS(SELECT 1 FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN import_batches b ON b.id=candidate.batch_id JOIN accounts a ON a.id=b.account_id WHERE e.account_id=a.id AND t.status='posted' AND t.currency_code=a.currency_code AND t.amount_minor=candidate.normalized_amount_minor AND t.transaction_type=candidate.transaction_type AND date(t.occurred_at)=date(candidate.normalized_date) AND lower(trim(COALESCE(t.description,'')))=lower(trim(COALESCE(candidate.normalized_description,'')))) OR EXISTS(SELECT 1 FROM imported_records other WHERE other.batch_id=candidate.batch_id AND other.id<>candidate.id AND other.validation_status='valid' AND other.normalized_amount_minor=candidate.normalized_amount_minor AND other.transaction_type=candidate.transaction_type AND date(other.normalized_date)=date(candidate.normalized_date) AND lower(trim(COALESCE(other.normalized_description,'')))=lower(trim(COALESCE(candidate.normalized_description,'')))) THEN 'probable' ELSE 'unmatched' END WHERE candidate.batch_id=?1 AND candidate.validation_status='valid' AND candidate.transaction_type IN ('income','expense') AND candidate.review_status='pending' AND candidate.duplicate_status IN ('probable','unmatched') AND EXISTS(SELECT 1 FROM import_batches current_batch WHERE current_batch.id=candidate.batch_id AND current_batch.status='review' AND current_batch.revision_of_batch_id IS NULL)",
+            [batch_id],
+        )
+        .map_err(|e| ImportError::Database(e.to_string()))?;
         let mut s=c.prepare("SELECT id,source_row_reference,original_date,normalized_date,original_description,normalized_description,original_amount,normalized_amount_minor,transaction_type,validation_status,duplicate_status,review_status FROM imported_records WHERE batch_id=?1 ORDER BY CAST(source_row_reference AS INTEGER)").map_err(|e|ImportError::Database(e.to_string()))?;
         let mut records = s
             .query_map([batch_id], |r| {
@@ -1176,16 +1469,28 @@ impl SqliteImportRepository<'_> {
         contents: &str,
         mapping: &CsvImportMapping,
     ) -> Result<usize, ImportError> {
-        if !matches!(mapping.positive_amount_type.as_str(), "income" | "expense")
-            || !matches!(
-                mapping.date_format.as_str(),
-                "iso_date"
-                    | "rfc3339"
-                    | "day_month_year_slash"
-                    | "month_day_year_slash"
-                    | "day_month_year_dash"
-            )
-        {
+        self.stage_csv_with_directions(batch_id, contents, mapping, None, None)
+    }
+
+    pub fn stage_csv_with_directions(
+        &self,
+        batch_id: &str,
+        contents: &str,
+        mapping: &CsvImportMapping,
+        incoming_amount_column: Option<&str>,
+        outgoing_amount_column: Option<&str>,
+    ) -> Result<usize, ImportError> {
+        if !matches!(
+            mapping.positive_amount_type.as_str(),
+            "income" | "expense" | "unknown"
+        ) || !matches!(
+            mapping.date_format.as_str(),
+            "iso_date"
+                | "rfc3339"
+                | "day_month_year_slash"
+                | "month_day_year_slash"
+                | "day_month_year_dash"
+        ) {
             return Err(ImportError::InvalidBatch);
         }
         let mut reader = csv::ReaderBuilder::new()
@@ -1204,6 +1509,25 @@ impl SqliteImportRepository<'_> {
             .iter()
             .position(|h| h == mapping.amount_column)
             .ok_or(ImportError::InvalidBatch)?;
+        let incoming_index = incoming_amount_column
+            .map(|column| {
+                headers
+                    .iter()
+                    .position(|header| header == column)
+                    .ok_or(ImportError::InvalidBatch)
+            })
+            .transpose()?;
+        let outgoing_index = outgoing_amount_column
+            .map(|column| {
+                headers
+                    .iter()
+                    .position(|header| header == column)
+                    .ok_or(ImportError::InvalidBatch)
+            })
+            .transpose()?;
+        if incoming_index.is_some() && incoming_index == outgoing_index {
+            return Err(ImportError::InvalidBatch);
+        }
         let description_index = mapping
             .description_column
             .as_ref()
@@ -1215,32 +1539,88 @@ impl SqliteImportRepository<'_> {
         for (index, row) in reader.records().enumerate() {
             let row = row.map_err(|e| ImportError::Database(e.to_string()))?;
             let raw_date = row.get(date_index).unwrap_or("").trim().to_string();
-            let raw_amount = row.get(amount_index).unwrap_or("").trim().to_string();
+            let source_amount = row.get(amount_index).unwrap_or("").trim().to_string();
             let description = description_index
                 .and_then(|i| row.get(i))
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned);
             let date = parse_import_date(&raw_date, &mapping.date_format);
-            let signed = raw_amount.starts_with('-');
-            let amount = parse_minor_units(raw_amount.strip_prefix('-').unwrap_or(&raw_amount));
-            let status = if raw_date.is_empty() || raw_amount.is_empty() {
+            let (raw_amount, amount, transaction_type, status) = if incoming_index.is_some()
+                || outgoing_index.is_some()
+            {
+                let incoming_raw = incoming_index
+                    .and_then(|column| row.get(column))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let outgoing_raw = outgoing_index
+                    .and_then(|column| row.get(column))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let incoming = parse_minor_units(&incoming_raw.replace(',', ""));
+                let outgoing = parse_minor_units(&outgoing_raw.replace(',', ""));
+                match (incoming, outgoing) {
+                    (Some(_), Some(_)) => (
+                        format!("in: {incoming_raw}; out: {outgoing_raw}"),
+                        None,
+                        None,
+                        "uncertain",
+                    ),
+                    (Some(value), None) => (
+                        incoming_raw,
+                        Some(value),
+                        Some("income"),
+                        if date.is_some() { "valid" } else { "uncertain" },
+                    ),
+                    (None, Some(value)) => (
+                        outgoing_raw,
+                        Some(value),
+                        Some("expense"),
+                        if date.is_some() { "valid" } else { "uncertain" },
+                    ),
+                    (None, None) => (
+                        source_amount,
+                        None,
+                        None,
+                        if raw_date.is_empty() {
+                            "invalid"
+                        } else {
+                            "uncertain"
+                        },
+                    ),
+                }
+            } else {
+                let signed = source_amount.starts_with('-');
+                let normalized = source_amount.replace(',', "");
+                let amount = parse_minor_units(normalized.strip_prefix('-').unwrap_or(&normalized));
+                let status = if raw_date.is_empty() || source_amount.is_empty() {
+                    "invalid"
+                } else if date.is_none() || amount.is_none() {
+                    "uncertain"
+                } else {
+                    "valid"
+                };
+                let transaction_type = if signed {
+                    Some(if mapping.positive_amount_type == "expense" {
+                        "income"
+                    } else {
+                        "expense"
+                    })
+                } else if amount.is_some() && mapping.positive_amount_type != "unknown" {
+                    Some(mapping.positive_amount_type.as_str())
+                } else {
+                    None
+                };
+                (source_amount, amount, transaction_type, status)
+            };
+            let status = if raw_date.is_empty() {
                 "invalid"
-            } else if date.is_none() || amount.is_none() {
+            } else if date.is_none() || amount.is_none() || transaction_type.is_none() {
                 "uncertain"
             } else {
-                "valid"
-            };
-            let transaction_type = if signed {
-                Some(if mapping.positive_amount_type == "income" {
-                    "expense"
-                } else {
-                    "income"
-                })
-            } else if amount.is_some() {
-                Some(mapping.positive_amount_type.as_str())
-            } else {
-                None
+                status
             };
             rows.push((
                 index + 2,
@@ -1280,7 +1660,7 @@ impl SqliteImportRepository<'_> {
         }
         for (line, raw_date, date, description, raw_amount, amount, kind, status) in &rows {
             let duplicate = if status == "valid" {
-                tx.query_row("SELECT EXISTS(SELECT 1 FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN import_batches b ON b.id=?1 JOIN accounts a ON a.id=b.account_id WHERE e.account_id=a.id AND t.status='posted' AND t.currency_code=a.currency_code AND t.amount_minor=?2 AND t.transaction_type=?3 AND date(t.occurred_at)=date(?4)) OR EXISTS(SELECT 1 FROM imported_records r WHERE r.batch_id=?1 AND r.validation_status='valid' AND r.normalized_amount_minor=?2 AND r.transaction_type=?3 AND date(r.normalized_date)=date(?4))",params![batch_id,amount,kind,date],|r|r.get::<_,bool>(0)).map_err(|e|ImportError::Database(e.to_string()))?
+                tx.query_row("SELECT EXISTS(SELECT 1 FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN import_batches b ON b.id=?1 JOIN accounts a ON a.id=b.account_id WHERE e.account_id=a.id AND t.status='posted' AND t.currency_code=a.currency_code AND t.amount_minor=?2 AND t.transaction_type=?3 AND date(t.occurred_at)=date(?4) AND lower(trim(COALESCE(t.description,'')))=lower(trim(COALESCE(?5,'')))) OR EXISTS(SELECT 1 FROM imported_records r WHERE r.batch_id=?1 AND r.validation_status='valid' AND r.normalized_amount_minor=?2 AND r.transaction_type=?3 AND date(r.normalized_date)=date(?4) AND lower(trim(COALESCE(r.normalized_description,'')))=lower(trim(COALESCE(?5,''))))",params![batch_id,amount,kind,date,description],|r|r.get::<_,bool>(0)).map_err(|e|ImportError::Database(e.to_string()))?
             } else {
                 false
             };
@@ -1305,6 +1685,24 @@ impl SqliteImportRepository<'_> {
         batch_id: &str,
         pages: Vec<String>,
     ) -> Result<usize, ImportError> {
+        self.stage_pdf_pages_with_types(batch_id, pages, None)
+    }
+
+    pub fn stage_pdf_table_pages(
+        &self,
+        batch_id: &str,
+        pages: Vec<String>,
+        row_transaction_types: Vec<Option<String>>,
+    ) -> Result<usize, ImportError> {
+        self.stage_pdf_pages_with_types(batch_id, pages, Some(row_transaction_types))
+    }
+
+    fn stage_pdf_pages_with_types(
+        &self,
+        batch_id: &str,
+        pages: Vec<String>,
+        row_transaction_types: Option<Vec<Option<String>>>,
+    ) -> Result<usize, ImportError> {
         let extracted_bytes = pages
             .iter()
             .try_fold(0usize, |total, page| total.checked_add(page.len()))
@@ -1318,7 +1716,9 @@ impl SqliteImportRepository<'_> {
                 let text = line.split_whitespace().collect::<Vec<_>>().join(" ");
                 if !text.is_empty() {
                     let candidate_date = extract_pdf_date(&text).unwrap_or_default();
-                    let candidate_amount = extract_pdf_amount(&text).unwrap_or_default();
+                    let candidate_amount =
+                        extract_pdf_amount(&text, row_transaction_types.is_some())
+                            .unwrap_or_default();
                     extracted_rows.push((
                         format!(
                             "{:08} — Page {}, line {}",
@@ -1335,6 +1735,16 @@ impl SqliteImportRepository<'_> {
         }
         if extracted_rows.is_empty() {
             return Err(ImportError::PdfNoExtractableText);
+        }
+        if let Some(types) = &row_transaction_types {
+            if types.len() != extracted_rows.len()
+                || types
+                    .iter()
+                    .flatten()
+                    .any(|kind| !matches!(kind.as_str(), "income" | "expense"))
+            {
+                return Err(ImportError::InvalidBatch);
+            }
         }
         let mut csv_bytes = Vec::new();
         {
@@ -1373,18 +1783,56 @@ impl SqliteImportRepository<'_> {
         let tx = connection
             .transaction()
             .map_err(|e| ImportError::Database(e.to_string()))?;
-        for (record, (reference, _, _, _)) in records.iter().zip(extracted_rows) {
+        for (index, (record, (reference, _, _, _))) in
+            records.iter().zip(extracted_rows).enumerate()
+        {
+            let inferred_type = row_transaction_types
+                .as_ref()
+                .and_then(|types| types[index].as_deref());
+            if record.validation_status == "valid" {
+                if let Some(kind) = inferred_type {
+                    let amount = record
+                        .normalized_amount_minor
+                        .ok_or(ImportError::InvalidBatch)?;
+                    let date = record
+                        .normalized_date
+                        .as_deref()
+                        .ok_or(ImportError::InvalidBatch)?;
+                    let duplicate: bool = tx
+                        .query_row(
+                            "SELECT EXISTS(SELECT 1 FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id JOIN import_batches b ON b.id=?1 JOIN accounts a ON a.id=b.account_id WHERE e.account_id=a.id AND t.status='posted' AND t.currency_code=a.currency_code AND t.amount_minor=?2 AND t.transaction_type=?3 AND date(t.occurred_at)=date(?4) AND lower(trim(COALESCE(t.description,'')))=lower(trim(COALESCE(?6,'')))) OR EXISTS(SELECT 1 FROM imported_records r WHERE r.batch_id=?1 AND r.id<>?5 AND r.validation_status='valid' AND r.normalized_amount_minor=?2 AND r.transaction_type=?3 AND date(r.normalized_date)=date(?4) AND lower(trim(COALESCE(r.normalized_description,'')))=lower(trim(COALESCE(?6,''))))",
+                            params![batch_id, amount, kind, date, record.id, record.normalized_description],
+                            |r| r.get(0),
+                        )
+                        .map_err(|e| ImportError::Database(e.to_string()))?;
+                    tx.execute(
+                        "UPDATE imported_records SET source_row_reference=?1,transaction_type=?2,validation_status='valid',duplicate_status=?3 WHERE id=?4",
+                        params![reference,kind,if duplicate {"probable"} else {"unmatched"},record.id],
+                    )
+                    .map_err(|e| ImportError::Database(e.to_string()))?;
+                    continue;
+                }
+            }
             tx.execute(
                 "UPDATE imported_records SET source_row_reference=?1,validation_status='uncertain',transaction_type=NULL WHERE id=?2",
                 params![reference, record.id],
             )
             .map_err(|e| ImportError::Database(e.to_string()))?;
         }
-        tx.execute(
-            "INSERT INTO import_logs(id,batch_id,stage,severity,message,corrective_action) VALUES (?1,?2,'parse','WARNING','Extracted selectable PDF text into uncertain review rows; no values were posted automatically','Correct each transaction row or skip headings, summaries and unsupported content. Scanned PDF OCR is not available.')",
-            params![Uuid::new_v4().to_string(), batch_id],
-        )
-        .map_err(|e| ImportError::Database(e.to_string()))?;
+        let (severity, message, corrective_action) = if row_transaction_types.is_some() {
+            (
+                "WARNING",
+                "Extracted PDF table rows for review; no values were posted automatically",
+                "Rows with a clear date, amount, and transaction direction can be confirmed together. Rows with ambiguous status or direction remain uncertain and need individual review.",
+            )
+        } else {
+            (
+                "WARNING",
+                "Extracted PDF text into uncertain review rows; no values were posted automatically",
+                "Review every extracted row before confirmation. Generic PDF layouts may include headings or other non-transaction text; correct or skip those rows.",
+            )
+        };
+        tx.execute("INSERT INTO import_logs(id,batch_id,stage,severity,message,corrective_action) VALUES (?1,?2,'parse',?3,?4,?5)",params![Uuid::new_v4().to_string(),batch_id,severity,message,corrective_action]).map_err(|e|ImportError::Database(e.to_string()))?;
         tx.commit()
             .map_err(|e| ImportError::Database(e.to_string()))?;
         Ok(count)
@@ -1453,6 +1901,21 @@ impl SqliteImportRepository<'_> {
         header_row: usize,
         mapping: &CsvImportMapping,
     ) -> Result<usize, ImportError> {
+        self.stage_xlsx_with_directions(
+            batch_id, contents, sheet_name, header_row, mapping, None, None,
+        )
+    }
+
+    pub fn stage_xlsx_with_directions(
+        &self,
+        batch_id: &str,
+        contents: Vec<u8>,
+        sheet_name: &str,
+        header_row: usize,
+        mapping: &CsvImportMapping,
+        incoming_amount_column: Option<&str>,
+        outgoing_amount_column: Option<&str>,
+    ) -> Result<usize, ImportError> {
         validate_workbook_expansion(&contents)?;
         if header_row == 0 {
             return Err(ImportError::InvalidBatch);
@@ -1487,6 +1950,25 @@ impl SqliteImportRepository<'_> {
             .iter()
             .position(|h| h == &mapping.amount_column)
             .ok_or(ImportError::InvalidBatch)?;
+        let incoming_index = incoming_amount_column
+            .map(|column| {
+                header_names
+                    .iter()
+                    .position(|header| header == column)
+                    .ok_or(ImportError::InvalidBatch)
+            })
+            .transpose()?;
+        let outgoing_index = outgoing_amount_column
+            .map(|column| {
+                header_names
+                    .iter()
+                    .position(|header| header == column)
+                    .ok_or(ImportError::InvalidBatch)
+            })
+            .transpose()?;
+        if incoming_index.is_some() && incoming_index == outgoing_index {
+            return Err(ImportError::InvalidBatch);
+        }
         if let Some(name) = &mapping.description_column {
             if !header_names.iter().any(|h| h == name) {
                 return Err(ImportError::InvalidBatch);
@@ -1514,17 +1996,26 @@ impl SqliteImportRepository<'_> {
                         start_column as u32 + date_index as u32,
                     ))
                     .is_some_and(|formula| !formula.is_empty());
-                let amount_formula = formula_range
-                    .get_value((
-                        start_row as u32 + index as u32,
-                        start_column as u32 + amount_index as u32,
-                    ))
-                    .is_some_and(|formula| !formula.is_empty());
+                let amount_formula = [Some(amount_index), incoming_index, outgoing_index]
+                    .into_iter()
+                    .flatten()
+                    .any(|column| {
+                        formula_range
+                            .get_value((
+                                start_row as u32 + index as u32,
+                                start_column as u32 + column as u32,
+                            ))
+                            .is_some_and(|formula| !formula.is_empty())
+                    });
                 let mut values = Vec::with_capacity(header_names.len() + 1);
                 values.push(format!("{}!{}", sheet_name, source_row));
                 for column in 0..header_names.len() {
                     let formula = (column == date_index && date_formula)
-                        || (column == amount_index && amount_formula);
+                        || ([Some(amount_index), incoming_index, outgoing_index]
+                            .into_iter()
+                            .flatten()
+                            .any(|mapped| column == mapped)
+                            && amount_formula);
                     if formula {
                         values.push(String::new());
                     } else {
@@ -1545,10 +2036,12 @@ impl SqliteImportRepository<'_> {
         }
         let mut csv_mapping = mapping.clone();
         csv_mapping.date_column = mapping.date_column.clone();
-        let count = self.stage_csv(
+        let count = self.stage_csv_with_directions(
             batch_id,
             std::str::from_utf8(&csv_bytes).map_err(|e| ImportError::Database(e.to_string()))?,
             &csv_mapping,
+            incoming_amount_column,
+            outgoing_amount_column,
         )?;
         let records = self.list_records(batch_id)?;
         if records.len() != source_rows.len() || records.len() != count {
@@ -1822,8 +2315,9 @@ fn extract_pdf_date(text: &str) -> Option<String> {
     None
 }
 
-fn extract_pdf_amount(text: &str) -> Option<String> {
-    for token in text.split_whitespace().rev() {
+fn extract_pdf_amount(text: &str, allow_trailing_integer: bool) -> Option<String> {
+    let tokens = text.split_whitespace().collect::<Vec<_>>();
+    for (index, token) in tokens.iter().enumerate().rev() {
         let clean = token.trim_matches(|character: char| {
             !character.is_ascii_alphanumeric()
                 && !matches!(character, '.' | ',' | '-' | '(' | ')' | '$' | '£' | '€')
@@ -1845,7 +2339,10 @@ fn extract_pdf_amount(text: &str) -> Option<String> {
             .trim_start_matches('(')
             .to_string();
         number = number.trim_end_matches(')').replace(',', "");
-        if !number.contains('.') && !has_currency {
+        if !number.contains('.')
+            && !has_currency
+            && !(allow_trailing_integer && index + 1 == tokens.len())
+        {
             continue;
         }
         if parse_minor_units(&number).is_some() {
@@ -1909,10 +2406,17 @@ mod tests {
             Some("2026-11-06".into())
         );
         assert_eq!(
-            extract_pdf_amount("Purchase 06/11/2026 -1,234.50"),
+            extract_pdf_amount("Purchase 06/11/2026 -1,234.50", false),
             Some("-1234.50".into())
         );
-        assert_eq!(extract_pdf_amount("Transfer reference 2026-11-06"), None);
+        assert_eq!(
+            extract_pdf_amount("Transfer reference 2026-11-06", false),
+            None
+        );
+        assert_eq!(
+            extract_pdf_amount("Purchase 06/11/2026 15", true),
+            Some("15".into())
+        );
     }
 
     fn db() -> Database {
@@ -2708,7 +3212,7 @@ mod tests {
     }
 
     #[test]
-    fn finalization_rejects_unreviewed_rows_without_posting() {
+    fn finalization_imports_valid_pending_rows_without_manual_review() {
         let db = db();
         account(&db);
         let repo = SqliteImportRepository::new(&db);
@@ -2722,17 +3226,14 @@ mod tests {
             })
             .unwrap();
         staged_expense(&repo, &batch);
-        assert!(matches!(
-            repo.finalize(&batch),
-            Err(ImportError::InvalidBatch)
-        ));
+        assert_eq!(repo.finalize(&batch).unwrap(), 1);
         let entries: i64 = db
             .connection()
             .lock()
             .unwrap()
             .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(entries, 0);
+        assert_eq!(entries, 1);
     }
 
     #[test]
@@ -2775,7 +3276,7 @@ mod tests {
     }
 
     #[test]
-    fn reconciles_statement_balances_and_blocks_discrepancies() {
+    fn statement_balance_discrepancies_do_not_block_import() {
         let db = db();
         account(&db);
         let repo = SqliteImportRepository::new(&db);
@@ -2798,21 +3299,18 @@ mod tests {
         let discrepancy = repo.get_reconciliation(&batch).unwrap();
         assert_eq!(discrepancy.outcome, "discrepancy");
         assert_eq!(discrepancy.difference_minor, Some(50));
-        assert!(matches!(
-            repo.finalize(&batch),
-            Err(ImportError::InvalidBatch)
-        ));
+        assert_eq!(repo.finalize(&batch).unwrap(), 1);
         let status: String = db
             .connection()
             .lock()
             .unwrap()
             .query_row(
-                "SELECT reconciliation_status FROM import_batches WHERE id=?1",
+                "SELECT status FROM import_batches WHERE id=?1",
                 [&batch],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(status, "discrepancy");
+        assert_eq!(status, "finalized");
     }
 
     #[test]
@@ -2907,6 +3405,370 @@ mod tests {
     }
 
     #[test]
+    fn finalizes_confirmed_records_without_category_allocations() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "uncategorized.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        let row = staged_expense(&repo, &batch);
+        repo.review_record(&row, true).unwrap();
+
+        assert_eq!(repo.finalize(&batch).unwrap(), 1);
+        let connection = db.connection().lock().unwrap();
+        let transaction_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM financial_transactions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let allocation_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM category_allocations", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(transaction_count, 1);
+        assert_eq!(allocation_count, 0);
+    }
+
+    #[test]
+    fn import_category_rules_create_categories_and_enforce_unique_terms_by_type() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let rules = repository
+            .save_category_rule(
+                None,
+                "Food",
+                "expense",
+                &["Inland Hotel".into(), "Hope Traders".into()],
+            )
+            .unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].category_name, "Food");
+        assert_eq!(rules[0].category_type, "expense");
+        let category_id = rules[0].category_id.clone();
+
+        assert!(matches!(
+            repository.save_category_rule(None, "Meals", "expense", &["inland hotel".into()]),
+            Err(ImportError::InvalidBatch)
+        ));
+        let replacement = repository
+            .save_category_rule(
+                Some(&category_id),
+                "Food",
+                "expense",
+                &["Restaurant".into()],
+            )
+            .unwrap();
+        assert_eq!(replacement.len(), 1);
+        assert_eq!(replacement[0].match_text, "Restaurant");
+
+        repository.delete_category_rule(&category_id).unwrap();
+        assert!(repository.list_category_rules().unwrap().is_empty());
+        let category_exists: bool = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1 AND name='Food' AND archived_at IS NULL)",
+                [&category_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(category_exists);
+    }
+
+    #[test]
+    fn imports_safe_rows_with_description_categories_and_excludes_unsafe_rows() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let food = repository
+            .save_category_rule(
+                None,
+                "Food",
+                "expense",
+                &["inland hotel".into(), "hope traders".into()],
+            )
+            .unwrap()[0]
+            .category_id
+            .clone();
+        repository
+            .save_category_rule(None, "Hotel", "expense", &["hotel".into()])
+            .unwrap();
+        let batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        let mapping = CsvImportMapping {
+            date_column: "date".into(),
+            description_column: Some("memo".into()),
+            amount_column: "amount".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "iso_date".into(),
+        };
+        repository
+            .stage_csv(
+                &batch,
+                "date,memo,amount\n2026-11-05,Inland Hotel,25.00\n2026-11-05,Shop,12.00\n2026-11-05,Inland Hotel,25.00\nbad,Other,5.00\n",
+                &mapping,
+            )
+            .unwrap();
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE import_batches SET reconciliation_status='discrepancy' WHERE id=?1",
+                [&batch],
+            )
+            .unwrap();
+
+        assert_eq!(repository.finalize(&batch).unwrap(), 2);
+        let records = repository.list_records(&batch).unwrap();
+        assert_eq!(records[0].review_status, "confirmed");
+        assert_eq!(records[1].review_status, "confirmed");
+        assert_eq!(records[2].review_status, "skipped");
+        assert_eq!(records[3].review_status, "skipped");
+        let connection = db.connection().lock().unwrap();
+        let (transaction_count, categorized): (i64, i64) = connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM financial_transactions),(SELECT COUNT(*) FROM category_allocations WHERE category_id=?1)",
+                [&food],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((transaction_count, categorized), (2, 1));
+        let matched_category: String = connection
+            .query_row(
+                "SELECT ca.category_id FROM category_allocations ca JOIN financial_transactions t ON t.id=ca.transaction_id WHERE t.description='Inland Hotel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(matched_category, food);
+    }
+
+    #[test]
+    fn infers_direction_from_incoming_and_outgoing_columns() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "direction.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        let mapping = CsvImportMapping {
+            date_column: "date".into(),
+            description_column: Some("memo".into()),
+            amount_column: "Paid In".into(),
+            positive_amount_type: "income".into(),
+            date_format: "iso_date".into(),
+        };
+        repository
+            .stage_csv_with_directions(
+                &batch,
+                "date,memo,Paid In,Withdrawn\n2026-11-05,Received,25.00,0.00\n2026-11-06,Purchase,0.00,12.50\n2026-11-07,Ambiguous,2.00,1.00\n",
+                &mapping,
+                Some("Paid In"),
+                Some("Withdrawn"),
+            )
+            .unwrap();
+        let records = repository.list_records(&batch).unwrap();
+        assert_eq!(records[0].transaction_type.as_deref(), Some("income"));
+        assert_eq!(records[0].validation_status, "valid");
+        assert_eq!(records[1].transaction_type.as_deref(), Some("expense"));
+        assert_eq!(records[1].validation_status, "valid");
+        assert_eq!(records[2].transaction_type, None);
+        assert_eq!(records[2].validation_status, "uncertain");
+    }
+
+    #[test]
+    fn leaves_unsigned_generic_amounts_unclassified() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "unsigned.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        repository
+            .stage_csv(
+                &batch,
+                "date,memo,amount\n2026-11-05,Shop,12.50\n",
+                &CsvImportMapping {
+                    date_column: "date".into(),
+                    description_column: Some("memo".into()),
+                    amount_column: "amount".into(),
+                    positive_amount_type: "unknown".into(),
+                    date_format: "iso_date".into(),
+                },
+            )
+            .unwrap();
+        let record = repository.list_records(&batch).unwrap().remove(0);
+        assert_eq!(record.normalized_amount_minor, Some(1250));
+        assert_eq!(record.transaction_type, None);
+        assert_eq!(record.validation_status, "uncertain");
+    }
+
+    #[test]
+    fn same_date_amount_and_type_with_different_descriptions_are_not_duplicates() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+
+        repository
+            .stage_csv(
+                &batch,
+                "date,memo,amount\n2026-11-05,Shop A,12.50\n2026-11-05,Shop B,12.50\n",
+                &CsvImportMapping {
+                    date_column: "date".into(),
+                    description_column: Some("memo".into()),
+                    amount_column: "amount".into(),
+                    positive_amount_type: "expense".into(),
+                    date_format: "iso_date".into(),
+                },
+            )
+            .unwrap();
+
+        let staged = repository.list_records(&batch).unwrap();
+        db.connection()
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE imported_records SET duplicate_status='probable' WHERE id=?1",
+                [&staged[1].id],
+            )
+            .unwrap();
+        let records = repository.list_records(&batch).unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(
+            records
+                .iter()
+                .all(|record| record.duplicate_status == "unmatched")
+        );
+    }
+
+    #[test]
+    fn bulk_confirmation_leaves_uncertain_and_possible_duplicates_for_manual_review() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        let mapping = CsvImportMapping {
+            date_column: "date".into(),
+            description_column: Some("memo".into()),
+            amount_column: "amount".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "iso_date".into(),
+        };
+        repo.stage_csv(
+            &batch,
+            "date,memo,amount\n2026-11-05,Shop,12.50\n2026-11-05,Shop,12.50\nbad,Other,5.00\n",
+            &mapping,
+        )
+        .unwrap();
+
+        assert_eq!(repo.confirm_valid_records(&batch).unwrap(), 1);
+        let records = repo.list_records(&batch).unwrap();
+        assert_eq!(records[0].review_status, "confirmed");
+        assert_eq!(records[1].review_status, "pending");
+        assert_eq!(records[1].duplicate_status, "probable");
+        assert_eq!(records[2].validation_status, "uncertain");
+        assert_eq!(records[2].review_status, "pending");
+        let transaction_count: i64 = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM financial_transactions", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(transaction_count, 0);
+
+        let parent = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "original.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"original statement".to_vec(),
+            })
+            .unwrap();
+        repo.stage_csv(
+            &parent,
+            "date,memo,amount\n2026-11-07,Market,5.00\n",
+            &mapping,
+        )
+        .unwrap();
+        let parent_record = repo.list_records(&parent).unwrap().remove(0);
+        repo.review_record(&parent_record.id, true).unwrap();
+        repo.finalize(&parent).unwrap();
+
+        let revision = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "revised.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: Some(parent),
+                source_file_contents: b"revised statement".to_vec(),
+            })
+            .unwrap();
+        repo.stage_csv(
+            &revision,
+            "date,memo,amount\n2026-11-06,Market,5.00\n",
+            &mapping,
+        )
+        .unwrap();
+        assert!(matches!(
+            repo.confirm_valid_records(&revision),
+            Err(ImportError::InvalidBatch)
+        ));
+        assert_eq!(
+            repo.list_records(&revision).unwrap()[0].review_status,
+            "pending"
+        );
+    }
+
+    #[test]
     fn stages_pdfjs_extracted_page_text_as_uncertain_review_rows() {
         let db = db();
         account(&db);
@@ -2951,6 +3813,119 @@ mod tests {
             repository.source_file_contents(&batch).unwrap(),
             b"retained PDF source"
         );
+    }
+
+    #[test]
+    fn stages_table_extracted_pdf_rows_with_transaction_amounts_for_review() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.pdf".into(),
+                source_format: "pdf".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"retained PDF source".to_vec(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            repository
+                .stage_pdf_pages(
+                    &batch,
+                    vec![
+                        "2026-10-31 14:43:07 Airtime Purchase -15.00\n2026-10-30 13:45:28 Cash received 20.00".into(),
+                    ],
+                )
+                .unwrap(),
+            2
+        );
+
+        let records = repository.list_records(&batch).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records[0].normalized_date.as_deref(),
+            Some("2026-10-31T00:00:00Z")
+        );
+        assert_eq!(records[0].normalized_amount_minor, Some(1500));
+        assert_eq!(records[0].transaction_type, None);
+        assert_eq!(records[0].validation_status, "uncertain");
+        assert!(
+            records[0]
+                .original_description
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Airtime Purchase")
+        );
+        assert_eq!(
+            records[1].normalized_date.as_deref(),
+            Some("2026-10-30T00:00:00Z")
+        );
+        assert_eq!(records[1].normalized_amount_minor, Some(2000));
+        assert!(
+            records[1]
+                .original_description
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Cash received")
+        );
+    }
+
+    #[test]
+    fn stages_detected_pdf_table_direction_and_keeps_ambiguous_rows_unconfirmed() {
+        let db = db();
+        account(&db);
+        let repo = SqliteImportRepository::new(&db);
+        let batch = repo
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "statement.pdf".into(),
+                source_format: "pdf".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"retained PDF source".to_vec(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            repo.stage_pdf_table_pages(
+                &batch,
+                vec!["2026-10-31 Airtime -15.00\n2026-10-31 Airtime -15.00\n2026-10-31 Bus -15.00\n2026-10-30 Cash received 20.00\n2026-10-29 Failed 5.00\n2026-10-27 Bus 15".into()],
+                vec![
+                    Some("expense".into()),
+                    Some("expense".into()),
+                    Some("expense".into()),
+                    Some("income".into()),
+                    None,
+                    Some("expense".into()),
+                ],
+            )
+            .unwrap(),
+            6
+        );
+
+        let records = repo.list_records(&batch).unwrap();
+        assert_eq!(records[0].validation_status, "valid");
+        assert_eq!(records[0].transaction_type.as_deref(), Some("expense"));
+        assert_eq!(records[0].review_status, "pending");
+        assert_eq!(records[1].validation_status, "valid");
+        assert_eq!(records[1].transaction_type.as_deref(), Some("expense"));
+        assert_eq!(records[1].duplicate_status, "probable");
+        assert_eq!(records[2].validation_status, "valid");
+        assert_eq!(records[2].transaction_type.as_deref(), Some("expense"));
+        assert_eq!(records[2].duplicate_status, "unmatched");
+        assert_eq!(records[3].validation_status, "valid");
+        assert_eq!(records[3].transaction_type.as_deref(), Some("income"));
+        assert_eq!(records[4].validation_status, "uncertain");
+        assert_eq!(records[4].transaction_type, None);
+        assert_eq!(records[5].validation_status, "valid");
+        assert_eq!(records[5].normalized_amount_minor, Some(1500));
+        assert_eq!(records[5].transaction_type.as_deref(), Some("expense"));
+        let connection = db.connection().lock().unwrap();
+        let entries: i64 = connection
+            .query_row("SELECT COUNT(*) FROM account_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(entries, 0);
     }
 
     #[test]
@@ -3005,6 +3980,6 @@ mod tests {
         assert_eq!(record.normalized_amount_minor, Some(1250));
         assert_eq!(record.original_description.as_deref(), Some("Market"));
         assert_eq!(records[1].source_row_reference, "Transactions!3");
-        assert_eq!(records[1].validation_status, "invalid");
+        assert_eq!(records[1].validation_status, "uncertain");
     }
 }
