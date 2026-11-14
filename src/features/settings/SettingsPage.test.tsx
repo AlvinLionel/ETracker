@@ -155,6 +155,28 @@ describe("SettingsPage", () => {
     expect(await screen.findByRole("button", { name: "Reload ETracker" })).toBeInTheDocument();
   });
 
+  it("does not reset data when the confirmation warning is declined", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<SettingsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reset system" }));
+
+    expect(confirmation).toHaveBeenCalledWith("This erases all the data, are you sure?");
+    expect(invoke).not.toHaveBeenCalledWith("reset_all_data");
+    confirmation.mockRestore();
+  });
+
+  it("resets data only after the confirmation warning is accepted", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<SettingsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reset system" }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("reset_all_data"));
+    expect(confirmation).toHaveBeenCalledWith("This erases all the data, are you sure?");
+    confirmation.mockRestore();
+  });
+
   it("downloads a diagnostic report on request", async () => {
     invoke.mockImplementation((command: string) => command === "get_user_preferences"
       ? Promise.resolve({ subscription_reminders_enabled: true, subscription_reminder_days: 7, theme: "system", grid_opacity: 5, row_density: "standard" })

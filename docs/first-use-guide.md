@@ -8,11 +8,14 @@ ETracker is a Windows x64 desktop finance workspace. Accounts, statements and pl
 2. Open **Statement imports** and choose the account and statement file.
 3. CSV files support comma, semicolon, tab and pipe delimiters. Excel files support `.xls` and `.xlsx`. PDF text is extracted locally, including password-protected files after you enter a password. Image-only pages use the bundled English OCR model and require careful review.
 4. Optionally add automatic category rules using category names and phrases found in descriptions. Check the detected date and money-in/money-out fields, then choose **Import** once to post all eligible transactions. Income/expense direction comes from separate direction columns or signed amounts. An unsigned generic amount has no reliable direction and stays excluded. Invalid rows, unclear-direction rows and possible duplicates remain unposted; you can correct rows if needed. Categories are optional, and statement balance checks are not required.
-5. Use **Budgeting** to build an editable monthly plan. Use Analytics to inspect income, gross expenses, refunds and net spending.
+5. In **Suggested categories**, review recurring phrases found in at least three uncategorized transactions from finalized statement imports. Income and expense suggestions are kept separate. Approving a suggestion creates or reuses its category and rule, then categorizes matching existing imports; future imports use that rule automatically.
+6. Use **Budgeting** to build an editable monthly plan. Use Analytics to inspect income, gross expenses, refunds and net spending.
 
 ## Keep your data recoverable
 
 Create an encrypted backup from **Settings**, choose a save location separate from this computer, and keep the file and passphrase separately. Use a unique passphrase of at least 12 characters; ETracker cannot recover a forgotten passphrase. Restoring a backup replaces the current database, so export a fresh backup first if the current data may be needed.
+
+To erase the local profile, use **Settings → Reset system** and confirm the warning. This permanently removes saved records, settings, imported statements, and attached documents from this device. It does not delete encrypted backup files saved elsewhere; make a backup first if you may want to recover your data.
 
 On Windows, ETracker stores its database under the current user's roaming application-data directory for `com.etracker.app`. Keep this folder intact when updating or uninstalling if you want to preserve the local profile.
 

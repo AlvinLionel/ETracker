@@ -68,6 +68,20 @@ pub struct StagedCategoryAllocation {
     pub category_id: String,
     pub amount_minor: i64,
 }
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct ImportCategorySuggestion {
+    pub category_name: String,
+    pub category_type: String,
+    pub match_text: String,
+    pub occurrence_count: usize,
+}
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct AppliedImportCategorySuggestion {
+    pub category_name: String,
+    pub category_type: String,
+    pub match_text: String,
+    pub categorized_transaction_count: usize,
+}
 #[derive(Debug)]
 pub enum ImportError {
     Database(String),
@@ -80,6 +94,12 @@ pub enum ImportError {
 }
 pub trait ImportRepository {
     fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError>;
+    fn list_category_suggestions(&self) -> Result<Vec<ImportCategorySuggestion>, ImportError>;
+    fn apply_category_suggestion(
+        &self,
+        category_type: &str,
+        match_text: &str,
+    ) -> Result<AppliedImportCategorySuggestion, ImportError>;
     fn correct_record(
         &self,
         record_id: &str,
@@ -130,6 +150,23 @@ impl<R: ImportRepository> ImportService<R> {
             return Err(ImportError::SourceFileTooLarge);
         }
         self.repository.create_batch(batch)
+    }
+    pub fn list_category_suggestions(&self) -> Result<Vec<ImportCategorySuggestion>, ImportError> {
+        self.repository.list_category_suggestions()
+    }
+    pub fn apply_category_suggestion(
+        &self,
+        category_type: &str,
+        match_text: &str,
+    ) -> Result<AppliedImportCategorySuggestion, ImportError> {
+        if !matches!(category_type, "income" | "expense")
+            || match_text.trim().is_empty()
+            || match_text.chars().count() > 100
+        {
+            return Err(ImportError::InvalidBatch);
+        }
+        self.repository
+            .apply_category_suggestion(category_type, match_text)
     }
     pub fn correct_record(
         &self,

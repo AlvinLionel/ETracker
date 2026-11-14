@@ -21,6 +21,7 @@ describe("ImportsPage", () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "list_import_batches") return Promise.resolve([]);
       if (command === "list_import_category_rules") return Promise.resolve([]);
+      if (command === "list_import_category_suggestions") return Promise.resolve([]);
       if (command === "list_active_categories") return Promise.resolve([]);
       if (command === "csv_headers") return Promise.resolve(["Date", "Amount", "Memo"]);
       if (command === "csv_rows") return Promise.resolve([["Date", "Amount", "Memo"], ["2026-11-01", "10.00", "Shop"]]);
@@ -77,6 +78,30 @@ describe("ImportsPage", () => {
     const workspaceViews = screen.getByRole("navigation", { name: "Import workspace views" });
     await waitFor(() => expect(within(workspaceViews).getByRole("button", { name: "Logs" })).toHaveAttribute("aria-current", "page"));
     expect(await screen.findByText("Rows staged")).toBeInTheDocument();
+  });
+
+  it("applies an accepted repeated-description category suggestion", async () => {
+    const suggestion = { category_name: "Green Valley Hotel", category_type: "expense", match_text: "green valley hotel", occurrence_count: 4 };
+    const applied = { ...suggestion, categorized_transaction_count: 4 };
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "list_import_batches") return Promise.resolve([]);
+      if (command === "list_import_category_rules") return Promise.resolve([]);
+      if (command === "list_import_category_suggestions") return Promise.resolve([suggestion]);
+      if (command === "apply_import_category_suggestion") return Promise.resolve(applied);
+      if (command === "list_active_categories") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    render(<ImportsPage />);
+
+    expect(await screen.findByText(/appears in 4 uncategorized imported transactions/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add category & categorize matches" }));
+
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("apply_import_category_suggestion", {
+      categoryType: "expense",
+      matchText: "green valley hotel",
+    }));
+    expect(await screen.findByRole("status")).toHaveTextContent("categorized 4 existing transactions");
+    expect(screen.getByRole("status")).toHaveTextContent("Future matching imports will use it automatically");
   });
 
   it("rejects an oversized statement before reading or sending it", async () => {

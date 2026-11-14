@@ -1,16 +1,19 @@
 use crate::{
     application::imports::{
-        CsvImportMapping, ImportError, ImportReconciliation, ImportRepository,
-        MAX_SOURCE_FILE_BYTES, MAX_WORKBOOK_EXPANDED_BYTES, NewImportBatch,
-        StagedCategoryAllocation, detect_csv_delimiter,
+        AppliedImportCategorySuggestion, CsvImportMapping, ImportCategorySuggestion, ImportError,
+        ImportReconciliation, ImportRepository, MAX_SOURCE_FILE_BYTES, MAX_WORKBOOK_EXPANDED_BYTES,
+        NewImportBatch, StagedCategoryAllocation, detect_csv_delimiter,
     },
     infrastructure::database::Database,
 };
 use calamine::{Data, DataType, Reader, open_workbook_auto_from_rs};
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sha2::{Digest, Sha256};
 use std::io::Cursor;
 use uuid::Uuid;
+
+const MIN_CATEGORY_SUGGESTION_OCCURRENCES: usize = 3;
+const MAX_CATEGORY_SUGGESTIONS: usize = 12;
 
 fn parse_import_date(value: &str, format: &str) -> Option<String> {
     if format == "rfc3339" {
@@ -34,20 +37,21 @@ fn best_import_category_rule<'a>(
     description: &str,
     transaction_type: &str,
 ) -> Option<&'a str> {
-    let description = description.to_lowercase();
+    let description = normalize_category_match_text(description);
     let matching = rules
         .iter()
         .filter(|(_, rule_type, term)| {
-            rule_type == transaction_type && description.contains(&term.to_lowercase())
+            let term = normalize_category_match_text(term);
+            rule_type == transaction_type && description.contains(&term)
         })
         .collect::<Vec<_>>();
     let longest = matching
         .iter()
-        .map(|(_, _, term)| term.chars().count())
+        .map(|(_, _, term)| normalize_category_match_text(term).chars().count())
         .max()?;
     let best = matching
         .into_iter()
-        .filter(|(_, _, term)| term.chars().count() == longest)
+        .filter(|(_, _, term)| normalize_category_match_text(term).chars().count() == longest)
         .collect::<Vec<_>>();
     let category_ids = best
         .iter()
@@ -58,6 +62,236 @@ fn best_import_category_rule<'a>(
     } else {
         None
     }
+}
+
+fn normalize_category_match_text(value: &str) -> String {
+    let mut normalized = String::new();
+    for character in value.chars() {
+        if character.is_alphanumeric() {
+            normalized.extend(character.to_lowercase());
+        } else if !normalized.is_empty() && !normalized.ends_with(' ') {
+            normalized.push(' ');
+        }
+    }
+    normalized
+        .trim()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn category_suggestion_phrases(description: &str) -> Vec<String> {
+    const GENERIC_TERMS: &[&str] = &[
+        "account",
+        "bill",
+        "buy",
+        "charge",
+        "charges",
+        "credit",
+        "credited",
+        "customer",
+        "deposit",
+        "deposits",
+        "deposited",
+        "debit",
+        "debited",
+        "fee",
+        "fees",
+        "goods",
+        "m",
+        "merchant",
+        "mobile",
+        "money",
+        "mpesa",
+        "no",
+        "number",
+        "id",
+        "paid",
+        "pay",
+        "payment",
+        "paybill",
+        "pesa",
+        "purchase",
+        "push",
+        "ref",
+        "reference",
+        "receive",
+        "received",
+        "send",
+        "sent",
+        "stk",
+        "through",
+        "till",
+        "transaction",
+        "transfer",
+        "via",
+        "was",
+        "were",
+        "will",
+        "withdraw",
+        "withdrawal",
+        "withdrawals",
+        "withdrawn",
+    ];
+    const CONNECTOR_TERMS: &[&str] = &[
+        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "of",
+        "on", "the", "that", "this", "to", "with", "you", "your",
+    ];
+    let terms = description
+        .split_whitespace()
+        .filter(|term| {
+            !term.chars().any(char::is_numeric)
+                && !GENERIC_TERMS.contains(term)
+                && term.chars().count() >= 2
+        })
+        .take(4)
+        .collect::<Vec<_>>();
+    let mut phrases = std::collections::BTreeSet::new();
+    for phrase_size in (1..=terms.len()).rev() {
+        for phrase in terms.windows(phrase_size) {
+            if CONNECTOR_TERMS.contains(&phrase[0])
+                || CONNECTOR_TERMS.contains(&phrase[phrase.len() - 1])
+            {
+                continue;
+            }
+            let phrase = phrase.join(" ");
+            if phrase.chars().count() >= 3 && phrase.chars().count() <= 100 {
+                phrases.insert(phrase);
+            }
+        }
+    }
+    phrases.into_iter().collect()
+}
+
+fn category_name_from_match_text(match_text: &str) -> String {
+    match_text
+        .split_whitespace()
+        .map(|term| {
+            let mut characters = term.chars();
+            characters
+                .next()
+                .map(|first| first.to_uppercase().collect::<String>() + characters.as_str())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[derive(Clone)]
+struct UncategorizedImportedTransaction {
+    record_id: String,
+    transaction_id: String,
+    batch_id: String,
+    transaction_type: String,
+    description: String,
+    amount_minor: i64,
+}
+
+fn active_import_category_rules(
+    connection: &Connection,
+) -> Result<Vec<(String, String, String)>, ImportError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT r.category_id,r.category_type,r.match_text FROM import_category_rule_terms r JOIN categories c ON c.id=r.category_id WHERE c.archived_at IS NULL ORDER BY length(r.match_text) DESC,r.created_at,r.id",
+        )
+        .map_err(|error| ImportError::Database(error.to_string()))?;
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|error| ImportError::Database(error.to_string()))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| ImportError::Database(error.to_string()))
+}
+
+fn unallocated_imported_transactions(
+    connection: &Connection,
+) -> Result<Vec<UncategorizedImportedTransaction>, ImportError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT r.id,t.id,r.batch_id,r.transaction_type,t.description,t.amount_minor FROM imported_records r JOIN import_batches b ON b.id=r.batch_id AND b.status='finalized' JOIN financial_transactions t ON t.id=r.linked_transaction_id AND t.status='posted' AND t.source_type='import' AND t.transaction_type=r.transaction_type WHERE r.transaction_type IN ('income','expense') AND trim(COALESCE(t.description,''))<>'' AND NOT EXISTS(SELECT 1 FROM category_allocations a WHERE a.transaction_id=t.id) AND NOT EXISTS(SELECT 1 FROM imported_record_allocations a WHERE a.imported_record_id=r.id) ORDER BY r.created_at,r.id",
+        )
+        .map_err(|error| ImportError::Database(error.to_string()))?;
+    statement
+        .query_map([], |row| {
+            Ok(UncategorizedImportedTransaction {
+                record_id: row.get(0)?,
+                transaction_id: row.get(1)?,
+                batch_id: row.get(2)?,
+                transaction_type: row.get(3)?,
+                description: row.get(4)?,
+                amount_minor: row.get(5)?,
+            })
+        })
+        .map_err(|error| ImportError::Database(error.to_string()))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| ImportError::Database(error.to_string()))
+}
+
+fn build_category_suggestions(
+    transactions: &[UncategorizedImportedTransaction],
+    rules: &[(String, String, String)],
+) -> Vec<ImportCategorySuggestion> {
+    let mut counts = std::collections::BTreeMap::<(String, String), usize>::new();
+    for transaction in transactions {
+        if best_import_category_rule(
+            rules,
+            &transaction.description,
+            &transaction.transaction_type,
+        )
+        .is_some()
+        {
+            continue;
+        }
+        let normalized_description = normalize_category_match_text(&transaction.description);
+        for match_text in category_suggestion_phrases(&normalized_description) {
+            if normalized_description.contains(&match_text) {
+                *counts
+                    .entry((transaction.transaction_type.clone(), match_text))
+                    .or_default() += 1;
+            }
+        }
+    }
+    let mut candidates = counts
+        .into_iter()
+        .filter(|(_, count)| *count >= MIN_CATEGORY_SUGGESTION_OCCURRENCES)
+        .map(|((category_type, match_text), occurrence_count)| {
+            (category_type, match_text, occurrence_count)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .1
+            .split_whitespace()
+            .count()
+            .cmp(&left.1.split_whitespace().count())
+            .then_with(|| right.2.cmp(&left.2))
+            .then_with(|| left.0.cmp(&right.0))
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    let mut suggestions: Vec<ImportCategorySuggestion> = Vec::new();
+    for (category_type, match_text, occurrence_count) in candidates {
+        let padded_match = format!(" {match_text} ");
+        if suggestions.iter().any(|suggestion| {
+            suggestion.category_type == category_type
+                && format!(" {} ", suggestion.match_text).contains(&padded_match)
+        }) {
+            continue;
+        }
+        suggestions.push(ImportCategorySuggestion {
+            category_name: category_name_from_match_text(&match_text),
+            category_type,
+            match_text,
+            occurrence_count,
+        });
+    }
+    suggestions.sort_by(|left, right| {
+        right
+            .occurrence_count
+            .cmp(&left.occurrence_count)
+            .then_with(|| left.category_type.cmp(&right.category_type))
+            .then_with(|| left.match_text.cmp(&right.match_text))
+    });
+    suggestions.truncate(MAX_CATEGORY_SUGGESTIONS);
+    suggestions
 }
 pub struct SqliteImportRepository<'a> {
     database: &'a Database,
@@ -498,6 +732,147 @@ impl<'a> SqliteImportRepository<'a> {
     }
 }
 impl ImportRepository for SqliteImportRepository<'_> {
+    fn list_category_suggestions(&self) -> Result<Vec<ImportCategorySuggestion>, ImportError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let rules = active_import_category_rules(&connection)?;
+        let transactions = unallocated_imported_transactions(&connection)?;
+        Ok(build_category_suggestions(&transactions, &rules))
+    }
+
+    fn apply_category_suggestion(
+        &self,
+        category_type: &str,
+        match_text: &str,
+    ) -> Result<AppliedImportCategorySuggestion, ImportError> {
+        let mut connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let tx = connection
+            .transaction()
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        let existing_rules = active_import_category_rules(&tx)?;
+        let transactions = unallocated_imported_transactions(&tx)?;
+        let suggestion = build_category_suggestions(&transactions, &existing_rules)
+            .into_iter()
+            .find(|suggestion| {
+                suggestion.category_type == category_type
+                    && suggestion
+                        .match_text
+                        .eq_ignore_ascii_case(match_text.trim())
+            })
+            .ok_or(ImportError::InvalidBatch)?;
+
+        let category_id: Option<String> = tx
+            .query_row(
+                "SELECT id FROM categories WHERE lower(name)=lower(?1) AND category_type=?2 AND archived_at IS NULL",
+                params![suggestion.category_name, category_type],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        let category_id = if let Some(category_id) = category_id {
+            category_id
+        } else {
+            let category_id = Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO categories(id,name,category_type,is_system) VALUES (?1,?2,?3,0)",
+                params![category_id, suggestion.category_name, category_type],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+            category_id
+        };
+        let existing_term: Option<String> = tx
+            .query_row(
+                "SELECT category_id FROM import_category_rule_terms WHERE category_type=?1 AND lower(match_text)=lower(?2)",
+                params![category_type, suggestion.match_text],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        match existing_term {
+            Some(existing_category_id) if existing_category_id != category_id => {
+                return Err(ImportError::InvalidBatch);
+            }
+            Some(_) => {}
+            None => {
+                tx.execute(
+                    "INSERT INTO import_category_rule_terms(id,category_id,category_type,match_text) VALUES (?1,?2,?3,?4)",
+                    params![Uuid::new_v4().to_string(), category_id, category_type, suggestion.match_text],
+                )
+                .map_err(|error| ImportError::Database(error.to_string()))?;
+            }
+        }
+
+        let rules = active_import_category_rules(&tx)?;
+        let mut batches = std::collections::HashSet::new();
+        let mut categorized_transaction_count = 0;
+        for imported in &transactions {
+            if best_import_category_rule(&rules, &imported.description, &imported.transaction_type)
+                != Some(category_id.as_str())
+            {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO category_allocations(id,transaction_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)",
+                params![Uuid::new_v4().to_string(), imported.transaction_id, category_id, imported.amount_minor],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+            tx.execute(
+                "INSERT INTO imported_record_allocations(id,imported_record_id,category_id,amount_minor) VALUES (?1,?2,?3,?4)",
+                params![Uuid::new_v4().to_string(), imported.record_id, category_id, imported.amount_minor],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+            tx.execute(
+                "UPDATE financial_transactions SET updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+                [&imported.transaction_id],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+            tx.execute(
+                "INSERT INTO transaction_audit_log(id,transaction_id,action,previous_values,new_values,reason) VALUES (?1,?2,'updated',?3,?4,'Accepted a repeated-description import category suggestion')",
+                params![
+                    Uuid::new_v4().to_string(),
+                    imported.transaction_id,
+                    serde_json::json!({"allocations": []}).to_string(),
+                    serde_json::json!({"allocations": [{"category_id": category_id, "amount_minor": imported.amount_minor}]}).to_string()
+                ],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+            batches.insert(imported.batch_id.as_str());
+            categorized_transaction_count += 1;
+        }
+        if categorized_transaction_count == 0 {
+            return Err(ImportError::InvalidBatch);
+        }
+        for batch_id in batches {
+            tx.execute(
+                "INSERT INTO import_logs(id,batch_id,stage,severity,message) VALUES (?1,?2,'categorization','INFO',?3)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    batch_id,
+                    format!(
+                        "Applied the {} category suggestion to imported transactions",
+                        suggestion.category_name
+                    )
+                ],
+            )
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        }
+        tx.commit()
+            .map_err(|error| ImportError::Database(error.to_string()))?;
+        Ok(AppliedImportCategorySuggestion {
+            category_name: suggestion.category_name,
+            category_type: suggestion.category_type,
+            match_text: suggestion.match_text,
+            categorized_transaction_count,
+        })
+    }
+
     fn create_batch(&self, batch: &NewImportBatch) -> Result<String, ImportError> {
         let mut connection = self
             .database
@@ -870,18 +1245,7 @@ impl ImportRepository for SqliteImportRepository<'_> {
         if rows.is_empty() && revision_of_batch_id.is_none() {
             return Err(ImportError::InvalidBatch);
         }
-        let rules: Vec<(String, String, String)> = {
-            let mut statement = tx
-                .prepare(
-                    "SELECT r.category_id,r.category_type,r.match_text FROM import_category_rule_terms r JOIN categories c ON c.id=r.category_id WHERE c.archived_at IS NULL ORDER BY length(r.match_text) DESC,r.created_at,r.id",
-                )
-                .map_err(|e| ImportError::Database(e.to_string()))?;
-            statement
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-                .map_err(|e| ImportError::Database(e.to_string()))?
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(|e| ImportError::Database(e.to_string()))?
-        };
+        let rules = active_import_category_rules(&tx)?;
         let currency: String = tx
             .query_row(
                 "SELECT currency_code FROM accounts WHERE id=?1",
@@ -3483,6 +3847,140 @@ mod tests {
             )
             .unwrap();
         assert!(category_exists);
+    }
+
+    #[test]
+    fn suggests_repeated_import_descriptions_by_direction_and_applies_accepted_categories() {
+        let db = db();
+        account(&db);
+        let repository = SqliteImportRepository::new(&db);
+        let expense_batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "expenses.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        let expense_mapping = CsvImportMapping {
+            date_column: "date".into(),
+            description_column: Some("details".into()),
+            amount_column: "amount".into(),
+            positive_amount_type: "expense".into(),
+            date_format: "iso_date".into(),
+        };
+        repository
+            .stage_csv(
+                &expense_batch,
+                "date,details,amount\n2026-11-01,Payment to Green Valley Hotel ref 9001,10.00\n2026-11-02,Purchase at Green Valley Hotel grocery ref 9002,11.00\n2026-11-03,Payment to Green Valley Hotel ref 9003,12.00\n2026-11-04,Payment to One Off Shop ref 8001,13.00\n2026-11-05,Payment to One Off Shop ref 8002,14.00\n",
+                &expense_mapping,
+            )
+            .unwrap();
+        repository.finalize(&expense_batch).unwrap();
+
+        let income_batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "income.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        let income_mapping = CsvImportMapping {
+            positive_amount_type: "income".into(),
+            ..expense_mapping.clone()
+        };
+        repository
+            .stage_csv(
+                &income_batch,
+                "date,details,amount\n2026-11-06,Money received from Example Consulting ref 7001,20.00\n2026-11-07,Money received from Example Consulting ref 7002,21.00\n2026-11-08,Money received from Example Consulting ref 7003,22.00\n",
+                &income_mapping,
+            )
+            .unwrap();
+        repository.finalize(&income_batch).unwrap();
+
+        let suggestions = repository.list_category_suggestions().unwrap();
+        assert!(suggestions.iter().any(|suggestion| {
+            suggestion.category_type == "expense"
+                && suggestion.match_text == "green valley hotel"
+                && suggestion.category_name == "Green Valley Hotel"
+                && suggestion.occurrence_count == 3
+        }));
+        assert!(suggestions.iter().any(|suggestion| {
+            suggestion.category_type == "income"
+                && suggestion.match_text == "example consulting"
+                && suggestion.occurrence_count == 3
+        }));
+        assert!(
+            !suggestions
+                .iter()
+                .any(|suggestion| { suggestion.match_text == "one off shop" })
+        );
+
+        let applied = repository
+            .apply_category_suggestion("expense", "green valley hotel")
+            .unwrap();
+        assert_eq!(applied.category_name, "Green Valley Hotel");
+        assert_eq!(applied.categorized_transaction_count, 3);
+        let category_id: String = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT id FROM categories WHERE name='Green Valley Hotel' AND category_type='expense'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let categorized_count: i64 = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM category_allocations WHERE category_id=?1",
+                [&category_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(categorized_count, 3);
+        assert!(
+            !repository
+                .list_category_suggestions()
+                .unwrap()
+                .iter()
+                .any(|suggestion| suggestion.category_type == "expense")
+        );
+
+        let future_batch = repository
+            .create_batch(&NewImportBatch {
+                account_id: "a".into(),
+                source_file_name: "future.csv".into(),
+                source_format: "csv".into(),
+                revision_of_batch_id: None,
+                source_file_contents: b"statement fixture".to_vec(),
+            })
+            .unwrap();
+        repository
+            .stage_csv(
+                &future_batch,
+                "date,details,amount\n2026-11-09,Payment to Green-Valley Hotel,25.00\n",
+                &expense_mapping,
+            )
+            .unwrap();
+        repository.finalize(&future_batch).unwrap();
+        let categorized_count: i64 = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM category_allocations WHERE category_id=?1",
+                [&category_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(categorized_count, 4);
     }
 
     #[test]

@@ -37,6 +37,9 @@ function isIncomingHeader(header: string): boolean {
 function isOutgoingHeader(header: string): boolean {
   return /\b(paid out|withdrawn|withdrawals?|debits?|money out|outgoing|expense)\b/i.test(header);
 }
+function normalizeCategoryMatchText(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+}
 function positiveAmountType(header: string): "income" | "expense" {
   return isOutgoingHeader(header) ? "expense" : "income";
 }
@@ -93,6 +96,8 @@ type StagedRecord = { id:string; source_row_reference:string; original_date:stri
 const isEligibleImportRecord=(row:StagedRecord)=>row.validation_status==="valid"&&Boolean(row.transaction_type)&&["unmatched","confirmed_new"].includes(row.duplicate_status)&&row.review_status!=="skipped";
 type ImportLog = { id:string; timestamp:string; stage:string; severity:string; message:string; record_id:string|null; corrective_action:string|null };
 type ImportCategoryRule = { category_id:string; category_name:string; category_type:"income"|"expense"; match_text:string };
+type ImportCategorySuggestion = { category_name:string; category_type:"income"|"expense"; match_text:string; occurrence_count:number };
+type AppliedImportCategorySuggestion = ImportCategorySuggestion & { categorized_transaction_count:number };
 export default function ImportsPage({ navigate }: { navigate?: (page: string) => void } = {}) {
   const [accounts,setAccounts]=useState<Account[]>([]); const [batches,setBatches]=useState<Batch[]>([]);
   const [accountId,setAccountId]=useState(""); const [file,setFile]=useState<File|null>(null); const [contents,setContents]=useState("");
@@ -107,6 +112,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   const [selectedBatch,setSelectedBatch]=useState(""); const [records,setRecords]=useState<StagedRecord[]>([]); const [selectedRecord,setSelectedRecord]=useState<StagedRecord|null>(null);
   const [logs,setLogs]=useState<ImportLog[]>([]); const [workspaceTab,setWorkspaceTab]=useState<"records"|"logs">("records");
   const [categories,setCategories]=useState<Category[]>([]); const [categoryRules,setCategoryRules]=useState<ImportCategoryRule[]>([]);
+  const [categorySuggestions,setCategorySuggestions]=useState<ImportCategorySuggestion[]>([]); const [suggestionsLoading,setSuggestionsLoading]=useState(true); const [applyingSuggestion,setApplyingSuggestion]=useState("");
   const [ruleCategoryId,setRuleCategoryId]=useState(""); const [ruleCategoryName,setRuleCategoryName]=useState(""); const [ruleCategoryType,setRuleCategoryType]=useState<"income"|"expense">("expense"); const [ruleMatchTexts,setRuleMatchTexts]=useState("");
   const [correctDate,setCorrectDate]=useState(""); const [correctAmount,setCorrectAmount]=useState(""); const [correctType,setCorrectType]=useState("expense"); const [correctDescription,setCorrectDescription]=useState("");
   useEffect(()=>{
@@ -145,7 +151,12 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   async function viewRecords(id:string){setSelectedBatch(id);setWorkspaceTab("records");setRecords([]);try{const batch=batches.find(item=>item.id===id);const [staged,activity,changes]=await Promise.all([invoke<StagedRecord[]>("list_staged_import_records",{batchId:id}),invoke<ImportLog[]>("list_import_logs",{batchId:id}),batch?.revision_of_batch_id?invoke<RevisionChange[]>("list_import_revision_changes",{batchId:id}):Promise.resolve(batch?[]:null)]);setRecords(staged);setLogs(activity);if(changes!==null)setRevisionChanges(changes);}catch{setError("Import workspace could not be loaded.");}}
   async function viewLogs(id:string){await viewRecords(id);setWorkspaceTab("logs");}
   async function refreshCategoryRules(){setCategoryRules(await invoke<ImportCategoryRule[]>("list_import_category_rules"));}
-  useEffect(()=>{listActiveAccounts().then(setAccounts).catch(()=>setError("Accounts could not be loaded."));Promise.all([listActiveCategories("income"),listActiveCategories("expense")]).then(([income,expense])=>setCategories([...income,...expense])).catch(()=>setError("Categories could not be loaded."));refreshCategoryRules().catch(()=>setError("Import category rules could not be loaded."));refresh().catch(()=>setError("Import batches could not be loaded."));},[]);
+  async function refreshCategorySuggestions(){
+    setSuggestionsLoading(true);
+    try{setCategorySuggestions(await invoke<ImportCategorySuggestion[]>("list_import_category_suggestions"));}
+    finally{setSuggestionsLoading(false);}
+  }
+  useEffect(()=>{listActiveAccounts().then(setAccounts).catch(()=>setError("Accounts could not be loaded."));Promise.all([listActiveCategories("income"),listActiveCategories("expense")]).then(([income,expense])=>setCategories([...income,...expense])).catch(()=>setError("Categories could not be loaded."));refreshCategoryRules().catch(()=>setError("Import category rules could not be loaded."));refreshCategorySuggestions().catch(()=>setError("Category suggestions could not be loaded."));refresh().catch(()=>setError("Import batches could not be loaded."));},[]);
   async function selectFile(selected:File|null){
     setHeaders([]);setIncomingColumn("");setOutgoingColumn("");setSpreadsheetKind("unrecognized");setContents("");setSourceBytes([]);setXlsxBytes([]);setSheetNames([]);setSheetName("");setError("");setMessage("");setPdfProgress("");setPendingPdfBatchId("");setPdfPassword("");setNeedsPdfPassword(false);setIsFileLoading(false);
     if(!selected){setFile(null);return;}
@@ -254,11 +265,11 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   function startCorrection(row:StagedRecord){setError("");setMessage("");setSelectedRecord(row);setCorrectDate(row.normalized_date??"");setCorrectAmount(row.normalized_amount_minor===null?"":(row.normalized_amount_minor/100).toFixed(2));setCorrectType(row.transaction_type??"expense");setCorrectDescription(row.normalized_description??row.original_description??"");}
   async function saveCorrection(e:FormEvent){e.preventDefault();if(!selectedRecord)return;const datePart=correctDate.slice(0,10);const minor=Math.round(Number(correctAmount)*100);if(!Number.isSafeInteger(minor)||minor<=0||!datePart){setError("Enter a valid date and positive amount.");return;}try{await invoke("correct_import_record",{request:{record_id:selectedRecord.id,normalized_date:`${datePart}T00:00:00Z`,amount_minor:minor,transaction_type:correctType,description:correctDescription||null}});setSelectedRecord(null);if(batches.find(batch=>batch.id===selectedBatch)?.revision_of_batch_id)await invoke("compare_import_revision",{batchId:selectedBatch});setMessage("Staged record corrected.");await viewRecords(selectedBatch);}catch(e){setError(typeof e==="string"?e:"Correction could not be saved.");}}
   function previewCategory(row:StagedRecord):string{
-    const description=(row.normalized_description??row.original_description??"").toLocaleLowerCase();
-    const matching=categoryRules.filter(rule=>row.transaction_type===rule.category_type&&description.includes(rule.match_text.toLocaleLowerCase()));
+    const description=normalizeCategoryMatchText(row.normalized_description??row.original_description??"");
+    const matching=categoryRules.filter(rule=>row.transaction_type===rule.category_type&&description.includes(normalizeCategoryMatchText(rule.match_text)));
     if(matching.length){
-      const longest=Math.max(...matching.map(rule=>rule.match_text.length));
-      const best=matching.filter(rule=>rule.match_text.length===longest);
+      const longest=Math.max(...matching.map(rule=>normalizeCategoryMatchText(rule.match_text).length));
+      const best=matching.filter(rule=>normalizeCategoryMatchText(rule.match_text).length===longest);
       if(new Set(best.map(rule=>rule.category_id)).size===1)return best[0].category_name;
       return "Uncategorized — overlapping rules";
     }
@@ -275,7 +286,29 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
       setCategories([...income,...expense]);
       setRuleCategoryId("");setRuleCategoryName("");setRuleCategoryType("expense");setRuleMatchTexts("");
       setMessage("Import category rule saved.");
+      try{await refreshCategorySuggestions();}catch{setError("The rule was saved, but category suggestions could not be refreshed.");}
     }catch(error){setError(typeof error==="string"?error:"The category rule could not be saved.");}
+  }
+  async function applyCategorySuggestion(suggestion:ImportCategorySuggestion){
+    const key=`${suggestion.category_type}:${suggestion.match_text}`;
+    setApplyingSuggestion(key);setError("");setMessage("");
+    let applied:AppliedImportCategorySuggestion;
+    try{
+      applied=await invoke<AppliedImportCategorySuggestion>("apply_import_category_suggestion",{categoryType:suggestion.category_type,matchText:suggestion.match_text});
+    }catch(error){
+      setError(typeof error==="string"?error:"The suggestion could not be applied. Refresh the page and try again.");
+      setApplyingSuggestion("");
+      return;
+    }
+    setMessage(`Added the ${applied.category_type} category “${applied.category_name}” and categorized ${applied.categorized_transaction_count} existing transaction${applied.categorized_transaction_count===1?"":"s"}. Future matching imports will use it automatically.`);
+    try{
+      const [income,expense]=await Promise.all([listActiveCategories("income"),listActiveCategories("expense")]);
+      setCategories([...income,...expense]);
+      await Promise.all([refreshCategoryRules(),refreshCategorySuggestions()]);
+    }catch{
+      setError("The suggestion was applied, but the category list or suggestions could not be refreshed.");
+    }
+    setApplyingSuggestion("");
   }
   function editCategoryRule(categoryId:string){
     const rule=categoryRules.filter(item=>item.category_id===categoryId);
@@ -297,11 +330,15 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
       :`Import ${ready} eligible transaction${ready===1?"":"s"}? ${possibleDuplicates} possible duplicate${possibleDuplicates===1?" is":"s are"} withheld to avoid double-posting; ${needsReview} row${needsReview===1?" needs":"s need"} date, amount, or direction review; ${skipped} skipped. Matching category rules will be applied; unmatched rows will be uncategorized.`;
     if(!isRevision&&ready===0){setError("There are no valid, direction-classified, non-duplicate transactions ready to import.");return;}
     if(!(await confirmAction(prompt)))return;
+    let count:number;
     try{
-      const count=await invoke<number>("finalize_import_batch",{batchId:id});
-      setMessage(`${isRevision?"Finalized":"Imported"} ${count} transaction${count===1?"":"s"}. ${isRevision?"":"Excluded rows remain available in this workspace and were not posted."}`);
+      count=await invoke<number>("finalize_import_batch",{batchId:id});
+    }catch(error){setError(typeof error==="string"?error:"The import could not be completed. Check the workspace logs.");return;}
+    setMessage(`${isRevision?"Finalized":"Imported"} ${count} transaction${count===1?"":"s"}. ${isRevision?"":"Excluded rows remain available in this workspace and were not posted."}`);
+    try{
       await refresh();await viewRecords(id);
-    }catch(error){setError(typeof error==="string"?error:"The import could not be completed. Check the workspace logs.");}
+      if(!isRevision)await refreshCategorySuggestions();
+    }catch{setError("The import completed, but its workspace or category suggestions could not be refreshed.");}
   }
   async function discardBatch(batch:Batch){
     setError("");setMessage("");
@@ -353,7 +390,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
     </form>
     <section className="workspace-panel rounded-xl p-5 sm:p-6">
       <h2 className="text-lg font-semibold">Automatic category rules</h2>
-      <p className="workspace-muted mt-1 text-sm">Add a category and words or phrases to match in transaction descriptions. Matching ignores capitalization; the longest matching phrase wins. Unmatched or conflicting descriptions are imported uncategorized.</p>
+      <p className="workspace-muted mt-1 text-sm">Add a category and words or phrases to match in transaction descriptions. Matching ignores capitalization and punctuation; the longest matching phrase wins. Unmatched or conflicting descriptions are imported uncategorized.</p>
       <form onSubmit={saveCategoryRule} className="mt-4 grid gap-3 md:grid-cols-3">
         <label className="text-sm font-medium">Category name<input aria-label="Rule category name" value={ruleCategoryName} onChange={event=>setRuleCategoryName(event.target.value)} maxLength={100} className="mt-1 block w-full rounded border px-3 py-2"/></label>
         <label className="text-sm font-medium">Category type<select aria-label="Rule category type" value={ruleCategoryType} disabled={Boolean(ruleCategoryId)} onChange={event=>setRuleCategoryType(event.target.value as "income"|"expense")} className="mt-1 block w-full rounded border p-2"><option value="expense">Expense</option><option value="income">Income</option></select></label>
@@ -364,6 +401,11 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
         </div>
       </form>
       {categoryRules.length===0?<p className="workspace-muted mt-4 text-sm">No category rules yet. Add a category and at least one phrase to enable automatic grouping.</p>:<ul className="mt-4 divide-y border-y">{[...new Set(categoryRules.map(rule=>rule.category_id))].map(categoryId=>{const grouped=categoryRules.filter(rule=>rule.category_id===categoryId);const category=grouped[0];return <li key={categoryId} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><strong>{category.category_name}</strong><span className="workspace-muted ml-2 capitalize text-xs">{category.category_type}</span><p className="workspace-muted mt-1 break-words text-sm">{grouped.map(rule=>rule.match_text).join(", ")}</p></div><div className="flex gap-2"><button type="button" onClick={()=>editCategoryRule(categoryId)} className="rounded border px-3 py-1.5 text-sm">Edit</button><button type="button" onClick={()=>void deleteCategoryRule(categoryId)} className="rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-700">Remove</button></div></li>;})}</ul>}
+    </section>
+    <section className="workspace-panel rounded-xl p-5 sm:p-6">
+      <h2 className="text-lg font-semibold">Suggested categories</h2>
+      <p className="workspace-muted mt-1 text-sm">Suggestions come from repeated descriptions in finalized statement imports that are still uncategorized. ETracker uses the statement’s income or expense direction and ignores common payment wording and reference numbers. Nothing changes until you approve a suggestion.</p>
+      {suggestionsLoading?<p role="status" className="workspace-muted mt-4 text-sm">Checking imported transaction descriptions…</p>:categorySuggestions.length===0?<p className="workspace-muted mt-4 text-sm">No new suggestions yet. A phrase needs to appear in at least three uncategorized imported transactions with the same direction.</p>:<ul className="mt-4 divide-y border-y">{categorySuggestions.map(suggestion=>{const key=`${suggestion.category_type}:${suggestion.match_text}`;return <li key={key} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><strong>{suggestion.category_name}</strong><span className="workspace-muted ml-2 capitalize text-xs">{suggestion.category_type}</span><p className="workspace-muted mt-1 break-words text-sm">“{suggestion.match_text}” appears in {suggestion.occurrence_count} uncategorized imported transactions.</p></div><button type="button" onClick={()=>void applyCategorySuggestion(suggestion)} disabled={Boolean(applyingSuggestion)} className="w-fit rounded-md border border-emerald-700 px-3 py-1.5 text-sm font-semibold text-emerald-800 disabled:cursor-wait disabled:opacity-60">{applyingSuggestion===key?"Applying…":"Add category & categorize matches"}</button></li>;})}</ul>}
     </section>
     <section className="workspace-panel rounded-xl p-5 sm:p-6">
       <h2 className="mb-3 text-lg font-semibold">Past ingestions</h2>

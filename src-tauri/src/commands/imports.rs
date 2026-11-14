@@ -243,6 +243,31 @@ pub fn list_import_category_rules(
         .map_err(|_| "Import category rules could not be loaded.".into())
 }
 #[tauri::command]
+pub fn list_import_category_suggestions(
+    state: State<'_, Database>,
+) -> Result<Vec<crate::application::imports::ImportCategorySuggestion>, String> {
+    ImportService::new(SqliteImportRepository::new(state.inner()))
+        .list_category_suggestions()
+        .map_err(|_| "Category suggestions could not be loaded.".into())
+}
+#[tauri::command]
+pub fn apply_import_category_suggestion(
+    state: State<'_, Database>,
+    category_type: String,
+    match_text: String,
+) -> Result<crate::application::imports::AppliedImportCategorySuggestion, String> {
+    ImportService::new(SqliteImportRepository::new(state.inner()))
+        .apply_category_suggestion(&category_type, &match_text)
+        .map_err(|error| match error {
+            ImportError::InvalidBatch => {
+                "This category suggestion is no longer available. Refresh suggestions and try again."
+                    .into()
+            }
+            _ => "The category suggestion could not be applied. No transactions were changed."
+                .into(),
+        })
+}
+#[tauri::command]
 pub fn save_import_category_rule(
     state: State<'_, Database>,
     category_id: Option<String>,
