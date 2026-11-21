@@ -187,3 +187,52 @@ The current system accepts any type of file and documents it in the system.
 ### concept
 
 Imports now validate supported file types and container signatures, inspect mapped CSV/Excel data for transaction date and amount rows, and classify extracted PDF text before creating an import workspace. Budget plans, account lists, unrelated documents, and unsupported or malformed files are rejected with a reviewable error. Provider-specific formats still require representative samples.
+
+### FE-005- Add a assets page
+
+**status** Proposed
+
+**Priority** Medium
+
+### Problem
+
+The user cannot review the past statements that were used in the previous imports.
+
+### Concepts
+
+The platform should have a screen/page where users can view the statements they used in the past imports. The statements will be displayed for the period they are maintained in the system before deletion. The platform should allow opening and review of these statements either internally or manually. The system will display them in a list and show how long a statement has before being deleted permanently
+
+### FE-006- Daily anaylsis.
+
+**status** Proposed
+
+**Priority** High
+
+### Problem
+
+The current anayltics page 'Monthly income vs expenditure trajectory' only displays bars for the month day when the data was imported and a staright line for the rest of the days in between.
+
+### Concept
+
+After import and extraction, the anayltics sector should breakdown the transactions into daily transactions for display. For the bar graph every day gets it own bar. To prevent crowding the bars can be compressed on just shown as lines then on hover the graph zooms in on the day the cursor is at and the zoom moves with the cursor.
+Then make the trajectory card full width to prevent scrolling and move the donut to allow this(space is not an issue on the screen). we're trying to avoid the unnecessary horizontal scroll.
+
+### FE-007- Minor improvements
+
+**status** Needed
+
+**Priority** Low
+
+### To-do
+Make the add transaction section in transactions collapsable and closed by default
+The ledger header needs work; separate the actual header and the buttons and filter(move the serach and filters to another column from the actual header with details)
+The action buttons on the transaction list also needs some work, it's ugly as is and does not exaclty communicate as desired
+The columns on the transaction list need some work; theya re too clamped together at the moment (amount & status)
+Are the notifications implemented? if not they should be
+The [export portfolio csv] and [archived accounts] current hover styling is terrible fix it
+'Monthly income vs expenditure trajectory' remove this
+'New accounts use KES. Account numbers are never retained; exact name and institution duplicates are skipped.' remove this as well
+The current archive button on the category list is not functional, fix that. Then the categories should be editable. Instead of archive use delete.
+Inspect all the buttons and links on the platform and make sure they're all functional and work as desired
+The category creation process should include 3 sections, category name(display name), identitying name(name that the system will use to identy the category in the transactions, the one the system looks for in the transaction)
+The export buttons across the platform are non-functional. ensure all buttons work
