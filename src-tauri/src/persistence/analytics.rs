@@ -78,6 +78,7 @@ pub struct AnalyticsSummary {
     pub total_refund_minor: i64,
     pub total_net_spending_minor: i64,
     pub trends: Vec<AnalyticsPoint>,
+    pub daily_trends: Vec<AnalyticsPoint>,
     pub category_breakdown: Vec<AnalyticsCategory>,
     pub account_comparison: Vec<AnalyticsAccount>,
     pub recurring_expenses: Vec<AnalyticsCategory>,
@@ -157,6 +158,27 @@ impl<'a> SqliteAnalyticsRepository<'a> {
         );
         let mut statement = connection.prepare(&trends_sql).map_err(|e| e.to_string())?;
         let trends = statement
+            .query_map(
+                params![from, to, account_id, category_id, effective_currency],
+                |r| {
+                    Ok(AnalyticsPoint {
+                        period: r.get(0)?,
+                        income_minor: r.get(1)?,
+                        expense_minor: r.get(2)?,
+                        refund_minor: r.get(3)?,
+                    })
+                },
+            )
+            .map_err(|e| e.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| e.to_string())?;
+        let daily_trends_sql = format!(
+            "SELECT date(t.occurred_at),COALESCE(SUM(CASE WHEN t.transaction_type='income' AND NOT EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN {selected_amount} ELSE 0 END),0),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM refund_transactions rf WHERE rf.transaction_id=t.id) THEN {selected_amount} ELSE 0 END),0) FROM financial_transactions t JOIN account_entries e ON e.transaction_id=t.id WHERE {filter} AND ?1 IS NOT NULL AND ?2 IS NOT NULL AND julianday(?2)-julianday(?1) BETWEEN 0 AND 365 GROUP BY date(t.occurred_at) ORDER BY 1"
+        );
+        let mut statement = connection
+            .prepare(&daily_trends_sql)
+            .map_err(|e| e.to_string())?;
+        let daily_trends = statement
             .query_map(
                 params![from, to, account_id, category_id, effective_currency],
                 |r| {
@@ -310,6 +332,7 @@ impl<'a> SqliteAnalyticsRepository<'a> {
             total_refund_minor,
             total_net_spending_minor,
             trends,
+            daily_trends,
             category_breakdown,
             account_comparison,
             recurring_expenses,
@@ -392,6 +415,11 @@ mod tests {
             (2000, 1500)
         );
         assert_eq!(summary.trends.len(), 1);
+        assert_eq!(summary.daily_trends.len(), 2);
+        assert_eq!(summary.daily_trends[0].period, "2026-10-02");
+        assert_eq!(summary.daily_trends[0].expense_minor, 300);
+        assert_eq!(summary.daily_trends[1].income_minor, 2000);
+        assert_eq!(summary.daily_trends[1].expense_minor, 1200);
         assert_eq!(summary.category_breakdown[0].amount_minor, 900);
         assert_eq!(summary.account_comparison.len(), 2);
         assert_eq!(summary.budget_performance.len(), 1);

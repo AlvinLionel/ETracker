@@ -1438,6 +1438,19 @@ pub struct ImportBatchRecord {
     pub created_at: String,
     pub revision_of_batch_id: Option<String>,
 }
+
+#[derive(serde::Serialize)]
+pub struct ImportAssetRecord {
+    pub batch_id: String,
+    pub account_id: String,
+    pub account_name: String,
+    pub source_file_name: String,
+    pub source_format: String,
+    pub batch_status: String,
+    pub imported_at: String,
+    pub retained_until: String,
+    pub size_bytes: i64,
+}
 #[derive(serde::Serialize)]
 pub struct ImportRevisionChangeRecord {
     pub id: String,
@@ -1645,7 +1658,9 @@ impl SqliteImportRepository<'_> {
                 )
                 .optional()
                 .map_err(|error| ImportError::Database(error.to_string()))?;
-            if active_type.as_deref() != Some(category_type) {
+            if active_type.as_deref() != Some(category_type)
+                && !(category_type == "expense" && active_type.as_deref() == Some("emergency"))
+            {
                 return Err(ImportError::InvalidBatch);
             }
             transaction
@@ -2457,6 +2472,34 @@ impl SqliteImportRepository<'_> {
         .map_err(|e| ImportError::Database(e.to_string()))
     }
 
+    pub fn list_retained_assets(&self) -> Result<Vec<ImportAssetRecord>, ImportError> {
+        let connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| ImportError::ConnectionPoisoned)?;
+        let mut statement = connection.prepare(
+            "SELECT b.id,b.account_id,a.name,b.source_file_name,b.source_format,CASE WHEN b.discarded_at IS NOT NULL THEN 'discarded' ELSE b.status END,b.created_at,s.expires_at,length(s.contents) FROM import_batches b JOIN import_source_files s ON s.batch_id=b.id JOIN accounts a ON a.id=b.account_id WHERE s.expires_at>CURRENT_TIMESTAMP ORDER BY b.created_at DESC"
+        ).map_err(|e| ImportError::Database(e.to_string()))?;
+        statement
+            .query_map([], |row| {
+                Ok(ImportAssetRecord {
+                    batch_id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    account_name: row.get(2)?,
+                    source_file_name: row.get(3)?,
+                    source_format: row.get(4)?,
+                    batch_status: row.get(5)?,
+                    imported_at: row.get(6)?,
+                    retained_until: row.get(7)?,
+                    size_bytes: row.get(8)?,
+                })
+            })
+            .map_err(|e| ImportError::Database(e.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| ImportError::Database(e.to_string()))
+    }
+
     pub fn discard_batch(&self, batch_id: &str) -> Result<(), ImportError> {
         let mut connection = self
             .database
@@ -2916,6 +2959,12 @@ mod tests {
                 source_file_contents: b"statement fixture".to_vec(),
             })
             .unwrap();
+        let retained = repository.list_retained_assets().unwrap();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].batch_id, id);
+        assert_eq!(retained[0].account_name, "Main");
+        assert_eq!(retained[0].source_file_name, "statement.csv");
+        assert_eq!(retained[0].size_bytes, b"statement fixture".len() as i64);
         db.connection()
             .lock()
             .unwrap()
@@ -2928,6 +2977,7 @@ mod tests {
             repository.source_file_contents(&id),
             Err(ImportError::InvalidBatch)
         ));
+        assert!(repository.list_retained_assets().unwrap().is_empty());
         db.connection()
             .lock()
             .unwrap()
@@ -2940,6 +2990,7 @@ mod tests {
             repository.source_file_contents(&id).unwrap(),
             b"statement fixture"
         );
+        assert_eq!(repository.list_retained_assets().unwrap().len(), 1);
     }
     #[test]
     fn rejects_archived_account() {
@@ -3847,6 +3898,26 @@ mod tests {
             )
             .unwrap();
         assert!(category_exists);
+    }
+
+    #[test]
+    fn emergency_category_accepts_expense_identity_phrases() {
+        let db = db();
+        let category = crate::persistence::transactions::SqliteTransactionRepository::new(&db)
+            .create_category("Medical reserve", "emergency")
+            .unwrap();
+        let rules = SqliteImportRepository::new(&db)
+            .save_category_rule(
+                Some(&category.id),
+                "Medical reserve",
+                "expense",
+                &["clinic".into(), "hospital".into()],
+            )
+            .unwrap();
+
+        assert_eq!(rules.len(), 2);
+        assert!(rules.iter().all(|rule| rule.category_id == category.id));
+        assert!(rules.iter().all(|rule| rule.category_type == "expense"));
     }
 
     #[test]

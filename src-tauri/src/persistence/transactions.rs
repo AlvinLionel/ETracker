@@ -292,6 +292,36 @@ impl SqliteTransactionRepository<'_> {
         Ok(())
     }
 
+    pub fn delete_category(&self, id: &str) -> Result<(), TransactionRepositoryError> {
+        let mut connection = self
+            .database
+            .connection()
+            .lock()
+            .map_err(|_| TransactionRepositoryError::ConnectionPoisoned)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| TransactionRepositoryError::Database(error.to_string()))?;
+        transaction
+            .execute(
+                "DELETE FROM import_category_rule_terms WHERE category_id=?1",
+                [id],
+            )
+            .map_err(|error| TransactionRepositoryError::Database(error.to_string()))?;
+        let changed = transaction
+            .execute(
+                "DELETE FROM categories WHERE id=?1 AND is_system=0 AND archived_at IS NULL",
+                [id],
+            )
+            .map_err(|error| TransactionRepositoryError::Database(error.to_string()))?;
+        if changed == 0 {
+            return Err(TransactionRepositoryError::InvalidCategory);
+        }
+        transaction
+            .commit()
+            .map_err(|error| TransactionRepositoryError::Database(error.to_string()))?;
+        Ok(())
+    }
+
     pub fn list(
         &self,
         account_id: Option<&str>,
@@ -910,6 +940,52 @@ mod tests {
             repository.create_category("food", "expense"),
             Err(TransactionRepositoryError::Database(_))
         ));
+    }
+
+    #[test]
+    fn category_delete_removes_rules_atomically_and_preserves_referenced_categories() {
+        let db = db();
+        account(&db, "a");
+        let repository = SqliteTransactionRepository::new(&db);
+        let removable = repository.create_category("Travel", "expense").unwrap();
+        crate::persistence::imports::SqliteImportRepository::new(&db)
+            .save_category_rule(Some(&removable.id), "Travel", "expense", &["bus".into()])
+            .unwrap();
+        repository.delete_category(&removable.id).unwrap();
+        let exists: bool = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+                [&removable.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!exists);
+
+        let protected = repository.create_category("Food", "expense").unwrap();
+        let mut transaction = input("a", TransactionType::Expense);
+        transaction.allocations = vec![Allocation {
+            category_id: protected.id.clone(),
+            amount_minor: transaction.amount_minor,
+        }];
+        repository.create(&transaction).unwrap();
+        assert!(matches!(
+            repository.delete_category(&protected.id),
+            Err(TransactionRepositoryError::Database(_))
+        ));
+        let still_exists: bool = db
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+                [&protected.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(still_exists);
     }
 
     #[test]

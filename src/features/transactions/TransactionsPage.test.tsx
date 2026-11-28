@@ -10,14 +10,14 @@ vi.mock("../../shared/confirmAction",()=>({confirmAction:mocks.confirmAction}));
 describe("TransactionsPage",()=>{
  beforeEach(()=>{vi.clearAllMocks();mocks.confirmAction.mockResolvedValue(true);vi.spyOn(window,"scrollTo").mockImplementation(()=>undefined);mocks.accounts.mockResolvedValue([{id:"a",name:"Main",currency_code:"KES"},{id:"b",name:"Savings",currency_code:"KES"}]);mocks.categories.mockResolvedValue([{id:"food",name:"Food",category_type:"expense"},{id:"home",name:"Home",category_type:"expense"}]);mocks.eligibleRefunds.mockResolvedValue([{transaction_id:"original",amount_minor:1000,refundable_minor:700,occurred_at:"2026-11-01T09:00:00Z",description:"Shop"}]);mocks.list.mockResolvedValue([]);mocks.search.mockImplementation(async()=>{const items=await mocks.list();return {items,total:items.length};});mocks.create.mockResolvedValue("tx");mocks.allocations.mockResolvedValue([]);mocks.update.mockResolvedValue(undefined);mocks.void.mockResolvedValue(undefined);mocks.reverse.mockResolvedValue("reversal");mocks.transfer.mockResolvedValue("transfer");mocks.audit.mockResolvedValue([]);mocks.listAttachments.mockResolvedValue([]);mocks.addAttachment.mockResolvedValue(null);mocks.openAttachment.mockResolvedValue(undefined);mocks.removeAttachment.mockResolvedValue(undefined);});
  it("allows an uncategorized expense",async()=>{
-  render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
+  render(<TransactionsPage/>); expect(screen.queryByLabelText("Amount")).not.toBeInTheDocument(); fireEvent.click(screen.getByRole("button",{name:"New transaction"})); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
   fireEvent.change(screen.getByLabelText("Amount",{selector:"input"}),{target:{value:"12.50"}});
   fireEvent.click(screen.getByRole("button",{name:"Save transaction"}));
   await waitFor(()=>expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({amount_minor:1250,allocations:[]})));
  });
  it("saves a distinct refund linked to the selected expense",async()=>{
-  render(<TransactionsPage/>);await screen.findByRole("option",{name:"Main (KES)"});
+  render(<TransactionsPage/>);fireEvent.click(screen.getByRole("button",{name:"New transaction"}));await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getByLabelText("Type"),{target:{value:"refund"}});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
   fireEvent.change(screen.getByLabelText("Amount",{selector:"input"}),{target:{value:"5.00"}});
@@ -34,7 +34,7 @@ describe("TransactionsPage",()=>{
   expect(screen.getByText(/refund_transaction_id/)).toBeInTheDocument();
  });
  it("requires split allocations to reconcile before submitting",async()=>{
-  render(<TransactionsPage/>); await screen.findByRole("option",{name:"Main (KES)"});
+  render(<TransactionsPage/>);fireEvent.click(screen.getByRole("button",{name:"New transaction"})); await screen.findByRole("option",{name:"Main (KES)"});
   fireEvent.change(screen.getAllByLabelText("Account",{selector:"select"})[0],{target:{value:"a"}});
   fireEvent.change(screen.getByLabelText("Amount",{selector:"input"}),{target:{value:"12.00"}});
   fireEvent.click(screen.getByRole("button",{name:"Add allocation"}));
@@ -91,6 +91,7 @@ describe("TransactionsPage",()=>{
  it("offers transfers in the transaction form and hides transfer-only fields for other types",async()=>{
   render(<TransactionsPage/>);
   expect(screen.queryByLabelText("From account")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"New transaction"}));
   expect(screen.queryByRole("heading",{name:"Transfer between accounts"})).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Type"),{target:{value:"transfer"}});
   await screen.findAllByRole("option",{name:"Savings"});

@@ -1,8 +1,14 @@
+import { useState } from "react";
+import type { KeyboardEvent, PointerEvent } from "react";
 import type { AnalyticsAccount, AnalyticsCategory, AnalyticsPoint } from "./api/analytics";
-import { formatMoney as formatCurrency } from "../../shared/formatMoney";
 
 const palette = ["var(--workspace-negative)", "var(--workspace-info)", "var(--workspace-accent)", "var(--workspace-positive)", "#be6b35", "#35867f", "var(--workspace-warning)", "#596a9b"];
-const formatMoney = (minor: number, currency: string) => formatCurrency(minor, currency, { maximumFractionDigits: 0 });
+const chartMoneyFormatters = new Map<string, Intl.NumberFormat>();
+const formatMoney = (minor: number, currency: string) => {
+  let formatter = chartMoneyFormatters.get(currency);
+  if (!formatter) { formatter = new Intl.NumberFormat("en-KE", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 0 }); chartMoneyFormatters.set(currency, formatter); }
+  return formatter.format(minor / 100);
+};
 const compactMoney = (minor: number, currency: string) => `${currency} ${new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(minor / 100)}`;
 
 export function MonthlyTrendChart({ points, currency }: { points: AnalyticsPoint[]; currency: string }) {
@@ -87,6 +93,54 @@ export function MonthlyTrendChart({ points, currency }: { points: AnalyticsPoint
       <tbody>{points.map((point) => <tr key={point.period}><th scope="row">{point.period}</th><td>{formatMoney(point.income_minor, currency)}</td><td>{formatMoney(point.expense_minor, currency)}</td><td>{formatMoney(point.refund_minor, currency)}</td><td>{formatMoney(point.income_minor - point.expense_minor + point.refund_minor, currency)}</td></tr>)}</tbody>
     </table>
   </>;
+}
+
+export function DailyTrendChart({ points, currency }: { points: AnalyticsPoint[]; currency: string }) {
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, points.length - 1));
+  const width = 1200, height = 280, left = 78, right = 18, top = 18, bottom = 32;
+  const plotWidth = width - left - right, plotHeight = height - top - bottom;
+  if (!points.length) return <p className="workspace-muted rounded-lg bg-slate-50 p-4 text-sm">Choose a date range of 366 days or less to view daily activity.</p>;
+  const net = points.map((point) => point.income_minor - point.expense_minor + point.refund_minor);
+  const maximum = Math.max(1, ...points.flatMap((point) => [point.income_minor, point.expense_minor, point.refund_minor, Math.abs(point.income_minor - point.expense_minor + point.refund_minor)]));
+  const scale = (value: number) => top + plotHeight - value / maximum * plotHeight;
+  const netScale = (value: number) => top + plotHeight / 2 - value / (2 * maximum) * plotHeight;
+  const zeroY = scale(0), groupWidth = plotWidth / points.length;
+  const barWidth = Math.max(0.7, Math.min(6, groupWidth * 0.22));
+  const selected = points[Math.min(selectedIndex, points.length - 1)];
+  const lensStart = Math.max(0, Math.min(points.length - 14, selectedIndex - 7));
+  const lensPoints = points.slice(lensStart, Math.min(points.length, lensStart + 14));
+  const moveSelection = (event: KeyboardEvent<SVGRectElement>) => {
+    if (event.key === "ArrowRight" || event.key === "ArrowUp") { event.preventDefault(); setSelectedIndex((index) => Math.min(points.length - 1, index + 1)); }
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") { event.preventDefault(); setSelectedIndex((index) => Math.max(0, index - 1)); }
+    if (event.key === "Home") { event.preventDefault(); setSelectedIndex(0); }
+    if (event.key === "End") { event.preventDefault(); setSelectedIndex(points.length - 1); }
+  };
+  const handlePointer = (event: PointerEvent<SVGRectElement>) => {
+    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const svgX = (event.clientX - rect.left) * width / rect.width;
+    setSelectedIndex(Math.max(0, Math.min(points.length - 1, Math.floor((svgX - left) / groupWidth))));
+  };
+  const label = (date: string, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) => new Intl.DateTimeFormat(undefined, options).format(new Date(`${date}T00:00:00`));
+  return <div className="space-y-3">
+    <div className="grid gap-2 sm:grid-cols-4" aria-live="polite"><div className="rounded-md bg-[var(--workspace-subtle-surface)] p-3"><span className="workspace-muted block text-xs">Selected day</span><strong className="text-sm">{label(selected.period, { dateStyle: "full" })}</strong></div><div className="rounded-md bg-[var(--workspace-subtle-surface)] p-3"><span className="workspace-muted block text-xs">Income</span><strong className="text-sm">{formatMoney(selected.income_minor, currency)}</strong></div><div className="rounded-md bg-[var(--workspace-subtle-surface)] p-3"><span className="workspace-muted block text-xs">Expenses · refunds</span><strong className="text-sm">{formatMoney(selected.expense_minor, currency)} · {formatMoney(selected.refund_minor, currency)}</strong></div><div className="rounded-md bg-[var(--workspace-subtle-surface)] p-3"><span className="workspace-muted block text-xs">Net cash flow</span><strong className="text-sm">{formatMoney(net[selectedIndex], currency)}</strong></div></div>
+    <div role="region" aria-label="Daily cash flow overview chart" className="w-full">
+      <svg className="block h-auto w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Daily income, expenses, refunds and net cash flow from ${points[0].period} through ${points[points.length - 1].period}`}>
+        <title>Daily cash flow overview</title>
+        <desc>Every date in the selected period is represented, including days with no transactions. Hover to inspect a day and its surrounding two-week detail. Use the arrow keys while the chart is focused.</desc>
+        {[0, 0.25, 0.5, 0.75, 1].map((fraction) => { const y = top + plotHeight * fraction; return <g key={fraction}><line x1={left} x2={width - right} y1={y} y2={y} stroke="var(--workspace-line)" strokeDasharray={fraction === 1 ? undefined : "3 4"}/><text x={left - 8} y={y + 4} textAnchor="end" fill="var(--workspace-muted)" fontSize="10">{compactMoney(maximum * (1 - fraction), currency)}</text></g>; })}
+        {points.map((point, index) => { const center = left + (index + 0.5) * groupWidth; const values = [point.income_minor, point.expense_minor, point.refund_minor]; const colors = ["var(--workspace-positive)", "var(--workspace-negative)", "var(--workspace-info)"]; return <g key={point.period}>{values.map((value, series) => { const valueY = scale(value); return <rect key={series} x={center + (series - 1) * barWidth - barWidth / 2} y={valueY} width={barWidth} height={Math.max(value > 0 ? 0.7 : 0, zeroY - valueY)} fill={colors[series]}><title>{point.period} · {formatMoney(value, currency)}</title></rect>; })}</g>; })}
+        {points.length > 1 && <polyline fill="none" stroke="var(--workspace-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={net.map((value, index) => `${left + (index + 0.5) * groupWidth},${netScale(value)}`).join(" ")}/>}
+        {points.length > 1 && <polyline fill="none" stroke="var(--workspace-positive)" strokeWidth="1.5" strokeDasharray="5 4" points={points.map((_, index) => { const avg = net.slice(Math.max(0, index - 6), index + 1).reduce((sum, value) => sum + value, 0) / (Math.min(6, index) + 1); return `${left + (index + 0.5) * groupWidth},${netScale(avg)}`; }).join(" ")}/>}
+        <line x1={left + (selectedIndex + 0.5) * groupWidth} x2={left + (selectedIndex + 0.5) * groupWidth} y1={top} y2={height - bottom} stroke="var(--workspace-accent)" strokeWidth="1.5" strokeDasharray="3 3"/>
+        {[0, Math.floor((points.length - 1) / 2), points.length - 1].map((index) => <text key={index} x={left + (index + 0.5) * groupWidth} y={height - 10} textAnchor="middle" fill="var(--workspace-muted)" fontSize="10">{label(points[index].period)}</text>)}
+        <rect x={left} y={top} width={plotWidth} height={plotHeight} fill="transparent" role="slider" tabIndex={0} aria-label="Choose day in daily cash flow chart" aria-valuemin={0} aria-valuemax={points.length - 1} aria-valuenow={selectedIndex} aria-valuetext={`${label(selected.period, { dateStyle: "full" })}, income ${formatMoney(selected.income_minor, currency)}, expenses ${formatMoney(selected.expense_minor, currency)}, refunds ${formatMoney(selected.refund_minor, currency)}`} onKeyDown={moveSelection} onPointerMove={handlePointer} onPointerLeave={() => undefined}/>
+      </svg>
+    </div>
+    <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600" aria-hidden="true"><span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-600"/>Income</span><span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm bg-rose-700"/>Gross expenses</span><span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm bg-sky-600"/>Refunds</span><span className="inline-flex items-center gap-2"><i className="h-0.5 w-4 bg-[var(--workspace-accent)]"/>Net flow</span><span className="inline-flex items-center gap-2"><i className="h-0.5 w-4 border-t border-dashed border-emerald-700"/>7-day average</span></div>
+    <div className="rounded-lg border border-[var(--workspace-line)] bg-[var(--workspace-subtle-surface)] p-3"><p className="workspace-muted mb-2 text-xs">Two-week detail · {label(lensPoints[0].period)} – {label(lensPoints[lensPoints.length - 1].period)} · select or hover over the overview to move this window</p><svg className="block h-auto w-full" viewBox={`0 0 ${Math.max(650, lensPoints.length * 58)} 115`} role="img" aria-label="Selected two-week daily detail"><line x1="30" x2={Math.max(650, lensPoints.length * 58) - 15} y1="78" y2="78" stroke="var(--workspace-line)"/>{lensPoints.map((point, index) => { const localWidth = Math.max(650, lensPoints.length * 58); const spacing = (localWidth - 45) / lensPoints.length; const center = 30 + spacing * (index + 0.5); const max = Math.max(1, ...lensPoints.flatMap((item) => [item.income_minor, item.expense_minor, item.refund_minor])); return <g key={point.period}><rect x={center - 11} y={78 - point.income_minor / max * 55} width="7" height={point.income_minor ? Math.max(1, point.income_minor / max * 55) : 0} fill="var(--workspace-positive)"/><rect x={center - 2} y={78 - point.expense_minor / max * 55} width="7" height={point.expense_minor ? Math.max(1, point.expense_minor / max * 55) : 0} fill="var(--workspace-negative)"/><rect x={center + 7} y={78 - point.refund_minor / max * 55} width="7" height={point.refund_minor ? Math.max(1, point.refund_minor / max * 55) : 0} fill="var(--workspace-info)"/><text x={center} y="100" textAnchor="middle" fill="var(--workspace-muted)" fontSize="9">{label(point.period, { day: "numeric" })}</text><title>{label(point.period)} · income {formatMoney(point.income_minor, currency)} · expenses {formatMoney(point.expense_minor, currency)}</title></g>; })}</svg></div>
+    <table className="sr-only"><caption>Daily income, gross expenses, refunds, and net cash flow in {currency}</caption><thead><tr><th>Date</th><th>Income</th><th>Gross expenses</th><th>Refunds</th><th>Net cash flow</th></tr></thead><tbody>{points.map((point) => <tr key={point.period}><th scope="row">{point.period}</th><td>{formatMoney(point.income_minor, currency)}</td><td>{formatMoney(point.expense_minor, currency)}</td><td>{formatMoney(point.refund_minor, currency)}</td><td>{formatMoney(point.income_minor - point.expense_minor + point.refund_minor, currency)}</td></tr>)}</tbody></table>
+  </div>;
 }
 
 export function AccountActivityChart({ accounts, currency }: { accounts: AnalyticsAccount[]; currency: string }) {

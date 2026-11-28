@@ -188,9 +188,9 @@ The current system accepts any type of file and documents it in the system.
 
 Imports now validate supported file types and container signatures, inspect mapped CSV/Excel data for transaction date and amount rows, and classify extracted PDF text before creating an import workspace. Budget plans, account lists, unrelated documents, and unsupported or malformed files are rejected with a reviewable error. Provider-specific formats still require representative samples.
 
-### FE-005- Add a assets page
+### FE-005 — Statement archive
 
-**status** Proposed
+**Status:** Implemented (28 November 2026)
 
 **Priority** Medium
 
@@ -202,9 +202,11 @@ The user cannot review the past statements that were used in the previous import
 
 The platform should have a screen/page where users can view the statements they used in the past imports. The statements will be displayed for the period they are maintained in the system before deletion. The platform should allow opening and review of these statements either internally or manually. The system will display them in a list and show how long a statement has before being deleted permanently
 
-### FE-006- Daily anaylsis.
+The Statement archive lists retained source statements, their account, workspace date, status, size and 90-day expiry. Users can save the original file and open its exact batch in Imports. Expired source files are cleaned up; import and ledger history remain. Source files are retained in the encrypted local database.
 
-**status** Proposed
+### FE-006 — Daily analysis
+
+**Status:** Implemented (28 November 2026)
 
 **Priority** High
 
@@ -217,22 +219,41 @@ The current anayltics page 'Monthly income vs expenditure trajectory' only displ
 After import and extraction, the anayltics sector should breakdown the transactions into daily transactions for display. For the bar graph every day gets it own bar. To prevent crowding the bars can be compressed on just shown as lines then on hover the graph zooms in on the day the cursor is at and the zoom moves with the cursor.
 Then make the trajectory card full width to prevent scrolling and move the donut to allow this(space is not an issue on the screen). we're trying to avoid the unnecessary horizontal scroll.
 
-### FE-007- Minor improvements
+The Analytics page now provides a full-width daily overview with a separate bar per date, net-flow and 7-day average lines, keyboard and pointer day selection, a two-week detail window, and an accessible exact-value table. Date ranges up to 366 days are supported; longer or invalid ranges show an explanatory empty state. The former monthly trajectory card was removed from this page.
 
-**status** Needed
+### FE-007 — Minor improvements
+
+**Status:** Partially implemented (28 November 2026)
 
 **Priority** Low
 
-### To-do
-Make the add transaction section in transactions collapsable and closed by default
-The ledger header needs work; separate the actual header and the buttons and filter(move the serach and filters to another column from the actual header with details)
-The action buttons on the transaction list also needs some work, it's ugly as is and does not exaclty communicate as desired
-The columns on the transaction list need some work; theya re too clamped together at the moment (amount & status)
-Are the notifications implemented? if not they should be
-The [export portfolio csv] and [archived accounts] current hover styling is terrible fix it
-'Monthly income vs expenditure trajectory' remove this
-'New accounts use KES. Account numbers are never retained; exact name and institution duplicates are skipped.' remove this as well
-The current archive button on the category list is not functional, fix that. Then the categories should be editable. Instead of archive use delete.
-Inspect all the buttons and links on the platform and make sure they're all functional and work as desired
-The category creation process should include 3 sections, category name(display name), identitying name(name that the system will use to identy the category in the transactions, the one the system looks for in the transaction)
-The export buttons across the platform are non-functional. ensure all buttons work
+### Completed and remaining
+
+Implemented in this pass:
+- Transaction entry is collapsed by default and opens for new entries or editing. Journal filters sit below the ledger heading in a separate, shaded row.
+- Transaction row actions now use compact styled controls; amount and status columns have more space.
+- Categories can be renamed, have identifying statement phrases edited, and be deleted when no ledger history or plan refers to them. Database constraints protect referenced categories and the UI explains why deletion failed.
+- New categories require identifying phrases; rules apply to future imports and remain editable.
+- The obsolete monthly trajectory title is removed from Analytics.
+
+Still open:
+- Subscription reminders remain in-app; background/operating-system notifications and import reminders need separate scope.
+- A full interaction audit and visual review of legacy hover states (including archived accounts and portfolio export) remain.
+- Responsive/accessibility review of the revised layouts remains manual.
+- The account helper copy mentioned above was not found on the current Accounts screen; confirm before removing similar explanatory copy elsewhere.
+- Automated export tests exist, but page-by-page export usability still needs manual review.
+### FE-008 — Automatic update detection
+
+**Status:** Deferred; distribution and updater prerequisites are not configured
+
+**Priority** High
+
+### Problem
+
+Does an already installed app detect an update release and install the update?
+
+### Concept
+
+Make it so that after an update is done, release the next version and any already installed app detects and installs the update on the next restart
+
+The preview currently uses manual versioned updates; this was approved in decision `DB-036`. An updater needs a chosen hosting and release channel, signed update artifacts and a stable public signing key. Add this only after the distribution policy is revisited and the update flow can be tested without weakening package verification.

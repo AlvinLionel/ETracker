@@ -11,13 +11,15 @@ import ForecastingPage from "./features/forecasting/ForecastingPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import SettingsPage from "./features/settings/SettingsPage";
 import CategoriesPage from "./features/transactions/CategoriesPage";
+import StatementArchivePage from "./features/imports/StatementArchivePage";
 import { applyAppearancePreferences, type ThemePreference } from "./features/settings/theme";
-import { Activity, CalendarDays, ChartNoAxesCombined, Download, Landmark, LayoutDashboard, Moon, Monitor, PanelLeftClose, PiggyBank, Repeat2, Search, Settings2, Sun, Tags, TrendingUp, WalletCards } from "lucide-react";
+import { Activity, CalendarDays, ChartNoAxesCombined, Download, FileClock, Landmark, LayoutDashboard, Moon, Monitor, PanelLeftClose, PiggyBank, Repeat2, Search, Settings2, Sun, Tags, TrendingUp, WalletCards } from "lucide-react";
 
 const navigationItems = [
   { label: "Dashboard", section: "Overview", icon: LayoutDashboard },
   { label: "Accounts", section: "Finance", icon: Landmark },
   { label: "Imports", section: "Finance", icon: Download },
+  { label: "Statement archive", section: "Finance", icon: FileClock },
   { label: "Categories", section: "Finance", icon: Tags },
   { label: "Transactions", section: "Finance", icon: WalletCards },
   { label: "Budgeting", section: "Planning", icon: Activity },
@@ -30,6 +32,7 @@ const navigationItems = [
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
+  const [selectedImportBatchId, setSelectedImportBatchId] = useState("");
   const [themePreference, setThemePreference] = useState<ThemePreference>("system");
   const [appearance, setAppearance] = useState<{ grid_opacity: number; row_density: "compact" | "standard" | "comfortable" }>({ grid_opacity: 5, row_density: "standard" });
   const [themeError, setThemeError] = useState("");
@@ -43,7 +46,7 @@ function App() {
   const [ledgerResults, setLedgerResults] = useState<{kind:string;id:string;title:string;detail:string;page:string}[]>([]);
   const [ledgerSearchBusy, setLedgerSearchBusy] = useState(false);
   const [ledgerSearchError, setLedgerSearchError] = useState("");
-  const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Categories", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
+  const availablePages = ["Dashboard", "Accounts", "Transactions", "Imports", "Statement archive", "Categories", "Budgeting", "Savings", "Subscriptions", "Analytics", "Forecasting", "Settings"];
   const searchResults = navigationItems.filter((item) => `${item.label} ${item.section}`.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   const now = new Date();
   const planningMonthLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(new Date(`${planningMonth}-01T00:00:00`));
@@ -205,7 +208,7 @@ function App() {
         </nav>
 
         <main className={`flex-1 px-3 py-4 sm:px-5 lg:px-6 ${activePage === "Dashboard" ? "app-dashboard-main" : ""}`}>
-          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage navigate={setActivePage} /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage initialMonth={planningMonth} navigate={setActivePage} /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage navigate={setActivePage} /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
+          {activePage === "Dashboard" ? <DashboardPage navigate={setActivePage} /> : activePage === "Accounts" ? <AccountsPage /> : activePage === "Transactions" ? <TransactionsPage /> : activePage === "Imports" ? <ImportsPage navigate={setActivePage} initialBatchId={selectedImportBatchId} onInitialBatchOpened={() => setSelectedImportBatchId("")} /> : activePage === "Statement archive" ? <StatementArchivePage navigate={setActivePage} onReviewBatch={(batchId) => { setSelectedImportBatchId(batchId); setActivePage("Imports"); }} /> : activePage === "Categories" ? <CategoriesPage /> : activePage === "Budgeting" ? <BudgetingPage initialMonth={planningMonth} navigate={setActivePage} /> : activePage === "Savings" ? <SavingsPage /> : activePage === "Subscriptions" ? <SubscriptionsPage /> : activePage === "Analytics" ? <AnalyticsPage /> : activePage === "Forecasting" ? <ForecastingPage navigate={setActivePage} /> : activePage === "Settings" ? <SettingsPage /> : <DashboardPage navigate={setActivePage} />}
         </main>
       </div>
       </div>

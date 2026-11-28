@@ -5,8 +5,8 @@ use crate::{
     },
     infrastructure::database::Database,
     persistence::imports::{
-        ImportBatchRecord, ImportCategoryRuleRecord, ImportLogRecord, ImportRevisionChangeRecord,
-        SqliteImportRepository, StagedImportRecord,
+        ImportAssetRecord, ImportBatchRecord, ImportCategoryRuleRecord, ImportLogRecord,
+        ImportRevisionChangeRecord, SqliteImportRepository, StagedImportRecord,
     },
 };
 use serde::Deserialize;
@@ -310,6 +310,14 @@ pub fn list_import_batches(state: State<'_, Database>) -> Result<Vec<ImportBatch
     SqliteImportRepository::new(state.inner())
         .list_batches()
         .map_err(|_| "Import batches could not be loaded.".into())
+}
+#[tauri::command]
+pub fn list_retained_import_assets(
+    state: State<'_, Database>,
+) -> Result<Vec<ImportAssetRecord>, String> {
+    SqliteImportRepository::new(state.inner())
+        .list_retained_assets()
+        .map_err(|_| "Retained statement files could not be loaded.".into())
 }
 #[tauri::command]
 pub fn discard_import_batch(state: State<'_, Database>, batch_id: String) -> Result<(), String> {

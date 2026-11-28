@@ -269,6 +269,22 @@ pub fn archive_category(state: State<'_, Database>, id: String) -> Result<(), St
         })
 }
 #[tauri::command]
+pub fn delete_category(state: State<'_, Database>, id: String) -> Result<(), String> {
+    SqliteTransactionRepository::new(state.inner())
+        .delete_category(&id)
+        .map_err(|error| match error {
+            TransactionRepositoryError::InvalidCategory => {
+                "This category cannot be deleted.".into()
+            }
+            TransactionRepositoryError::Database(message)
+                if message.contains("FOREIGN KEY constraint failed") =>
+            {
+                "This category is used by existing records or plans. Archive it to preserve that history.".into()
+            }
+            _ => "The category could not be deleted.".into(),
+        })
+}
+#[tauri::command]
 pub fn get_transaction_audit_history(
     state: State<'_, Database>,
     id: String,

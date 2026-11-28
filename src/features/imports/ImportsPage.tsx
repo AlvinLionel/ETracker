@@ -98,7 +98,7 @@ type ImportLog = { id:string; timestamp:string; stage:string; severity:string; m
 type ImportCategoryRule = { category_id:string; category_name:string; category_type:"income"|"expense"; match_text:string };
 type ImportCategorySuggestion = { category_name:string; category_type:"income"|"expense"; match_text:string; occurrence_count:number };
 type AppliedImportCategorySuggestion = ImportCategorySuggestion & { categorized_transaction_count:number };
-export default function ImportsPage({ navigate }: { navigate?: (page: string) => void } = {}) {
+export default function ImportsPage({ navigate, initialBatchId, onInitialBatchOpened }: { navigate?: (page: string) => void; initialBatchId?: string; onInitialBatchOpened?: () => void } = {}) {
   const [accounts,setAccounts]=useState<Account[]>([]); const [batches,setBatches]=useState<Batch[]>([]);
   const [accountId,setAccountId]=useState(""); const [file,setFile]=useState<File|null>(null); const [contents,setContents]=useState("");
   const [isFileLoading,setIsFileLoading]=useState(false);
@@ -150,6 +150,7 @@ export default function ImportsPage({ navigate }: { navigate?: (page: string) =>
   }
   async function viewRecords(id:string){setSelectedBatch(id);setWorkspaceTab("records");setRecords([]);try{const batch=batches.find(item=>item.id===id);const [staged,activity,changes]=await Promise.all([invoke<StagedRecord[]>("list_staged_import_records",{batchId:id}),invoke<ImportLog[]>("list_import_logs",{batchId:id}),batch?.revision_of_batch_id?invoke<RevisionChange[]>("list_import_revision_changes",{batchId:id}):Promise.resolve(batch?[]:null)]);setRecords(staged);setLogs(activity);if(changes!==null)setRevisionChanges(changes);}catch{setError("Import workspace could not be loaded.");}}
   async function viewLogs(id:string){await viewRecords(id);setWorkspaceTab("logs");}
+  useEffect(()=>{if(initialBatchId&&batches.some(batch=>batch.id===initialBatchId)&&selectedBatch!==initialBatchId){void viewRecords(initialBatchId);onInitialBatchOpened?.();}},[initialBatchId,batches,selectedBatch]);
   async function refreshCategoryRules(){setCategoryRules(await invoke<ImportCategoryRule[]>("list_import_category_rules"));}
   async function refreshCategorySuggestions(){
     setSuggestionsLoading(true);

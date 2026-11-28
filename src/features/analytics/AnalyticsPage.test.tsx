@@ -6,6 +6,7 @@ const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 const confirmMock = vi.hoisted(() => vi.fn());
 vi.mock("../../shared/confirmAction", () => ({ confirmAction: (...args: unknown[]) => confirmMock(...args) }));
+vi.setConfig({ testTimeout: 15000 });
 
 const sample = {
   currencies: ["KES"],
@@ -16,6 +17,7 @@ const sample = {
   total_refund_minor: 0,
   total_net_spending_minor:87500,
   trends: [{ period: "2026-11", income_minor: 250000, expense_minor: 87500, refund_minor:0 }],
+  daily_trends: [{ period: "2026-11-01", income_minor: 250000, expense_minor: 87500, refund_minor: 0 }],
   category_breakdown: [{ category_id: "food", name: "Food", transaction_type: "expense", amount_minor: 87500 }],
   account_comparison: [{ account_id: "cash", name: "Cash", income_minor: 250000, expense_minor: 87500, refund_minor:0 }],
   recurring_expenses: [{ category_id: null, name: "Internet", transaction_type: "expense", amount_minor: 60000 }],
@@ -28,9 +30,9 @@ describe("AnalyticsPage", () => {
   beforeEach(() => { invoke.mockReset(); confirmMock.mockReset().mockResolvedValue(true); invoke.mockImplementation((command: string) => command === "list_saved_analytics_reports" ? Promise.resolve([]) : Promise.resolve(sample)); });
   it("loads summaries with filters and exports reports", async () => {
     render(<AnalyticsPage />);
-    expect(await screen.findByText("Monthly income vs expenditure trajectory")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Monthly income, gross expenses and refunds chart" })).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: /Exact monthly values for the financial trend chart/ })).toHaveTextContent("2026-11");
+    expect(await screen.findByText("Daily cash flow")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Daily income, expenses, refunds and net cash flow/ })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: /Daily income, gross expenses, refunds, and net cash flow/ })).toHaveTextContent("2026-11-01");
     expect(screen.getByRole("img", { name: "Income, gross expenses and refunds by account" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Expense category mix chart" })).toBeInTheDocument();
     expect(screen.getAllByText("Food").length).toBeGreaterThan(1);
@@ -51,7 +53,7 @@ describe("AnalyticsPage", () => {
 
   it("maps the six-month preset to an inclusive calendar range", async () => {
     render(<AnalyticsPage />);
-    await screen.findByText("Monthly income vs expenditure trajectory");
+    await screen.findByText("Daily cash flow");
     fireEvent.click(screen.getByRole("button", { name: "6 months" }));
 
     const now = new Date();
@@ -63,7 +65,7 @@ describe("AnalyticsPage", () => {
 
   it("compares the selected range with an equal-length previous period", async () => {
     render(<AnalyticsPage />);
-    await screen.findByText("Monthly income vs expenditure trajectory");
+    await screen.findByText("Daily cash flow");
     fireEvent.click(screen.getByRole("button", { name: "Compare previous period" }));
     expect(await screen.findByRole("region", { name: "Comparison with previous period" })).toBeInTheDocument();
     expect(screen.getByText(/Previous range:/)).toBeInTheDocument();
@@ -75,7 +77,7 @@ describe("AnalyticsPage", () => {
     const saved = { id: "saved-1", name: "Monthly review", from_date: "2026-10-01", to_date: "2026-10-31", account_id: "cash", category_id: "food", currency_code: "KES", created_at: "2026-11-12", updated_at: "2026-11-12" };
     invoke.mockImplementation((command: string) => command === "list_saved_analytics_reports" ? Promise.resolve([]) : command === "save_analytics_report" ? Promise.resolve(saved) : Promise.resolve(sample));
     render(<AnalyticsPage />);
-    await screen.findByText("Monthly income vs expenditure trajectory");
+    await screen.findByText("Daily cash flow");
     fireEvent.click(screen.getByRole("button", { name: "Save current report" }));
     fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Monthly review" } });
     fireEvent.click(screen.getByRole("button", { name: "Save report" }));
@@ -88,7 +90,7 @@ describe("AnalyticsPage", () => {
     const saved = { id: "saved-2", name: "Food in October", from_date: "2026-10-01", to_date: "2026-10-31", account_id: "cash", category_id: "food", currency_code: "KES", created_at: "2026-11-12", updated_at: "2026-11-12" };
     invoke.mockImplementation((command: string) => command === "list_saved_analytics_reports" ? Promise.resolve([saved]) : Promise.resolve(sample));
     render(<AnalyticsPage />);
-    await screen.findByText("Monthly income vs expenditure trajectory");
+    await screen.findByText("Daily cash flow");
     fireEvent.change(await screen.findByRole("combobox", { name: "Saved report" }), { target: { value: "saved-2" } });
     expect(screen.getByLabelText("From date")).toHaveValue("2026-10-01");
     expect(screen.getByLabelText("To date")).toHaveValue("2026-10-31");

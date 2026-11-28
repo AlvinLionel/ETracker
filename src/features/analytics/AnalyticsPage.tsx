@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAnalyticsSummary, type AnalyticsSummary } from "./api/analytics";
 import { serializeCsv } from "./csv";
-import { AccountActivityChart, ExpenseCategoryDonut, MonthlyTrendChart } from "./AnalyticsCharts";
+import { AccountActivityChart, DailyTrendChart, ExpenseCategoryDonut } from "./AnalyticsCharts";
 import { formatMoney as formatCurrency } from "../../shared/formatMoney";
 import { confirmAction } from "../../shared/confirmAction";
 import { deleteSavedAnalyticsReport, listSavedAnalyticsReports, saveAnalyticsReport, type SavedAnalyticsReport } from "./api/savedReports";
@@ -10,6 +10,17 @@ const today = new Date().toISOString().slice(0, 10);
 const yearAgo = new Date(new Date().setMonth(new Date().getMonth() - 11)).toISOString().slice(0, 7) + "-01";
 const money = (minor: number, currency: string) => formatCurrency(minor, currency, { maximumFractionDigits: 2 });
 const dateOnly = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function fillDailyRange(from: string, to: string, points: AnalyticsSummary["trends"]) {
+  const start = new Date(`${from}T00:00:00`), end = new Date(`${to}T00:00:00`);
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000);
+  if (!from || !to || !Number.isFinite(days) || days < 0 || days > 365) return [];
+  const byDay = new Map(points.map((point) => [point.period, point]));
+  return Array.from({ length: days + 1 }, (_, index) => {
+    const day = new Date(start); day.setDate(start.getDate() + index);
+    const key = dateOnly(day);
+    return byDay.get(key) ?? { period: key, income_minor: 0, expense_minor: 0, refund_minor: 0 };
+  });
+}
 
 export default function AnalyticsPage() {
   const [from, setFrom] = useState(yearAgo);
@@ -100,6 +111,7 @@ export default function AnalyticsPage() {
     finally { setSavedReportBusy(false); }
   }
   const currency = currencyCode || data?.currencies[0] || "KES";
+  const dailyPoints = data ? fillDailyRange(from, to, data.daily_trends ?? []) : [];
   const comparisonMetrics = data && comparison ? [
     ["Income", data.total_income_minor, comparison.total_income_minor],
     ["Gross expenses", data.total_expense_minor, comparison.total_expense_minor],
@@ -151,8 +163,8 @@ export default function AnalyticsPage() {
       <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4"><Metric title="Total income" value={money(data.total_income_minor,currency)} /><Metric title="Gross expenses" value={money(data.total_expense_minor,currency)} /><Metric title="Refunds" value={money(data.total_refund_minor,currency)} /><Metric title="Net spending" value={money(data.total_net_spending_minor,currency)} /></div>
       {comparePrevious && (comparisonError ? <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{comparisonError}</p> : comparison && <section aria-label="Comparison with previous period" className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5"><div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-semibold">Change from previous period</h2><p className="workspace-muted text-xs">Previous range: {comparisonRange}</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{comparisonMetrics.map(([title, current, previous]) => { const delta = current - previous; return <div key={title} className="rounded-lg border border-emerald-100 bg-white p-3"><p className="text-xs text-slate-500">{title}</p><p className={`mt-1 font-semibold tabular-nums ${delta > 0 ? "text-amber-800" : delta < 0 ? "text-emerald-800" : "text-slate-700"}`}>{delta > 0 ? "+" : delta < 0 ? "−" : ""}{money(Math.abs(delta), currency)}</p><p className="mt-1 text-xs text-slate-500">Previous {money(previous, currency)}</p></div>; })}</div></section>)}
       <section className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">What-if simulation</h2><p className="mt-1 text-xs text-slate-600">Try changes for this selected period. The estimate is temporary and does not alter budgets or transactions.</p></div><strong className="text-lg">Simulated net: {money(scenarioNet,currency)}</strong></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-600">Additional income<input aria-label="Additional simulated income" type="number" min="0" step="0.01" value={scenarioIncome} onChange={(e) => setScenarioIncome(e.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" /></label><label className="text-xs font-semibold text-slate-600">Expense reduction<input aria-label="Simulated expense reduction" type="number" min="0" step="0.01" value={scenarioExpenseReduction} onChange={(e) => setScenarioExpenseReduction(e.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" /></label></div></section>
+      <section className="workspace-panel rounded-xl p-5"><h2 className="text-lg font-semibold">Daily cash flow</h2><p className="workspace-muted mb-4 mt-1 text-xs">Daily income, gross expenses, refunds, net movement, and a 7-day average · {currency}</p><DailyTrendChart points={dailyPoints} currency={currency}/></section>
       <div className="analytics-report-grid grid gap-5 lg:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Monthly income vs expenditure trajectory</h2><p className="mb-5 mt-1 text-xs text-slate-500">Inflows, gross expenses, refunds, net cash flow, and 3-month average · {currency}</p>{data.trends.length ? <MonthlyTrendChart points={data.trends} currency={currency} /> : <Empty>No posted activity in this range.</Empty>}</section>
         <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Category breakdown</h2><p className="mb-4 mt-1 text-xs text-slate-500">Expense mix by allocated amount · {currency}</p><ExpenseCategoryDonut categories={data.category_breakdown} currency={currency} />{data.category_breakdown.some((item) => item.transaction_type === "income") && <div className="mt-5 border-t border-slate-200 pt-4"><h3 className="mb-3 text-sm font-semibold">Income categories</h3><ul className="space-y-2">{data.category_breakdown.filter((item) => item.transaction_type === "income").map((item,index) => <li key={`${item.category_id}-${item.name}-${index}`} className="flex justify-between gap-3 text-sm"><span>{item.name}</span><strong>{money(item.amount_minor,currency)}</strong></li>)}</ul></div>}</section>
         <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="text-lg font-semibold">Cash flow by account</h2><p className="mb-4 mt-1 text-xs text-slate-500">Posted income, gross expenses and refunds · {currency}</p><AccountActivityChart accounts={data.account_comparison} currency={currency} /></section>
         <section className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Repeated expense descriptions</h2><p className="mb-4 mt-1 text-xs text-slate-500">Same description appears at least three times · {currency}</p>{data.recurring_expenses.length ? <div className="space-y-3">{data.recurring_expenses.map((item) => <div key={item.name} className="flex justify-between gap-3 text-sm"><span>{item.name}</span><strong>{money(item.amount_minor,currency)}</strong></div>)}</div> : <Empty>No repeated descriptions found in this range.</Empty>}</section>

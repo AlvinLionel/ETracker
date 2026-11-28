@@ -579,7 +579,11 @@ mod tests {
 
     #[test]
     fn migrates_existing_plaintext_attachments_without_changing_metadata() {
-        let root = std::env::temp_dir().join(format!("etracker-attachments-{}", Uuid::new_v4()));
+        // Keep the atomic replacement test inside the workspace: the host's
+        // sandboxed temp path is a virtual alias that MoveFileExW cannot see.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("etracker-attachments-{}", Uuid::new_v4()));
         let attachment_root = root.join("attachments");
         fs::create_dir_all(&attachment_root).unwrap();
         let source = root.with_extension("source.png");
