@@ -920,6 +920,25 @@ When selectable PDF text contains recognizable table headers for date/time, deta
 
 ---
 
+## DB-042 — Signed desktop update checks
+
+**Status:** Implemented; release key setup and end-to-end release verification remain
+
+**Date:** 28 November 2026
+
+**Related documents:** DOC-007
+
+### Decision
+At startup, the desktop app checks the latest published GitHub release for a newer Tauri-signed Windows build. A failed or offline check is silent. The user chooses whether to install or defer an available update. Tagged builds create draft releases containing signed MSI/NSIS updater artifacts and the update manifest; a release owner reviews and publishes the draft. The updater public key is fixed in the app. The private key is held only in protected local storage and GitHub Actions secrets. Existing app builds without updater support require one manual installation of an updater-enabled version before subsequent releases can be detected.
+
+### Rationale and implications
+- Verify update contents cryptographically and keep the financial app usable while offline.
+- Preserve review before any update release is publicly discoverable.
+- Losing or exposing the private signing key prevents trusted updates or compromises the update channel; maintain a protected backup and never commit it. The current generated key has no passphrase, so protect its local copy and GitHub secret carefully.
+- This supersedes DB-036's manual-only update policy. It does not authorize automatic publication of public releases.
+
+---
+
 # 5. Approved Budgeting, Savings and Subscription Decisions
 
 ## ADR-011 — Monthly budgets are independent planning instances

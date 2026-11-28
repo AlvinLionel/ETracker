@@ -4,6 +4,7 @@ import App from "./App";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue({ theme: "system" }),
+  isTauri: () => false,
 }));
 
 vi.mock("./features/dashboard/DashboardPage", () => ({

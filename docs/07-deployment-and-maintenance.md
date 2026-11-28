@@ -153,7 +153,7 @@ Build configuration must prevent accidental use of test settings in production r
 
 ### 4.1 Packaging
 
-Tauri builds unsigned Windows x64 MSI and NSIS setup packages. For the 0.1.x preview, MSI is the primary managed-install option and NSIS is an alternative. A tag or manual workflow run builds both and retains the artifacts for 30 days; the workflow does not publish public releases (`DB-036`).
+Tauri builds Windows x64 MSI and NSIS setup packages. For the 0.1.x preview, MSI is the primary managed-install option and NSIS is an alternative. The release workflow builds signed updater artifacts and retains workflow artifacts. A pushed `v*` tag creates a draft GitHub release; an owner must review and publish it before installed applications can discover it (`DB-042`).
 
 ### 4.2 Installation Requirements
 
@@ -295,16 +295,11 @@ The update strategy must therefore define compatibility and recovery behaviour b
 
 A verified backup may be required before restoring an earlier database state.
 
-### 6.5 Update Distribution
+### 6.5 Signed desktop updates
 
-The final distribution and update mechanism remains undecided.
+The desktop app checks the latest published GitHub release at startup. A failed or offline check is silent and does not block local work. When a newer signed version exists, the user may install and restart from the in-app notice or defer it. Tauri verifies the update signature before installation. Windows updater packages use MSI and NSIS; the Tauri release action publishes a draft containing the signed assets and `latest.json`.
 
-Options may include:
-- Manually downloaded releases.
-- A supported desktop update mechanism.
-- A managed distribution channel.
-
-The selected approach must be appropriate for a local-first financial application and must not compromise data integrity.
+Before a release build, configure the GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY` from the generated local key; its passphrase is blank, so the workflow password variable may remain unset. Keep a protected backup of the private key; the public key is embedded in the app and must remain stable for subsequent updates. Review and publish the draft release to make the version discoverable. Tags must follow `vMAJOR.MINOR.PATCH`, and the app version must be increased for each update. Existing installations built before updater support need one manual installation of an updater-enabled build before they can detect later releases. Updates must preserve the app-data directory and database.
 
 ---
 
@@ -777,7 +772,7 @@ The exact synchronization architecture must be designed and approved separately 
 | DM-001 | Supported Windows versions | Pending evaluation against a Windows version matrix |
 | DM-002 | Installer format | Approved: unsigned x64 MSI (primary) and NSIS (alternative) for 0.1.x preview (`DB-036`) |
 | DM-003 | Code signing and installer trust | Pending evaluation |
-| DM-004 | Update and distribution mechanism | Approved: manual versioned updates; no automatic or public release publishing for preview (`DB-036`) |
+| DM-004 | Update and distribution mechanism | Implemented: signed startup checks, user-confirmed installs, and draft GitHub releases; secrets, hosted release and install/upgrade checks remain (`DB-042`) |
 | DM-005 | Backup format and retention | Approved: manual encrypted exports, user-managed retention (`DB-030`) |
 | DM-006 | Backup encryption | Approved: passphrase-based authenticated encryption (`DB-030`) |
 | DM-007 | Database migration framework | Implemented with versioned SQLite migrations; rollback after page-copy failure remains unguaranteed |
@@ -815,7 +810,7 @@ As of 8 November 2026:
 | Encrypted backup and restoration | Implemented and automated tests pass; manual desktop verification pending |
 | CI pipeline | Implemented for Windows: formatting, frontend tests/build and Rust tests; first hosted run pending |
 | First preview packages | OCR-era packages rebuilt locally on 8 November 2026: MSI 10.96 MiB, NSIS 9.88 MiB. They predate transaction attachments and are not current for distribution; hashes are in `RELEASE_NOTES.md`; artifacts are not committed |
-| Installer workflow | Configured to retain unsigned MSI and NSIS artifacts for 30 days; first hosted run pending |
+| Installer workflow | Configured to build signed MSI/NSIS update files and create a draft release; signing secrets and first hosted run pending |
 | Installation on this development profile | Not attempted because this machine already has data under the production app identifier; avoid replacing the existing local profile |
 | Stable release | Not produced; manual install/upgrade, native file prompts, OS matrix, signing and offline smoke checks remain |
 

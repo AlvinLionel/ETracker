@@ -23,6 +23,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -31,5 +32,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3MDE1OEI5NkRCNzZGODUKUldTRmI3ZHR1VmdCdDRWc1pVRkdlYTRkVWhaUjVXNHk0NVAyS2pMeUtUeS9SRzNFUThlRmdUYTYK",
+      "endpoints": [
+        "https://github.com/AlvinLionel/ETracker/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

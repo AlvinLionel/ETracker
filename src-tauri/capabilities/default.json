@@ -8,6 +8,7 @@
     "opener:default",
     "dialog:allow-confirm",
     "dialog:allow-save",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    "updater:default"
   ]
 }

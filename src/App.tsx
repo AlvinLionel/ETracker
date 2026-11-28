@@ -10,6 +10,7 @@ import AnalyticsPage from "./features/analytics/AnalyticsPage";
 import ForecastingPage from "./features/forecasting/ForecastingPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import SettingsPage from "./features/settings/SettingsPage";
+import UpdateNotice from "./features/settings/UpdateNotice";
 import CategoriesPage from "./features/transactions/CategoriesPage";
 import StatementArchivePage from "./features/imports/StatementArchivePage";
 import { applyAppearancePreferences, type ThemePreference } from "./features/settings/theme";
@@ -187,6 +188,8 @@ function App() {
           <div className="flex min-w-0 items-center gap-3"><span className="text-sm text-slate-600">Ledger</span><span className="text-slate-300">/</span><div className="min-w-0"><p className="truncate text-[10px] text-slate-500">{activePage} / Workspace</p><h2 className="truncate text-sm font-semibold">{activePage === "Accounts" ? "Account management" : ["Budgeting", "Savings", "Subscriptions"].includes(activePage) ? "Financial planning" : activePage === "Transactions" ? "Transaction management" : activePage === "Imports" ? "Statement imports" : activePage}</h2></div><span className="hidden h-5 w-px bg-slate-200 sm:block"/><label className="hidden items-center gap-2 rounded-sm border border-slate-200 bg-violet-50/60 px-2.5 py-1.5 font-mono text-xs text-slate-700 sm:flex"><CalendarDays size={14}/><span>{planningMonthLabel}</span><input aria-label="Planning month" type="month" value={planningMonth} onChange={(event) => setPlanningMonth(event.target.value)} className="w-28 border-0 bg-transparent p-0 text-xs outline-none"/></label></div>
           <div className="flex shrink-0 items-center gap-2"><button type="button" title="Open statement import reconciliation" onClick={() => setActivePage("Imports")} className="hidden items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 py-2 text-xs font-semibold sm:inline-flex">Reconcile statement</button><button type="button" onClick={() => setActivePage("Transactions")} className="rounded-sm bg-violet-700 px-3 py-2 text-xs font-semibold text-white">+ Add transaction</button></div>
         </div>
+
+        <UpdateNotice />
 
         <nav aria-label="Compact navigation" className="app-compact-nav overflow-x-auto border-b px-3 py-2 lg:hidden">
           <div className="flex min-w-max gap-1">
